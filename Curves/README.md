@@ -69,9 +69,9 @@ swift test
 ```
 
 This writes into `Sources/FilmEngine/Catalogue`. The package bundles that directory,
-so new Profiles appear in the app picker on the next build with no source changes.
-The app still renders Identity in these foundation tickets; physical film controls
-and stock application come later. The CLI is a separate macOS executable product
+so new Profiles appear in the app picker on the next build with no source changes
+and render with the exposure, white balance and development controls. Halation,
+Grain and MTF are not yet applied. The CLI is a separate macOS executable product
 and is not a dependency of FilmApp or the FilmEngine library.
 
 ## What the foundation study model does
@@ -81,9 +81,10 @@ the CSV endpoints, and evaluates that curve at the 33³ Colour Cube's linear gri
 points. Each colour channel is independent: there is no spectral integration, DIR
 coupling, Orange Mask, or scan/print transform. B&W uses the same interpolation to
 bake a 1024-entry Density Curve. Runtime B&W collapses with the Profile's weights
-and samples that curve. Film Response returns Density Space; the other physical
-passes remain stubs. Development Offsets select the nearest baked variant for
-validation; smooth interpolation is future work.
+and samples that curve. Film Response returns Density Space, which the runtime
+Scan Output Stage inverts and auto-balances for display. Development Offsets blend
+the two nearest baked variants; validation probes each baked variant exactly, with
+the runtime scan disabled and the push rating cancelled by an equal exposure.
 
 The numerical harness constructs a linear Step Wedge from every source sample and
 log-space midpoint, renders it through the **public renderer entry point**, and

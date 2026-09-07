@@ -50,10 +50,12 @@ coordinate = clamp((logH - minimumLogExposure) / (maximumLogExposure - minimumLo
 
 The bounds are −3.5…0.6 lux-second log exposure, with reference gray at −1.44;
 roughly 13.6 stops. The Baker evaluates physical exposure at those nodes. Below
-and above that domain, the intended runtime behavior is endpoint clamping.
-The existing renderer can sample **already-shaped** coordinates for offline QA;
-applying the shaper and integrating the Profile in the app is MEM-244, after this
-gate. No new film-rendering controls or physical passes are implemented here.
+and above that domain the renderer clamps to the endpoints. The renderer applies
+this shaper itself whenever `colour.inputShaper` is present, after White Balance
+and Exposure, so callers always supply scene-linear Working Space light. The
+Development Offset blends the two nearest variants linearly and rates the Stock
+faster by the same number of stops; the validation harness passes an equal
+`exposureStops` so each variant is probed at the CSV's physical exposure.
 
 ## Validation
 
@@ -64,7 +66,8 @@ gate. No new film-rendering controls or physical passes are implemented here.
   and must match measured Status M density to 0.03. This gate is deliberately
   before scan inversion, because positive display RGB is not optical density.
 - `scan-output`: all offsets, off-grid neutral and chromatic probes of the actual
-  supplied Profile. Compare the renderer to direct forward spectral evaluation
+  supplied Profile, fed as scene-linear light so the runtime shaper is exercised.
+  Compare the renderer to direct forward spectral evaluation
   to 0.03 in display-linear channel values. This bounds bake/interpolation error;
   it is **not** independent proof of the artistic colour or development model.
 

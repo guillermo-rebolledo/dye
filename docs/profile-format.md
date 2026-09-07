@@ -47,8 +47,9 @@ actual payload values are checked when loaded for rendering.
 `ProfileCatalogue.bundled()` reads only metadata at launch. The renderer lazily
 uploads Colour Cubes and keeps the three most recently used textures by default.
 Cache keys identify loaded content, so identical ids in different files and
-renamed Display Names cannot accidentally reuse stale textures. The app picker
-lists the bundled synthetic studies by Process; selection is data-only in MEM-241.
+renamed Display Names cannot accidentally reuse stale textures. The cache holds
+four entries so a blended Development Offset keeps both neighbouring cubes warm.
+The app picker lists the bundled Profiles by Process and renders the selection.
 
 ## Spectral extensions (MEM-243)
 
@@ -65,6 +66,7 @@ not a physical parameter. It is absent from authoring metadata and study Profile
 Both shaper and cube-output parameters require Provenance. Extra spectral
 Provenance paths describe measured source arrays and artistic model parameters.
 
-The binary payload layout is unchanged. These extensions describe offline cubes;
-the renderer's automatic shaper application belongs to MEM-244. Until then, only
-already-shaped coordinates are valid for Portra's offline renderer checks.
+The binary payload layout is unchanged. The renderer applies the shaper at render
+time and treats `displayLinearRec2020` cubes as already scanned, so the Scan
+Output Stage passes them through. Density Space cubes with `outputStage: scan`
+are inverted and auto-balanced by the renderer instead.

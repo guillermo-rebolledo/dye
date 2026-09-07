@@ -29,11 +29,14 @@ func spectralStepWedge(curves: CurveSet, profile: Profile) async throws -> [Step
     // not independent evidence of the tuned colour or push/pull model's accuracy.
     var coordinates = (0...64).map { SIMD3<Double>(repeating: Double($0) / 64) }
     coordinates += [SIMD3(0.31, 0.53, 0.72), SIMD3(0.8, 0.2, 0.4), SIMD3(0.45, 0.7, 0.2), SIMD3(0.72, 0.59, 0.46)]
-    let pixels: [Float16] = coordinates.flatMap { [Float16($0.x), Float16($0.y), Float16($0.z), 1] }
-    let input = try LinearImage(width: coordinates.count, height: 1, rgba: pixels)
     for variant in curves.metadata.colour.lutVariants {
-        let rendered = try await renderer.render(image: .linear(input), profile: profile,
-            settings: .init(output: .workingSpace, developmentOffset: variant.pushStops))
+        // Coordinates are already shaped, so undo the runtime shaper by feeding
+        // scene-linear light and cancel the push rating with an equal exposure.
+        let scene = coordinates.flatMap { c in
+            (0..<3).map { Float16(model.exposure(at: c[$0]) / pow(10, model.shaper.middleGrayLogExposure) * 0.18) } + [1]
+        }
+        let rendered = try await renderer.render(image: .linear(try LinearImage(width: coordinates.count, height: 1, rgba: scene)), profile: profile,
+            settings: .init(output: .workingSpace, exposureStops: variant.pushStops, developmentOffset: variant.pushStops))
         for (index, coordinate) in coordinates.enumerated() {
             let h = SIMD3(model.exposure(at: coordinate.x), model.exposure(at: coordinate.y), model.exposure(at: coordinate.z))
             let reference = model.scan(model.density(h, offset: variant.pushStops))

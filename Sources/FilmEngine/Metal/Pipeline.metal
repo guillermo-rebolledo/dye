@@ -7,13 +7,28 @@ kernel void passthrough(texture2d<half, access::read> input [[texture(0)]],
     if (p.x < output.get_width() && p.y < output.get_height()) output.write(input.read(p), p);
 }
 
-kernel void filmResponse(texture2d<half, access::read> input [[texture(0)]],
+// Pass 2. The 3×3 matrix re-illuminates the scene and adapts to the Stock Balance.
+kernel void whiteBalance(texture2d<half, access::read> input [[texture(0)]],
                          texture2d<half, access::write> output [[texture(1)]],
-                         texture3d<half, access::read> cube [[texture(2)]],
+                         constant float3x3 &matrix [[buffer(2)]],
                          uint2 p [[thread_position_in_grid]]) {
     if (p.x >= output.get_width() || p.y >= output.get_height()) return;
     half4 pixel = input.read(p);
-    float3 q = float3(pixel.rgb) * float(cube.get_width() - 1);
+    output.write(half4(half3(matrix * float3(pixel.rgb)), pixel.a), p);
+}
+
+// Pass 3. A scalar multiply in linear light commutes with the Film Response.
+kernel void exposure(texture2d<half, access::read> input [[texture(0)]],
+                     texture2d<half, access::write> output [[texture(1)]],
+                     constant float &gain [[buffer(3)]],
+                     uint2 p [[thread_position_in_grid]]) {
+    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
+    half4 pixel = input.read(p);
+    output.write(half4(half3(float3(pixel.rgb) * gain), pixel.a), p);
+}
+
+static float3 tetrahedral(texture3d<half, access::read> cube, float3 coordinate) {
+    float3 q = coordinate * float(cube.get_width() - 1);
     // Extrapolate boundary tetrahedra so identity preserves negative and HDR values.
     int3 base = int3(clamp(floor(q), 0.0f, float(cube.get_width() - 2)));
     float3 f = q - float3(base);
@@ -27,11 +42,66 @@ kernel void filmResponse(texture2d<half, access::read> input [[texture(0)]],
     float3 x1 = float3(cube.read(v1).rgb);
     float3 x2 = float3(cube.read(v2).rgb);
     float3 x3 = float3(cube.read(v0 + 1).rgb);
-    float3 value = x0 + f[a] * (x1 - x0) + f[b] * (x2 - x1) + f[c] * (x3 - x2);
+    return x0 + f[a] * (x1 - x0) + f[b] * (x2 - x1) + f[c] * (x3 - x2);
+}
+
+// Pass 7. `shaper` = (enabled, minimumLogExposure, 1 / log range, middleGrayLogExposure)
+// maps scene-linear light to the spectral Colour Cube's log-exposure coordinate;
+// disabled, the cube is addressed by linear [0, 1] values. `blend.x` weights the
+// second Colour Cube, the neighbouring Development Offset variant.
+kernel void filmResponse(texture2d<half, access::read> input [[texture(0)]],
+                         texture2d<half, access::write> output [[texture(1)]],
+                         texture3d<half, access::read> lower [[texture(2)]],
+                         texture3d<half, access::read> upper [[texture(3)]],
+                         constant float4 &shaper [[buffer(4)]],
+                         constant float4 &blend [[buffer(5)]],
+                         uint2 p [[thread_position_in_grid]]) {
+    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
+    half4 pixel = input.read(p);
+    float3 coordinate = float3(pixel.rgb);
+    if (shaper.x != 0) {
+        float3 logH = log10(max(coordinate, float3(1e-6f)) / 0.18f) + shaper.w;
+        coordinate = clamp((logH - shaper.y) * shaper.z, 0.0f, 1.0f);
+    }
+    float3 value = tetrahedral(lower, coordinate);
+    if (blend.x > 0) value = mix(value, tetrahedral(upper, coordinate), blend.x);
     // IEEE additions can turn -0 into +0. Preserve the input sign when a
     // component maps zero to zero, without bypassing Colour Cube sampling.
     value = select(value, copysign(float3(0), float3(pixel.rgb)), (value == 0) & (float3(pixel.rgb) == 0));
     output.write(half4(half3(value), pixel.a), p);
+}
+
+kernel void monochromeResponse(texture2d<half, access::read> input [[texture(0)]],
+                               texture2d<half, access::write> output [[texture(1)]],
+                               texture1d<half, access::read> densityCurve [[texture(2)]],
+                               constant float4 &spectralWeight [[buffer(1)]],
+                               uint2 p [[thread_position_in_grid]]) {
+    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
+    half4 pixel = input.read(p);
+    float gray = dot(float3(pixel.rgb), spectralWeight.xyz);
+    float position = clamp(gray, 0.0f, 1.0f) * 1023.0f;
+    uint low = min(uint(floor(position)), 1022u);
+    float a = float(densityCurve.read(low).r);
+    float b = float(densityCurve.read(low + 1).r);
+    half density = half(a + (position - float(low)) * (b - a));
+    output.write(half4(density, density, density, pixel.a), p);
+}
+
+// Pass 9, Scan. Inverts Density Space above the Stock's base density and
+// auto-balances so its mid-grey density lands on 0.18 in every channel, with the
+// same rational shoulder the Baker uses for spectral scan cubes.
+kernel void scanOutput(texture2d<half, access::read> input [[texture(0)]],
+                       texture2d<half, access::write> output [[texture(1)]],
+                       constant float4 &grayDensity [[buffer(6)]],
+                       constant float4 &baseDensity [[buffer(7)]],
+                       uint2 p [[thread_position_in_grid]]) {
+    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
+    half4 pixel = input.read(p);
+    float3 signal = max(exp10(float3(pixel.rgb) - baseDensity.xyz) - 1.0f, 0.0f);
+    float3 gray = exp10(grayDensity.xyz - baseDensity.xyz) - 1.0f;
+    float3 linear = (0.18f / 0.82f) * signal / gray;
+    float3 positive = linear / (1.0f + linear);
+    output.write(half4(half3(positive), pixel.a), p);
 }
 
 float transfer(float x) {
@@ -51,20 +121,4 @@ kernel void outputTransform(texture2d<half, access::read> input [[texture(0)]],
                       dot(x, float3(-0.0652975f, 1.0757879f, -0.0104904f)),
                       dot(x, float3(0.0028218f, -0.0195985f, 1.0167767f)));
     output.write(half4(transfer(p3.r), transfer(p3.g), transfer(p3.b), pixel.a), p);
-}
-
-kernel void monochromeResponse(texture2d<half, access::read> input [[texture(0)]],
-                               texture2d<half, access::write> output [[texture(1)]],
-                               texture1d<half, access::read> densityCurve [[texture(2)]],
-                               constant float4 &spectralWeight [[buffer(1)]],
-                               uint2 p [[thread_position_in_grid]]) {
-    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
-    half4 pixel = input.read(p);
-    float gray = dot(float3(pixel.rgb), spectralWeight.xyz);
-    float position = clamp(gray, 0.0f, 1.0f) * 1023.0f;
-    uint low = min(uint(floor(position)), 1022u);
-    float a = float(densityCurve.read(low).r);
-    float b = float(densityCurve.read(low + 1).r);
-    half density = half(a + (position - float(low)) * (b - a));
-    output.write(half4(density, density, density, pixel.a), p);
 }

@@ -119,7 +119,9 @@ _Avoid_: 1D LUT, tone curve, transfer function
 
 **Development Offset**:
 Push or pull expressed in stops. Changes curve shape rather than brightness, so each
-offset needs its own baked Colour Cube.
+offset needs its own baked Colour Cube; the renderer blends the two nearest. As on a
+pushed roll, the Stock is also rated faster by the same number of stops, which the
+Exposure Pass applies as an EV offset.
 _Avoid_: push, pull, development (unqualified — collides with the chemical process),
 pushStops in prose
 
@@ -154,8 +156,15 @@ _Avoid_: brightness, gain, EV (keep for the unit)
 
 **White Balance**:
 The user's temperature and tint control, followed by chromatic adaptation from the
-scene illuminant to the Stock Balance.
+Scene Illuminant to the Stock Balance.
 _Avoid_: balance (unqualified — collides with Stock Balance), WB, temperature
+
+**Scene Illuminant**:
+The light the frame was shot under, named by the White Balance control's
+temperature and tint. Decoded photos already show grey as grey, so the renderer
+re-illuminates the scene with it and adapts toward the Stock Balance. When the two
+match, White Balance is an exact pass-through.
+_Avoid_: source white, camera white balance, as-shot
 
 **Halation**:
 Light scattering off the back of the film and re-exposing the emulsion from behind.

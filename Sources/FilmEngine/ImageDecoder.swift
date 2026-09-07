@@ -7,8 +7,20 @@ import Foundation
 struct ImageDecoder {
     let device: any MTLDevice
     let workingSpace = CGColorSpace(name: CGColorSpace.extendedLinearITUR_2020)!
+    private let queue: any MTLCommandQueue
+    /// Core Image is confined to RAW decoding and the colour-managed handoff.
+    private let context: CIContext
 
-    func decode(_ data: Data) throws -> any MTLTexture {
+    init(device: any MTLDevice) throws {
+        self.device = device
+        guard let queue = device.makeCommandQueue() else { throw FilmError.invalid("Metal is unavailable") }
+        self.queue = queue
+        context = CIContext(mtlDevice: device, options: [.workingColorSpace: workingSpace, .cacheIntermediates: false])
+    }
+
+    /// `maximumDimension` downsamples in the linear Working Space for the Preview Render Path.
+    func decode(_ data: Data, maximumDimension: Int? = nil) throws -> any MTLTexture {
+        if let maximumDimension, maximumDimension < 1 { throw FilmError.invalid("Preview dimension must be positive") }
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
             throw FilmError.invalid("Unsupported photo file")
         }
@@ -18,6 +30,10 @@ struct ImageDecoder {
                 throw FilmError.invalid("The system RAW decoder does not support this photo")
             }
             raw.isDraftModeEnabled = false
+            let native = max(raw.nativeSize.width, raw.nativeSize.height)
+            if let maximumDimension, native > CGFloat(maximumDimension) {
+                raw.scaleFactor = Float(CGFloat(maximumDimension) / native)
+            }
             // CIRAWFilter defaults to photographic tone/shadow boosts. They must
             // be disabled before the scene-referred Working Space handoff.
             raw.boostAmount = 0
@@ -32,9 +48,13 @@ struct ImageDecoder {
             if raw.isColorNoiseReductionSupported { raw.colorNoiseReductionAmount = 0 }
             guard let image = raw.outputImage, !image.extent.isEmpty, !image.extent.isInfinite else { throw FilmError.invalid("RAW decode failed") }
             let texture = try makeTexture(width: Int(image.extent.width), height: Int(image.extent.height))
-            // Core Image is confined to RAW decoding and the colour-managed handoff.
-            let context = CIContext(mtlDevice: device, options: [.workingColorSpace: workingSpace])
-            context.render(image, to: texture, commandBuffer: nil, bounds: image.extent, colorSpace: workingSpace)
+            // Render on an explicit command buffer and wait: with a nil buffer Core Image
+            // commits asynchronously and later reads of the texture race the decode.
+            guard let command = queue.makeCommandBuffer() else { throw FilmError.invalid("Cannot create decode command") }
+            context.render(image, to: texture, commandBuffer: command, bounds: image.extent, colorSpace: workingSpace)
+            command.commit()
+            command.waitUntilCompleted()
+            if let error = command.error { throw error }
             return texture
         }
         guard let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
@@ -50,8 +70,14 @@ struct ImageDecoder {
         }
         let orientation = properties?[kCGImagePropertyOrientation] as? Int ?? 1
         let swapsAxes = (5...8).contains(orientation)
-        let width = swapsAxes ? image.height : image.width
-        let height = swapsAxes ? image.width : image.height
+        var scale = 1.0
+        if let maximumDimension, max(image.width, image.height) > maximumDimension {
+            scale = Double(maximumDimension) / Double(max(image.width, image.height))
+        }
+        let drawWidth = max(1, Int((Double(image.width) * scale).rounded()))
+        let drawHeight = max(1, Int((Double(image.height) * scale).rounded()))
+        let width = swapsAxes ? drawHeight : drawWidth
+        let height = swapsAxes ? drawWidth : drawHeight
         let texture = try makeTexture(width: width, height: height)
         var pixels = [Float](repeating: 0, count: width * height * 4)
         try pixels.withUnsafeMutableBytes { bytes in
@@ -72,7 +98,8 @@ struct ImageDecoder {
             case 8: context.translateBy(x: CGFloat(width), y: 0); context.rotate(by: .pi / 2)
             default: break
             }
-            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            context.interpolationQuality = .high
+            context.draw(image, in: CGRect(x: 0, y: 0, width: drawWidth, height: drawHeight))
         }
         // CGContext is premultiplied; the Metal pipeline uses straight alpha.
         for i in stride(from: 0, to: pixels.count, by: 4) where pixels[i + 3] > 0 {

@@ -22,9 +22,27 @@ The renderer's sole entry point accepts encoded photo bytes or linear Rec.2020
 float16 pixels, a Profile and RenderSettings. ImageIO/Core Graphics honour the
 input colour profile; CIRAWFilter handles RAW's camera colour matrix. Core Image
 is confined to RAW decode. The ordered eleven-pass Metal graph uses RGBA16Float
-textures throughout. Only Film Response (tetrahedral Colour Cube sampling) and the
-Display P3 output transform alter pixels at this stage; future physical passes
-are explicit pass-throughs. The canvas displays the tagged P3 result with Metal.
+textures throughout. White Balance, Exposure, Film Response (tetrahedral Colour
+Cube sampling), the Scan Output Stage and the Display P3 output transform alter
+pixels; Reciprocity, Halation, MTF, Grain and Geometry are explicit pass-throughs.
+The canvas displays the tagged P3 result with Metal.
+
+RenderSettings carry the user's controls in pipeline order. White Balance names
+the Scene Illuminant by temperature and tint and adapts it toward the Stock
+Balance with a Bradford von Kries scaling, so a daylight scene through a tungsten
+Stock is blue and matching illuminants are an exact pass-through. Exposure is a
+scalar multiply in linear light before the Film Response. The Development Offset
+blends the two nearest baked Colour Cubes linearly and, as on a pushed roll,
+rates the Stock faster: push +1 is −1 EV of exposure with the +1 curve shape.
+Spectral Profiles apply their log-exposure shaper at render time; Density Space
+Colour Cubes and Density Curves with a `scan` Output Stage are inverted through
+transmission and auto-balanced so the Stock's mid-grey returns 0.18. Portra's
+scan is baked into its cubes and is not inverted again. `outputStage: .none`
+returns Density Space for diagnostics; Print is not implemented yet.
+
+The app decodes one screen-sized Preview through `Renderer.decode` and re-renders
+it through a coalescing loop on every control change. Its controls are laid out
+as three numbered stages so exposure and white balance visibly precede the film.
 
 Identity is bit-exact at the Working Space boundary for all finite float16 values,
 including negative and HDR values; decoding and changing colour spaces inherently
@@ -47,5 +65,5 @@ DIR interactions and four Development Offsets. Its measured density gate and
 baked scan checks run in CI. See [the model and integration contract](docs/spectral-model.md)
 and [measurement sources and assumptions](Curves/portra-400/SOURCES.md).
 Kodak publishes Print Grain Index rather than RMS; RMS and unmeasured model
-parameters are explicitly artistic. Applying the log-exposure shaper and Portra
-Profile in the app remains MEM-244.
+parameters are explicitly artistic. Portra 400 renders in the app with exposure,
+white balance and development controls; Halation, Grain and MTF are still to come.

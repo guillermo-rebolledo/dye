@@ -24,6 +24,16 @@ lastKnownFileType = "sourcecode.swift";
 path = "FilmCanvas.swift";
 sourceTree = "<group>";
 };
+4C1E9A2B7D3F4E5A8B6C0D11 = {
+isa = "PBXFileReference";
+lastKnownFileType = "sourcecode.swift";
+path = "EditorModel.swift";
+sourceTree = "<group>";
+};
+4C1E9A2B7D3F4E5A8B6C0D12 = {
+isa = "PBXBuildFile";
+fileRef = "4C1E9A2B7D3F4E5A8B6C0D11";
+};
 1658F61DFA296CDD54A13800 = {
 isa = "PBXBuildFile";
 fileRef = "F2554E3D1F229ED00B2F5308";
@@ -35,7 +45,7 @@ fileRef = "635AD633AF697FB11F61C621";
 BCE16DD0260827ECF338C787 = {
 isa = "PBXSourcesBuildPhase";
 buildActionMask = 2147483647;
-files = ("1658F61DFA296CDD54A13800", "9B29201CD1B47CD85A406E75");
+files = ("1658F61DFA296CDD54A13800", "9B29201CD1B47CD85A406E75", "4C1E9A2B7D3F4E5A8B6C0D12");
 runOnlyForDeploymentPostprocessing = 0;
 };
 582681C2EAE02B3F3D399C0C = {
@@ -65,7 +75,7 @@ runOnlyForDeploymentPostprocessing = 0;
 };
 3A2A88DEEFF3D1D23E496597 = {
 isa = "PBXGroup";
-children = ("F2554E3D1F229ED00B2F5308", "635AD633AF697FB11F61C621");
+children = ("F2554E3D1F229ED00B2F5308", "635AD633AF697FB11F61C621", "4C1E9A2B7D3F4E5A8B6C0D11");
 path = "FilmApp";
 sourceTree = "<group>";
 };
