@@ -32,7 +32,11 @@ public enum RenderImage: Sendable {
 public struct RenderSettings: Sendable {
     public enum Output: UInt32, Sendable { case workingSpace = 0, displayP3 = 1 }
     public var output: Output
-    public init(output: Output = .displayP3) { self.output = output }
+    public var developmentOffset: Double
+    public init(output: Output = .displayP3, developmentOffset: Double = 0) {
+        self.output = output
+        self.developmentOffset = developmentOffset
+    }
 }
 
 /// Red varies fastest, then green, then blue. Each texel contains RGBA float16.

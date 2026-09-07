@@ -52,3 +52,19 @@ kernel void outputTransform(texture2d<half, access::read> input [[texture(0)]],
                       dot(x, float3(0.0028218f, -0.0195985f, 1.0167767f)));
     output.write(half4(transfer(p3.r), transfer(p3.g), transfer(p3.b), pixel.a), p);
 }
+
+kernel void monochromeResponse(texture2d<half, access::read> input [[texture(0)]],
+                               texture2d<half, access::write> output [[texture(1)]],
+                               texture1d<half, access::read> densityCurve [[texture(2)]],
+                               constant float4 &spectralWeight [[buffer(1)]],
+                               uint2 p [[thread_position_in_grid]]) {
+    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
+    half4 pixel = input.read(p);
+    float gray = dot(float3(pixel.rgb), spectralWeight.xyz);
+    float position = clamp(gray, 0.0f, 1.0f) * 1023.0f;
+    uint low = min(uint(floor(position)), 1022u);
+    float a = float(densityCurve.read(low).r);
+    float b = float(densityCurve.read(low + 1).r);
+    half density = half(a + (position - float(low)) * (b - a));
+    output.write(half4(density, density, density, pixel.a), p);
+}

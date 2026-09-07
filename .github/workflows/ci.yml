@@ -1,0 +1,37 @@
+name: FilmEngine
+on:
+  push:
+  pull_request:
+
+jobs:
+  engine:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift 6 typecheck and CLI build
+        run: swift build
+      - name: Renderer, codec, and Baker CLI tests
+        run: swift test
+      - name: Bake and verify the committed Catalogue
+        run: |
+          Scripts/bake-catalogue.sh
+          git diff --exit-code -- Sources/FilmEngine/Catalogue
+      - name: Numerical Step Wedges
+        run: |
+          mkdir -p .build/step-wedges
+          baker="$(swift build --show-bin-path)/ProfileBaker"
+          for stock in Curves/*; do
+            [ -d "$stock" ] || continue
+            id="$(basename "$stock")"
+            "$baker" validate "$stock" "Sources/FilmEngine/Catalogue/$id.filmprofile" ".build/step-wedges/$id" 0.03
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: step-wedges
+          path: .build/step-wedges
+      - name: Build the iOS app (Baker is not linked)
+        run: >-
+          xcodebuild -project FilmApp.xcodeproj -scheme FilmApp
+          -sdk iphonesimulator -configuration Debug
+          -derivedDataPath .build/app CODE_SIGNING_ALLOWED=NO build

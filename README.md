@@ -34,3 +34,15 @@ in all six tetrahedra and check tagged sRGB versus Display P3 input.
 Full-resolution tiling, physical film effects and photo export belong to later
 tickets. RAW support uses the system decoder; synthetic DNG fixtures verify scene-linear exposure ratios. Real camera fixtures
 and on-device memory/performance validation are still needed.
+
+Profiles now ship in the bundle and populate a picker grouped by Process. The
+[container format](docs/profile-format.md) documents schema, Provenance and lazy
+loading. The five synthetic studies are intentionally not claims of stock accuracy.
+
+The offline macOS `ProfileBaker` converts version-controlled CSV Curve Sets into
+loadable Profiles and validates them through the renderer using numerical Step
+Wedges. See [contributor instructions](Curves/README.md) to add a Stock, bake the
+Catalogue, and inspect CSV/SVG validation reports. No third-party simulation code,
+profiles or LUTs are reused. MEM-239's referenced [spektrafilm](https://github.com/andreavolpato/spektrafilm)
+was consulted for its high-level pipeline and licensing; this ticket implements
+only independent per-channel interpolation, not its spectral model.

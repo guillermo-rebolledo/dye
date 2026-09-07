@@ -8,7 +8,7 @@ public actor Renderer {
     private let pipelines: [String: any MTLComputePipelineState]
     private let decoder: ImageDecoder
     private let textureCacheCapacity: Int
-    private var colourCubeCache: [(id: UUID, name: String, texture: any MTLTexture)] = []
+    private var responseCache: [(id: UUID, name: String, texture: any MTLTexture)] = []
 
     public init(textureCacheCapacity: Int = 3) throws {
         guard (1...32).contains(textureCacheCapacity) else { throw FilmError.invalid("Texture cache capacity must be 1...32") }
@@ -25,7 +25,7 @@ public actor Renderer {
         else { options.fastMathEnabled = false }
         let library = try device.makeLibrary(source: String(contentsOf: url, encoding: .utf8), options: options)
         var pipelines: [String: any MTLComputePipelineState] = [:]
-        for name in ["passthrough", "filmResponse", "outputTransform"] {
+        for name in ["passthrough", "filmResponse", "monochromeResponse", "outputTransform"] {
             guard let function = library.makeFunction(name: name) else { throw FilmError.invalid("Missing shader \(name)") }
             pipelines[name] = try device.makeComputePipelineState(function: function)
         }
@@ -35,6 +35,7 @@ public actor Renderer {
     /// The sole renderer test seam. Encoded input is colour-managed before Metal;
     /// linear input already belongs to the Working Space. All eleven passes run.
     public func render(image: RenderImage, profile: Profile, settings: RenderSettings = .init()) throws -> RenderedPixels {
+        guard settings.developmentOffset.isFinite else { throw FilmError.invalid("Development Offset must be finite") }
         let input: any MTLTexture
         switch image {
         case .encoded(let data): input = try decoder.decode(data)
@@ -45,13 +46,14 @@ public actor Renderer {
                               withBytes: $0.baseAddress!, bytesPerRow: image.width * 8)
             }
         }
-        let cube = try colourCubeTexture(for: profile)
+        let response = try responseTexture(for: profile, developmentOffset: settings.developmentOffset)
         let scratch = try decoder.makeTexture(width: input.width, height: input.height)
         guard let command = queue.makeCommandBuffer() else { throw FilmError.invalid("Cannot create render command") }
         var source = input
         var destination = scratch
         for pass in Pass.allCases {
-            let name = pass == .filmResponse ? "filmResponse" : pass == .outputTransform ? "outputTransform" : "passthrough"
+            let responseName = profile.metadata.process.isMonochrome ? "monochromeResponse" : "filmResponse"
+            let name = pass == .filmResponse ? responseName : pass == .outputTransform ? "outputTransform" : "passthrough"
             guard let encoder = command.makeComputeCommandEncoder(), let pipeline = pipelines[name] else {
                 throw FilmError.invalid("Cannot encode \(pass)")
             }
@@ -59,7 +61,10 @@ public actor Renderer {
             encoder.setComputePipelineState(pipeline)
             encoder.setTexture(source, index: 0)
             encoder.setTexture(destination, index: 1)
-            encoder.setTexture(cube, index: 2)
+            encoder.setTexture(response, index: 2)
+            let spectralWeight = profile.metadata.monochrome?.spectralWeight ?? [0, 0, 0]
+            var weights = SIMD4<Float>(Float(spectralWeight[0]), Float(spectralWeight[1]), Float(spectralWeight[2]), 0)
+            encoder.setBytes(&weights, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
             var output = settings.output.rawValue
             encoder.setBytes(&output, length: MemoryLayout<UInt32>.size, index: 0)
             encoder.dispatchThreads(MTLSize(width: input.width, height: input.height, depth: 1),
@@ -78,20 +83,37 @@ public actor Renderer {
         return RenderedPixels(width: input.width, height: input.height, rgba: rgba, output: settings.output)
     }
 
-    private func colourCubeTexture(for profile: Profile) throws -> any MTLTexture {
-        // B&W response is introduced with the Baker. Its payload remains lazy here.
-        let selected = profile.metadata.colour.lutVariants.min { abs($0.pushStops) < abs($1.pushStops) }
-        let source = selected == nil ? Profile.identity : profile
-        let name = selected?.lut ?? "identity.lut3d"
-        if let index = colourCubeCache.firstIndex(where: { $0.id == source.cacheID && $0.name == name }) {
-            let entry = colourCubeCache.remove(at: index)
-            colourCubeCache.append(entry)
+    private func responseTexture(for profile: Profile, developmentOffset: Double) throws -> any MTLTexture {
+        let selected = profile.metadata.colour.lutVariants.min { abs($0.pushStops - developmentOffset) < abs($1.pushStops - developmentOffset) }
+        guard let name = profile.metadata.monochrome?.densityCurve ?? selected?.lut else {
+            throw FilmError.invalid("Profile has no Film Response payload")
+        }
+        if let index = responseCache.firstIndex(where: { $0.id == profile.cacheID && $0.name == name }) {
+            let entry = responseCache.remove(at: index)
+            responseCache.append(entry)
             return entry.texture
         }
-        let cube = try ColourCube(size: source.metadata.colour.lutSize, payload: source.readPayload(name))
-        let texture = try makeColourCube(cube)
-        colourCubeCache.append((source.cacheID, name, texture))
-        if colourCubeCache.count > textureCacheCapacity { colourCubeCache.removeFirst() }
+        let payload = try profile.readPayload(name)
+        let texture: any MTLTexture
+        if profile.metadata.process.isMonochrome {
+            let values = try decodeHalfValues(payload)
+            guard values.count == 1024 else { throw FilmError.invalid("Density Curve must contain 1024 entries") }
+            let descriptor = MTLTextureDescriptor()
+            descriptor.textureType = .type1D
+            descriptor.pixelFormat = .r16Float
+            descriptor.width = 1024
+            descriptor.usage = .shaderRead
+            descriptor.storageMode = .shared
+            guard let curve = device.makeTexture(descriptor: descriptor) else { throw FilmError.invalid("Cannot allocate Density Curve") }
+            values.withUnsafeBytes {
+                curve.replace(region: MTLRegionMake1D(0, 1024), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 2048)
+            }
+            texture = curve
+        } else {
+            texture = try makeColourCube(ColourCube(size: profile.metadata.colour.lutSize, payload: payload))
+        }
+        responseCache.append((profile.cacheID, name, texture))
+        if responseCache.count > textureCacheCapacity { responseCache.removeFirst() }
         return texture
     }
 
