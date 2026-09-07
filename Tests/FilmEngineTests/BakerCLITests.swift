@@ -31,8 +31,9 @@ private func baker(_ arguments: [String]) throws -> (Int32, String) {
     let profile = try #require(catalogue.profiles.first)
     #expect(profile.metadata.displayName == "Colour negative study (synthetic)")
     let renderer = try Renderer()
+    // Density Space is read with the runtime scan disabled.
     let result = try await renderer.render(image: .linear(try LinearImage(width: 1, height: 1, rgba: [0.25, 0.25, 0.25, 1])),
-        profile: profile, settings: .init(output: .workingSpace))
+        profile: profile, settings: .init(output: .workingSpace, outputStage: OutputStage.none))
     // This literal is the committed reference density at log10(0.25).
     #expect(abs(Float(result.rgba[0]) - 0.7) < 0.002)
     let report = directory.appendingPathComponent("wedge")
@@ -140,14 +141,19 @@ func everyCurveSetBakesDeterministicallyAndMatchesReference(stock: String) throw
     let shaper = try #require(profile.metadata.colour.inputShaper)
     #expect(profile.metadata.colour.cubeOutput == .displayLinearRec2020)
     #expect(profile.metadata.colour.sourceFingerprint?.count == 64)
-    let gray = Float16((shaper.middleGrayLogExposure - shaper.minimumLogExposure) / (shaper.maximumLogExposure - shaper.minimumLogExposure))
-    let image = try LinearImage(width: 3, height: 1, rgba: [0.3, 0.3, 0.3, 1, gray, gray, gray, 1, 0.7, 0.7, 0.7, 1])
+    // Scene-linear light for shaped coordinates 0.3 and 0.7 either side of mid-grey.
+    func scene(_ coordinate: Double) -> Float16 {
+        let logH = shaper.minimumLogExposure + coordinate * (shaper.maximumLogExposure - shaper.minimumLogExposure)
+        return Float16(0.18 * pow(10, logH - shaper.middleGrayLogExposure))
+    }
+    let image = try LinearImage(width: 3, height: 1, rgba: [scene(0.3), scene(0.3), scene(0.3), 1, 0.18, 0.18, 0.18, 1, scene(0.7), scene(0.7), scene(0.7), 1])
     let renderer = try Renderer()
     var shadows: [Float] = []
     var highlights: [Float] = []
     for offset in [-1.0, 0, 1, 2] {
+        // Cancel the push rating so each variant is probed at the same physical exposure.
         let result = try await renderer.render(image: .linear(image), profile: profile,
-            settings: .init(output: .workingSpace, developmentOffset: offset))
+            settings: .init(output: .workingSpace, exposureStops: offset, developmentOffset: offset))
         for c in 0..<3 { #expect(abs(Float(result.rgba[4 + c]) - 0.18) < 0.006) }
         shadows.append(Float(result.rgba[0]))
         highlights.append(Float(result.rgba[8]))
