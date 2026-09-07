@@ -91,9 +91,9 @@ rendered screenshot or another simulator's profiles.
   done for this Stock. Only offset 0 has published Characteristic Curves; the
   −1/+1/+2 variants are tuned predictions and are never reported as measured.
 - Halation, Grain, the scanner and Reciprocity Failure above one second are
-  artistic. Halation `strength` 0.008 reflects that this Stock has a rem-jet
+  artistic. Halation `strength` 0.008 reflects that this Stock has a Remjet
   anti-halation backing, which Kodak states on page 1; the number itself is
-  published by nobody. It is the value CineStill 800T departs from.
+  published by nobody. It is the value Cinestill 800T departs from.
 
 ## Reference implementation and licensing
 

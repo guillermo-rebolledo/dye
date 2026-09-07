@@ -193,16 +193,18 @@ public actor Renderer {
     /// Preview re-renders the same dimensions on every parameter change.
     private struct HalationPyramid {
         /// The thresholded light before any blur: the pyramid's zero-sigma level, so a
-        /// radius smaller than one blur step still resolves instead of clamping.
+        /// radius finer than the smallest level's blur still resolves instead of clamping.
         let raw: any MTLTexture
         let levels: [any MTLTexture]
         let scratch: [any MTLTexture]
         var count: Int { levels.count }
     }
 
-    /// Six levels reach a 56-pixel sigma, which covers a 220 µm radius on a 36 mm
-    /// frame at 8000 pixels. Small images stop where a level would collapse to one texel.
-    private static let halationLevels = 6
+    /// The pyramid is only as deep as the widest requested radius needs: five or six
+    /// levels at photographic sizes, fewer for a small Preview, and more only when a
+    /// full-resolution frame asks for a halo six could not carry. Nine levels reach a
+    /// 449-pixel sigma; beyond that the radius clamps.
+    private static let maximumHalationLevels = 9
 
     /// Effective Gaussian sigma of the unblurred extract and of each level, in level-0
     /// pixels: that level's own blur plus every downsample and blur that produced it.
@@ -210,7 +212,7 @@ public actor Renderer {
         let blur = 1.5
         var variance = blur * blur
         var sigmas = [0, variance.squareRoot()]
-        for level in 1..<halationLevels {
+        for level in 1..<maximumHalationLevels {
             let scale = pow(2.0, Double(level))
             variance += pow(0.5 * scale / 2, 2) + pow(blur * scale, 2)
             sigmas.append(variance.squareRoot())
@@ -224,10 +226,15 @@ public actor Renderer {
         let metadata = profile.metadata.halation
         let strength = metadata.strength * settings.halationIntensity
         guard strength > 0, metadata.radiusMicrons.contains(where: { $0 > 0 }) else { return nil }
-        let count = min(Self.halationLevels, max(1, Int(log2(Double(min(width, height))))))
-        // Film-Plane Microns become pixels through the Stock's Frame Width, so the
-        // halo covers the same fraction of the frame at any resolution.
-        let pixelsPerMicron = Double(width) / (profile.metadata.format.frameWidthMM * 1000)
+        // Film-Plane Microns become pixels through the Stock's Frame Width, so the halo
+        // covers the same fraction of the frame at any resolution. Frame Width is the
+        // frame's long edge, which a portrait photograph records down its height.
+        let pixelsPerMicron = Double(max(width, height)) / (profile.metadata.format.frameWidthMM * 1000)
+        let largest = metadata.radiusMicrons.max()! * pixelsPerMicron
+        // Deep enough for the widest channel, and never deeper than the image allows:
+        // a level that collapsed to a single texel would carry no radius at all.
+        let reach = Self.halationLevelSigmas.firstIndex { $0 >= largest } ?? Self.maximumHalationLevels
+        let count = min(max(reach, 1), max(1, Int(log2(Double(min(width, height))))))
         let sigmas = Array(Self.halationLevelSigmas.prefix(count + 1))
         var weights = [SIMD4<Float>](repeating: .zero, count: count + 1)
         for channel in 0..<3 {
@@ -237,10 +244,10 @@ public actor Renderer {
             } else {
                 // Split across the two neighbouring levels so the mixture carries the
                 // requested variance. Level scale is geometric, so weighting by variance
-                // keeps the radius continuous in image size rather than stepping.
+                // keeps the radius continuous in image size rather than jumping level.
                 let lower = (0..<count).last { sigmas[$0] <= sigma } ?? 0
-                let low = sigmas[lower] * sigmas[lower], high = sigmas[lower + 1] * sigmas[lower + 1]
-                let fraction = (sigma * sigma - low) / (high - low)
+                let finer = sigmas[lower] * sigmas[lower], coarser = sigmas[lower + 1] * sigmas[lower + 1]
+                let fraction = (sigma * sigma - finer) / (coarser - finer)
                 weights[lower][channel] = Float(1 - fraction)
                 weights[lower + 1][channel] = Float(fraction)
             }

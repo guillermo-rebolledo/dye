@@ -71,10 +71,10 @@ and [measurement sources and assumptions](Curves/portra-400/SOURCES.md).
 Kodak publishes Print Grain Index rather than RMS; RMS and unmeasured model
 parameters are explicitly artistic.
 
-Vision3 500T is digitised from Kodak H-1-5219t, and CineStill 800T is
+Vision3 500T is digitised from Kodak H-1-5219t, and Cinestill 800T is
 [derived from it](Curves/cinestill-800t/SOURCES.md) rather than modelled
 separately: the same Emulsion without its Remjet backing, so the two Profiles ship
 byte-identical Colour Cubes and differ in Halation, Box Speed and Process. Both are
 tungsten Stocks, so a daylight scene records blue and the renderer does not correct
-it. Portra 400, Vision3 500T and CineStill 800T render in the app with exposure,
+it. Portra 400, Vision3 500T and Cinestill 800T render in the app with exposure,
 white balance, development and halation controls; Grain and MTF are still to come.

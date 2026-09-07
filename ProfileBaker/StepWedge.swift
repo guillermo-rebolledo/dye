@@ -25,6 +25,18 @@ struct StepWedgeRow {
     var error: Double { abs(reference - rendered) }
 }
 
+/// A Step Wedge measures the Film Response, so the passes around it are neutralised.
+/// The Scene Illuminant is the balance of the Profile being rendered — the Stock's
+/// own for a shipped Profile, and the identity balance for the Baker's diagnostic
+/// cube — which makes White Balance an exact pass-through even on a tungsten Stock.
+/// Halation is off, because neighbouring wedge samples are unrelated exposures rather
+/// than adjacent points in one scene. The push rating is cancelled by an equal
+/// exposure so each variant is probed at the CSV's own log exposure.
+func wedgeSettings(balancedFor profile: Profile, offset: Double = 0, outputStage: OutputStage? = nil) -> RenderSettings {
+    RenderSettings(output: .workingSpace, temperatureKelvin: profile.metadata.balance, exposureStops: offset,
+                   developmentOffset: offset, halationIntensity: 0, outputStage: outputStage)
+}
+
 /// Composes the Baker/codec and renderer seams; no individual pass is exposed.
 func stepWedge(curves: CurveSet, profile: Profile) async throws -> [StepWedgeRow] {
     guard profile.id == curves.metadata.id, profile.metadata == (try curves.bakedMetadata) else {
@@ -52,15 +64,9 @@ func stepWedge(curves: CurveSet, profile: Profile) async throws -> [StepWedgeRow
                 return [exposure, exposure, exposure, 1]
             }
             let image = try LinearImage(width: samples.count, height: 1, rgba: pixels)
-            // The wedge is a physical exposure: cancel the push rating so the variant's
-            // curve is measured at the CSV's log exposure, and read Density Space
-            // before the runtime scan inverts it. The Scene Illuminant is the Stock
-            // Balance so White Balance passes through and a neutral wedge stays neutral,
-            // and Halation is off because neighbouring wedge samples are unrelated
-            // exposures rather than adjacent points in one scene.
+            // Read Density Space before the runtime scan inverts it.
             let rendered = try await renderer.render(image: .linear(image), profile: profile,
-                settings: .init(output: .workingSpace, temperatureKelvin: curves.metadata.balance, exposureStops: offset,
-                                developmentOffset: offset, halationIntensity: 0, outputStage: OutputStage.none))
+                settings: wedgeSettings(balancedFor: profile, offset: offset, outputStage: OutputStage.none))
             for (index, sample) in samples.enumerated() {
                 rows.append(StepWedgeRow(developmentOffset: offset, channel: channel, logExposure: sample.0,
                     reference: sample.1, rendered: Double(rendered.rgba[index * 4 + channel])))

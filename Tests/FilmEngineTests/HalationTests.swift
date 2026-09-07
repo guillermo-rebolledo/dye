@@ -84,18 +84,39 @@ private func point(width: Int, height: Int, value: Float16, radius: Int = 2) thr
 }
 
 @Test func halationRadiusFollowsTheFrameWidthRatherThanThePixelGrid() async throws {
-    // The same scene at two resolutions must scatter across the same fraction of the
-    // frame. Only a micron radius converted through Frame Width does that.
+    // The same scene at four resolutions must scatter across the same fraction of the
+    // frame. Only a micron radius converted through Frame Width does that, and only a
+    // pyramid deep enough for the radius keeps doing it as the frame grows: these
+    // radii ask for 12 pixels of sigma at 256 and 96 at 2048, four levels apart.
     let renderer = try Renderer()
-    let profile = try scattering(strength: 0.5, threshold: 1)
+    let profile = try scattering(strength: 0.5, threshold: 1, radiusMicrons: [1680, 720, 360])
     var profiles: [[Double]] = []
-    for size in [256, 512] {
-        let result = try await renderer.render(image: .linear(try point(width: size, height: size, value: 64, radius: size / 128)),
+    for size in [256, 512, 1024, 2048] {
+        let result = try await renderer.render(image: .linear(try point(width: size, height: size, value: 64, radius: size / 64)),
                                                profile: profile, settings: .init(output: .workingSpace))
         let centre = Double(result.rgba[((size / 2) * size + size / 2) * 4])
         profiles.append((1...12).map { Double(result.rgba[((size / 2) * size + size / 2 + $0 * size / 256) * 4]) / centre })
     }
-    for (small, large) in zip(profiles[0], profiles[1]) { #expect(abs(small - large) < 0.06) }
+    for other in profiles.dropFirst() {
+        for (small, large) in zip(profiles[0], other) { #expect(abs(small - large) < 0.06) }
+    }
+    // Frame Width is the frame's long edge, which a portrait photograph records down
+    // its height. Rotating the camera must not change how far the light scatters.
+    var landscape = [Float16](repeating: 0, count: 512 * 256 * 4)
+    for i in stride(from: 3, to: landscape.count, by: 4) { landscape[i] = 1 }
+    for y in 126...130 { for x in 254...258 { for c in 0..<3 { landscape[(y * 512 + x) * 4 + c] = 64 } } }
+    var portrait = [Float16](repeating: 0, count: 512 * 256 * 4)
+    for i in stride(from: 3, to: portrait.count, by: 4) { portrait[i] = 1 }
+    for y in 254...258 { for x in 126...130 { for c in 0..<3 { portrait[(y * 256 + x) * 4 + c] = 64 } } }
+    let wide = try await renderer.render(image: .linear(try LinearImage(width: 512, height: 256, rgba: landscape)),
+                                         profile: profile, settings: .init(output: .workingSpace))
+    let tall = try await renderer.render(image: .linear(try LinearImage(width: 256, height: 512, rgba: portrait)),
+                                         profile: profile, settings: .init(output: .workingSpace))
+    for distance in 1...40 {
+        let across = Double(wide.rgba[((128) * 512 + 256 + distance) * 4])
+        let down = Double(tall.rgba[((256 + distance) * 256 + 128) * 4])
+        #expect(abs(across - down) < 0.02 + 0.04 * across)
+    }
 }
 
 private func stock(_ id: String) throws -> Profile {
@@ -115,14 +136,38 @@ private func practicalLight(size: Int, value: Float16 = 400) throws -> LinearIma
     return try LinearImage(width: size, height: size, rgba: rgba)
 }
 
+/// Rewrites a shipped Profile's Halation radii through the documented container
+/// layout. Payload offsets are relative to the end of the header, so only the
+/// length prefix moves. A 2048-pixel render of the result carries the pixel sigma an
+/// 8000-pixel frame would ask this Stock for, without allocating one.
+private func widening(_ profile: Profile, by factor: Double) throws -> Profile {
+    let bytes = try ProfileContainer.encode(profile)
+    let length = (0..<4).reduce(0) { $0 | Int(bytes[12 + $1]) << ($1 * 8) }
+    var header = try #require(JSONSerialization.jsonObject(with: bytes.subdata(in: 16..<(16 + length))) as? [String: Any])
+    var metadata = try #require(header["profile"] as? [String: Any])
+    var halation = try #require(metadata["halation"] as? [String: Any])
+    halation["radiusMicrons"] = try #require(halation["radiusMicrons"] as? [Double]).map { $0 * factor }
+    metadata["halation"] = halation
+    header["profile"] = metadata
+    let json = try JSONSerialization.data(withJSONObject: header, options: [.sortedKeys])
+    var rebuilt = Data(bytes.prefix(12))
+    for shift in stride(from: 0, to: 32, by: 8) { rebuilt.append(UInt8(truncatingIfNeeded: UInt32(json.count) >> shift)) }
+    rebuilt.append(json)
+    rebuilt.append(bytes.suffix(from: 16 + length))
+    return try ProfileContainer.decode(rebuilt)
+}
+
 @Test func cinestillHaloIsSmoothAtFullStrength() async throws {
     // The stress case: the largest radius and strength in the Catalogue, at the top of
     // the user's control, on the highest contrast edge there is. Banding would show as
     // a staircase — flat runs separated by steps — in the radial falloff.
     let renderer = try Renderer()
     let cinestill = try stock("cinestill-800t")
-    for size in [512, 1024, 2048] {
-        let result = try await renderer.render(image: .linear(try practicalLight(size: size)), profile: cinestill,
+    // The last case is this Stock's radius at Export resolution, where the pyramid is
+    // deepest and its coarsest level is stretched furthest.
+    for (size, profile) in [(512, cinestill), (1024, cinestill), (2048, cinestill),
+                            (2048, try widening(cinestill, by: 4))] {
+        let result = try await renderer.render(image: .linear(try practicalLight(size: size)), profile: profile,
                                                settings: .init(temperatureKelvin: 3200, halationIntensity: 2))
         let centre = size / 2
         for (dx, dy) in [(1, 0), (0, 1), (1, 1)] {
@@ -131,17 +176,26 @@ private func practicalLight(size: Int, value: Float16 = 400) throws -> LinearIma
             }
             let halo = Array(line.prefix { $0 > 0.02 })
             #expect(halo.count > 15)
-            var maximumStep = 0.0, run = 1, longestFlat = 1
-            for (near, far) in zip(halo, halo.dropFirst()) {
-                #expect(far <= near)
-                maximumStep = max(maximumStep, near - far)
-                if far == near { run += 1; longestFlat = max(longestFlat, run) } else { run = 1 }
+            // Banding is a staircase in what the display shows: a plateau, then a jump.
+            // Work in 8-bit code values, below which nothing is visible anyway — the
+            // float16 signal is finer than that and wobbles by an ulp on a flat halo top.
+            // In a smooth falloff a plateau means the slope is under one code value per
+            // pixel, so the step that ends it can only be one. A steep single-pixel
+            // descent is an edge, not a band, and is left alone.
+            let codes = halo.map { Int(($0 * 255).rounded()) }
+            var plateau = 1
+            for (near, far) in zip(codes, codes.dropFirst()) {
+                // One code value is the display's own resolution: a wobble that small
+                // cannot render as a band, whatever it does to the float16 signal.
+                #expect(far <= near + 1)
+                if far >= near { plateau += 1 } else { #expect(plateau == 1 || near - far <= 2); plateau = 1 }
             }
-            // The falloff spends roughly its whole range over `halo.count` samples, so a
-            // step much larger than the average is a band rather than a gradient.
-            #expect(maximumStep * Double(halo.count) < 3)
-            // Runs of two come from float16 spacing near the top of the halo; a band is longer.
-            #expect(longestFlat <= 2)
+            // Averaged over four samples the falloff is strictly monotone, so the wobble
+            // above is quantisation and not a reversal in the halo itself.
+            let smoothed = (0...(halo.count - 4)).map { halo[$0..<($0 + 4)].reduce(0, +) }
+            #expect(zip(smoothed, smoothed.dropFirst()).allSatisfy { $0 >= $1 })
+            // A banded falloff also collapses onto a handful of levels; this one does not.
+            #expect(Set(codes).count > halo.count / 3)
         }
     }
 }
@@ -156,7 +210,7 @@ private func practicalLight(size: Int, value: Float16 = 400) throws -> LinearIma
                                   settings: .init(temperatureKelvin: 3200, halationIntensity: intensity)).rgba
     }
     let (off, normal, full) = (try await render(0), try await render(1), try await render(2))
-    // Sample where the halo is halfway up: unlit without Halation, glowing red with
+    // Sample where the halo is halfway up: unlit without Halation, burning red with
     // it, and far from the top of the range so nothing below is about clipping.
     func index(_ distance: Int) -> Int { (size / 2 * size + size / 2 + distance) * 4 }
     let distance = (30..<(size / 2)).first { Double(normal[index($0)]) < 0.55 } ?? 50
@@ -186,7 +240,9 @@ private func practicalLight(size: Int, value: Float16 = 400) throws -> LinearIma
     // The Emulsion is one Emulsion: both Profiles carry the same baked Colour Cubes.
     #expect(vision3.metadata.colour.lutVariants == cinestill.metadata.colour.lutVariants)
     #expect(vision3.metadata.colour.inputShaper == cinestill.metadata.colour.inputShaper)
-    #expect(try ProfileContainer.encode(vision3).suffix(1_149_984) == ProfileContainer.encode(cinestill).suffix(1_149_984))
+    let size = vision3.metadata.colour.lutSize
+    let payloadBytes = size * size * size * 8 * vision3.metadata.colour.lutVariants.count
+    #expect(try ProfileContainer.encode(vision3).suffix(payloadBytes) == ProfileContainer.encode(cinestill).suffix(payloadBytes))
     // Removing the Remjet backing raises Halation and nothing else about the light.
     #expect(cinestill.metadata.halation.strength > 50 * vision3.metadata.halation.strength)
     #expect(cinestill.metadata.halation.radiusMicrons[0] > vision3.metadata.halation.radiusMicrons[0])

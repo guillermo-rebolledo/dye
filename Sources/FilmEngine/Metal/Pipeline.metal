@@ -68,13 +68,13 @@ kernel void halationDownsample(texture2d<half, access::read> input [[texture(0)]
 constant float HALATION_BLUR_SIGMA = 1.5f;
 constant int HALATION_BLUR_RADIUS = 5;
 
-static void halationBlur(texture2d<half, access::read> input, texture2d<half, access::write> output, uint2 p, int2 step) {
+static void halationBlur(texture2d<half, access::read> input, texture2d<half, access::write> output, uint2 p, int2 axis) {
     int2 limit = int2(input.get_width() - 1, input.get_height() - 1);
     float3 sum = 0.0f;
     float total = 0.0f;
     for (int i = -HALATION_BLUR_RADIUS; i <= HALATION_BLUR_RADIUS; ++i) {
         float weight = exp(-0.5f * float(i * i) / (HALATION_BLUR_SIGMA * HALATION_BLUR_SIGMA));
-        sum += float3(input.read(uint2(clamp(int2(p) + step * i, int2(0), limit))).rgb) * weight;
+        sum += float3(input.read(uint2(clamp(int2(p) + axis * i, int2(0), limit))).rgb) * weight;
         total += weight;
     }
     output.write(half4(half3(sum / total), 1.0h), p);
@@ -119,19 +119,20 @@ kernel void halationUpsample(texture2d<half, access::sample> coarse [[texture(0)
 }
 
 // The tinted halo goes back into the linear signal the Film Response then reads.
-// `weight` is the share the unblurred extract keeps, for a radius below one blur step.
+// `rawWeight` is the share the unblurred extract keeps, for a radius finer than
+// the smallest level's own blur.
 kernel void halationComposite(texture2d<half, access::read> input [[texture(0)]],
                               texture2d<half, access::write> output [[texture(1)]],
                               texture2d<half, access::read> halo [[texture(2)]],
                               texture2d<half, access::read> raw [[texture(3)]],
                               constant float4 &parameters [[buffer(8)]],
                               constant float4 &tint [[buffer(9)]],
-                              constant float4 &weight [[buffer(10)]],
+                              constant float4 &rawWeight [[buffer(10)]],
                               uint2 p [[thread_position_in_grid]]) {
     if (p.x >= output.get_width() || p.y >= output.get_height()) return;
     half4 pixel = input.read(p);
-    float3 halo3 = float3(halo.read(p).rgb) + float3(raw.read(p).rgb) * weight.xyz;
-    output.write(half4(half3(float3(pixel.rgb) + halo3 * parameters.z * tint.xyz), pixel.a), p);
+    float3 scattered = float3(halo.read(p).rgb) + float3(raw.read(p).rgb) * rawWeight.xyz;
+    output.write(half4(half3(float3(pixel.rgb) + scattered * parameters.z * tint.xyz), pixel.a), p);
 }
 
 static float3 tetrahedral(texture3d<half, access::read> cube, float3 coordinate) {

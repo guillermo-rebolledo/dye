@@ -18,7 +18,9 @@ A missing required marker is an error. Measured means supported by a cited sourc
 all bundled study Profiles are synthetic and mark every parameter artistic.
 
 All radii remain in film-plane microns. At render time the conversion is
-`radiusMicrons / (format.frameWidthMM * 1000) * imageWidth`. Format widths are
+`radiusMicrons / (format.frameWidthMM * 1000) * max(imageWidth, imageHeight)`:
+Frame Width is the frame's long edge, which a portrait photograph records down its
+height. Format widths are
 36 mm (135), 56 mm (120, nominal 6×6), and 120 mm (4×5, exposed long edge).
 A future format/aspect extension can refine these nominal frame widths.
 
@@ -42,7 +44,7 @@ so a derivation records only what changed; the rest replace. The resulting paylo
 are byte-identical to the parent's, and the source fingerprint covers the parent's
 files and the override document together.
 
-CineStill 800T derives from Vision3 500T this way: the same Emulsion without its
+Cinestill 800T derives from Vision3 500T this way: the same Emulsion without its
 Remjet backing, differing in Halation, Box Speed and Process and nothing else.
 
 ## Binary layout

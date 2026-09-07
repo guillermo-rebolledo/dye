@@ -1,6 +1,6 @@
 {
   "derivedFrom": "vision3-500t",
-  "displayName": "CineStill 800T",
+  "displayName": "Cinestill 800T",
   "halation": {
     "radiusMicrons": [
       420,

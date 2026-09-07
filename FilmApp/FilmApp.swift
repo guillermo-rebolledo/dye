@@ -144,9 +144,9 @@ struct EditorView: View {
     /// 100% is the Stock's own scattering, so the control reads as a departure from it.
     private var halationHint: String {
         let intensity = model.settings.halationIntensity
-        let reach = model.profile.metadata.halation.radiusMicrons[0]
+        let reach = model.halationReachMicrons
         let base = "Light passing through the emulsion reflects off the back of the film and re-exposes it from behind, "
-            + "reaching about \(Int(reach)) µm furthest in red. It happens before the density curves, not as a glow added afterwards."
+            + "reaching about \(Int(reach)) µm furthest in red. It happens before the density curves, not as an effect added afterwards."
         if abs(intensity - 1) < 0.025 { return "At this stock's own strength. " + base }
         return String(format: "At %.0f%% of this stock's own strength. ", intensity * 100) + base
     }

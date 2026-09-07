@@ -4,7 +4,7 @@ MEM-243 adds a 31-band, 400–700 nm model to the macOS Baker. Authoring support
 31–81 uniformly spaced bands if all three spectral CSVs share the same grid.
 The five foundation studies retain their explicit independent-channel fixture
 model. Portra uses `spectral.json`; malformed inputs never fall back to a study.
-Vision3 500T uses the same model over its own digitised sources, and CineStill
+Vision3 500T uses the same model over its own digitised sources, and Cinestill
 800T is a derivation of Vision3 500T rather than a second run of the model —
 see [the profile format](profile-format.md) for what a derivation may restate.
 
@@ -72,9 +72,10 @@ faster by the same number of stops; the validation harness passes an equal
   before scan inversion, because positive display RGB is not optical density.
 - `scan-output`: all offsets, off-grid neutral and chromatic probes of the actual
   supplied Profile, fed as scene-linear light so the runtime shaper is exercised.
-  Both stages render with the Scene Illuminant set to the Stock Balance, so White
-  Balance passes through and a neutral probe stays neutral on a tungsten Stock, and
-  with Halation off, because adjacent wedge samples are unrelated exposures.
+  Both stages render with the Scene Illuminant set to the balance of the Profile
+  being rendered — the Stock's own, and the identity balance for the diagnostic cube
+  — so White Balance passes through and a neutral probe stays neutral on a tungsten
+  Stock, and with Halation off, because adjacent wedge samples are unrelated exposures.
   Compare the renderer to direct forward spectral evaluation
   to 0.03 in display-linear channel values. This bounds bake/interpolation error;
   it is **not** independent proof of the artistic colour or development model.

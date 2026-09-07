@@ -230,7 +230,7 @@ func portraChromaticResponseDependsOnSpectralInputs(feature: String) async throw
 #endif
 
 #if os(macOS)
-/// Copies the CineStill derivation and the Vision3 Curve Set it reads into one tree.
+/// Copies the Cinestill derivation and the Vision3 Curve Set it reads into one tree.
 private func derivedCurveSets(in directory: URL) throws -> URL {
     let curves = directory.appendingPathComponent("Curves")
     try FileManager.default.createDirectory(at: curves, withIntermediateDirectories: true)

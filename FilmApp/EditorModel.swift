@@ -33,6 +33,9 @@ import FilmEngine
     /// Whether the Stock scatters at all; a Profile with no Halation has no control.
     var hasHalation: Bool { profile.metadata.halation.strength > 0 }
 
+    /// How far the Stock scatters in its widest channel, in Film-Plane Microns.
+    var halationReachMicrons: Double { profile.metadata.halation.radiusMicrons[0] }
+
     /// Baked Development Offsets, or nil when the Stock has a single variant.
     var developmentRange: ClosedRange<Double>? {
         let stops = profile.metadata.colour.lutVariants.map(\.pushStops)
