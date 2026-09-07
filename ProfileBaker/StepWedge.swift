@@ -54,9 +54,13 @@ func stepWedge(curves: CurveSet, profile: Profile) async throws -> [StepWedgeRow
             let image = try LinearImage(width: samples.count, height: 1, rgba: pixels)
             // The wedge is a physical exposure: cancel the push rating so the variant's
             // curve is measured at the CSV's log exposure, and read Density Space
-            // before the runtime scan inverts it.
+            // before the runtime scan inverts it. The Scene Illuminant is the Stock
+            // Balance so White Balance passes through and a neutral wedge stays neutral,
+            // and Halation is off because neighbouring wedge samples are unrelated
+            // exposures rather than adjacent points in one scene.
             let rendered = try await renderer.render(image: .linear(image), profile: profile,
-                settings: .init(output: .workingSpace, exposureStops: offset, developmentOffset: offset, outputStage: OutputStage.none))
+                settings: .init(output: .workingSpace, temperatureKelvin: curves.metadata.balance, exposureStops: offset,
+                                developmentOffset: offset, halationIntensity: 0, outputStage: OutputStage.none))
             for (index, sample) in samples.enumerated() {
                 rows.append(StepWedgeRow(developmentOffset: offset, channel: channel, logExposure: sample.0,
                     reference: sample.1, rendered: Double(rendered.rgba[index * 4 + channel])))

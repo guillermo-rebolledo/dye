@@ -43,11 +43,44 @@ struct CharacteristicCurve {
 
 struct CurveSet {
     let metadata: FilmProfile
+    /// Where the CSVs live. A derived Stock reads its parent's, because it models the
+    /// same Emulsion; nothing else about a derivation may reach the spectral model.
     let directory: URL
+    /// The authored override document, for a Stock derived from another Profile.
+    private let derivation: Data?
+
+    /// Remjet removal changes what light does inside the film and what the box says.
+    /// Everything the Colour Cubes are baked from stays with the parent Curve Set.
+    static let derivableKeys: Set<String> = ["derivedFrom", "id", "displayName", "process",
+                                             "nominalISO", "trueISO", "halation", "provenance"]
+
     init(directory: URL) throws {
-        self.directory = directory
-        metadata = try JSONDecoder().decode(FilmProfile.self, from: Data(contentsOf: directory.appendingPathComponent("stock.json")))
+        let document = try Data(contentsOf: directory.appendingPathComponent("stock.json"))
+        let authored = try JSONSerialization.jsonObject(with: document) as? [String: Any] ?? [:]
+        if let parent = authored["derivedFrom"] as? String {
+            guard Self.derivableKeys.isSuperset(of: authored.keys) else {
+                throw FilmError.invalid("A derived Stock may only override \(Self.derivableKeys.sorted().joined(separator: ", "))")
+            }
+            self.directory = directory.deletingLastPathComponent().appendingPathComponent(parent)
+            derivation = document
+            var merged = try JSONSerialization.jsonObject(with: Data(contentsOf: self.directory.appendingPathComponent("stock.json"))) as? [String: Any] ?? [:]
+            // Provenance merges key by key, so a derivation records only what it changed.
+            if let overrides = authored["provenance"] as? [String: String] {
+                var provenance = merged["provenance"] as? [String: String] ?? [:]
+                provenance.merge(overrides) { _, new in new }
+                merged["provenance"] = provenance
+            }
+            for (key, value) in authored where key != "provenance" { merged[key] = value }
+            metadata = try JSONDecoder().decode(FilmProfile.self, from: JSONSerialization.data(withJSONObject: merged))
+        } else {
+            self.directory = directory
+            derivation = nil
+            metadata = try JSONDecoder().decode(FilmProfile.self, from: document)
+        }
         try metadata.validate()
+        guard (derivation == nil) == (metadata.derivedFrom == nil) else {
+            throw FilmError.invalid("A derived Profile must name its parent in its own stock.json")
+        }
         guard metadata.colour.sourceFingerprint == nil else {
             throw FilmError.invalid("Source fingerprints are derived by the Baker, not authored in stock.json")
         }
@@ -66,6 +99,11 @@ struct CurveSet {
             for name in names.sorted() {
                 hash.update(data: Data((name + "\0").utf8))
                 hash.update(data: Data(SHA256.hash(data: try Data(contentsOf: directory.appendingPathComponent(name)))))
+            }
+            // The parent's stock.json is already hashed above; this covers the overrides.
+            if let derivation {
+                hash.update(data: Data("derived.stock.json\0".utf8))
+                hash.update(data: Data(SHA256.hash(data: derivation)))
             }
             var result = metadata
             result.colour.sourceFingerprint = hash.finalize().map { String(format: "%02x", $0) }.joined()

@@ -17,10 +17,33 @@ format and, when present, monochrome. Identity fields are not physical parameter
 A missing required marker is an error. Measured means supported by a cited source;
 all bundled study Profiles are synthetic and mark every parameter artistic.
 
-All radii remain in film-plane microns. At render time the conversion will be
+All radii remain in film-plane microns. At render time the conversion is
 `radiusMicrons / (format.frameWidthMM * 1000) * imageWidth`. Format widths are
 36 mm (135), 56 mm (120, nominal 6×6), and 120 mm (4×5, exposed long edge).
 A future format/aspect extension can refine these nominal frame widths.
+
+`halation.strength` and each `halation.tint` component are 0…1, `halation.threshold`
+is positive, and `halation.radiusMicrons` must not increase from red to blue: longer
+wavelengths scatter furthest through the base. See [the Halation Pass](halation.md)
+for what the renderer does with them.
+
+## Derived Profiles
+
+A Profile that models another's Emulsion names it in `derivedFrom`. This is lineage
+rather than a physical parameter, so like `colour.sourceFingerprint` it carries no
+Provenance marker; it is absent from Profiles baked from their own Curve Set, and a
+Profile may not derive from itself.
+
+Its authoring directory holds a `stock.json` containing **only** overrides. The
+Baker accepts `derivedFrom`, `id`, `displayName`, `process`, `nominalISO`,
+`trueISO`, `halation` and `provenance`, reads every CSV and `spectral.json` from
+the parent's directory, and rejects any other key. `provenance` merges key by key
+so a derivation records only what changed; the rest replace. The resulting payloads
+are byte-identical to the parent's, and the source fingerprint covers the parent's
+files and the override document together.
+
+CineStill 800T derives from Vision3 500T this way: the same Emulsion without its
+Remjet backing, differing in Halation, Box Speed and Process and nothing else.
 
 ## Binary layout
 

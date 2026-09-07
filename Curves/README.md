@@ -24,6 +24,8 @@ for its measured inputs and explicitly artistic assumptions.
 - For measured data, add `SOURCES.md` citing the manufacturer, datasheet edition,
   page/figure and digitisation method. Mark only supported parameters `measured`.
   Radii remain microns; Halation values are artistic, not datasheet measurements.
+- A Stock that shares another's Emulsion gets a directory containing `stock.json`
+  and `SOURCES.md` only. See [Derived Curve Sets](#derived-curve-sets) below.
 
 CSVs are UTF-8, one curve per file, with this exact header:
 
@@ -70,9 +72,27 @@ swift test
 
 This writes into `Sources/FilmEngine/Catalogue`. The package bundles that directory,
 so new Profiles appear in the app picker on the next build with no source changes
-and render with the exposure, white balance and development controls. Halation,
+and render with the exposure, white balance, development and halation controls.
 Grain and MTF are not yet applied. The CLI is a separate macOS executable product
 and is not a dependency of FilmApp or the FilmEngine library.
+
+Step Wedges render with `halationIntensity: 0` and the Scene Illuminant set to the
+Stock Balance, so they measure the Film Response rather than the spatial pass in
+front of it or the White Balance adaptation behind it.
+
+## Derived Curve Sets
+
+A Stock that is another Stock's Emulsion does not get its own measurements. Give it
+a directory holding a `stock.json` of **overrides only**, naming its parent in
+`derivedFrom`; the Baker reads every CSV and `spectral.json` from the parent's
+directory and emits byte-identical Colour Cubes. Only `derivedFrom`, `id`,
+`displayName`, `process`, `nominalISO`, `trueISO`, `halation` and `provenance` may
+be overridden, so the diff can only say what actually differs. The source
+fingerprint covers the parent Curve Set and the override document together, so
+changing either invalidates a Profile baked from the other.
+
+`cinestill-800t` derives from `vision3-500t`: identical film without the Remjet
+anti-halation backing, so the only physical parameter it restates is Halation.
 
 ## What the foundation study model does
 

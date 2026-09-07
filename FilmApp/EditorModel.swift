@@ -24,6 +24,15 @@ import FilmEngine
     var profile: Profile { catalogue.first { $0.id == selectedStock } ?? .identity }
     var isIdentity: Bool { selectedStock == "identity" }
 
+    /// The Profile this Stock derives from, when it models another's Emulsion.
+    var derivedFrom: Profile? {
+        guard let parent = profile.metadata.derivedFrom else { return nil }
+        return catalogue.first { $0.id == parent }
+    }
+
+    /// Whether the Stock scatters at all; a Profile with no Halation has no control.
+    var hasHalation: Bool { profile.metadata.halation.strength > 0 }
+
     /// Baked Development Offsets, or nil when the Stock has a single variant.
     var developmentRange: ClosedRange<Double>? {
         let stops = profile.metadata.colour.lutVariants.map(\.pushStops)
