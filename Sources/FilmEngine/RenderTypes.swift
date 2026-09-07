@@ -53,6 +53,9 @@ public struct RenderSettings: Sendable, Equatable, Hashable {
     /// Push or pull in stops. Pushing by one stop rates the Stock one stop faster
     /// (a −1 EV exposure offset) and develops with the +1 Colour Cube.
     public var developmentOffset: Double
+    /// Halation scaled relative to the Profile's own strength: 1 is the Profile
+    /// value, 0 disables the Pass, 2 is the top of the user's 0–200% control.
+    public var halationIntensity: Double
     /// Nil follows the Profile. `none` returns Density Space for Density Space
     /// Colour Cubes and is how Step Wedges read measured density.
     public var outputStage: OutputStage?
@@ -62,14 +65,16 @@ public struct RenderSettings: Sendable, Equatable, Hashable {
     public static let tintRange = -100.0...100.0
     public static let exposureRange = -6.0...6.0
     public static let developmentRange = -3.0...3.0
+    public static let halationRange = 0.0...2.0
 
     public init(output: Output = .displayP3, temperatureKelvin: Double = RenderSettings.defaultTemperatureKelvin, tint: Double = 0,
-                exposureStops: Double = 0, developmentOffset: Double = 0, outputStage: OutputStage? = nil) {
+                exposureStops: Double = 0, developmentOffset: Double = 0, halationIntensity: Double = 1, outputStage: OutputStage? = nil) {
         self.output = output
         self.temperatureKelvin = temperatureKelvin
         self.tint = tint
         self.exposureStops = exposureStops
         self.developmentOffset = developmentOffset
+        self.halationIntensity = halationIntensity
         self.outputStage = outputStage
     }
 
@@ -81,6 +86,9 @@ public struct RenderSettings: Sendable, Equatable, Hashable {
         guard exposureStops.isFinite, Self.exposureRange.contains(exposureStops) else { throw FilmError.invalid("Exposure must be within ±6 stops") }
         guard developmentOffset.isFinite, Self.developmentRange.contains(developmentOffset) else {
             throw FilmError.invalid("Development Offset must be within ±3 stops")
+        }
+        guard halationIntensity.isFinite, Self.halationRange.contains(halationIntensity) else {
+            throw FilmError.invalid("Halation intensity must be 0...2")
         }
     }
 }

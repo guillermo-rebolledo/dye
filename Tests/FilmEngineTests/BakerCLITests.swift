@@ -45,11 +45,13 @@ private func baker(_ arguments: [String]) throws -> (Int32, String) {
 #endif
 
 #if os(macOS)
-@Test(arguments: ["study-c41", "study-e6", "study-bw-silver", "study-bw-chromogenic", "study-ecn2", "portra-400"])
+@Test(arguments: ["study-c41", "study-e6", "study-bw-silver", "study-bw-chromogenic", "study-ecn2", "portra-400",
+                  "vision3-500t", "cinestill-800t"])
 func everyCurveSetBakesDeterministicallyAndMatchesReference(stock: String) throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
+    // A derived Stock reads its parent's Curve Set from the sibling directory.
     let curves = repository.appendingPathComponent("Curves/\(stock)")
     let output = directory.appendingPathComponent("a.filmprofile")
     let second = directory.appendingPathComponent("b.filmprofile")
@@ -224,5 +226,54 @@ func portraChromaticResponseDependsOnSpectralInputs(feature: String) async throw
     json["provenance"] = provenance
     try JSONSerialization.data(withJSONObject: json).write(to: metadata)
     #expect(try baker(["bake", curves.path, destination.path]).0 != 0)
+}
+#endif
+
+#if os(macOS)
+/// Copies the Cinestill derivation and the Vision3 Curve Set it reads into one tree.
+private func derivedCurveSets(in directory: URL) throws -> URL {
+    let curves = directory.appendingPathComponent("Curves")
+    try FileManager.default.createDirectory(at: curves, withIntermediateDirectories: true)
+    for stock in ["vision3-500t", "cinestill-800t"] {
+        try FileManager.default.copyItem(at: repository.appendingPathComponent("Curves/\(stock)"),
+                                         to: curves.appendingPathComponent(stock))
+    }
+    return curves
+}
+
+@Test func aDerivedStockMayOnlyRestateWhatRemjetRemovalChanges() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let curves = try derivedCurveSets(in: directory)
+    let metadata = curves.appendingPathComponent("cinestill-800t/stock.json")
+    let authored = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: metadata)) as? [String: Any])
+    let output = directory.appendingPathComponent("derived.filmprofile")
+    #expect(try baker(["bake", curves.appendingPathComponent("cinestill-800t").path, output.path]).0 == 0)
+    // Anything the Colour Cubes are baked from has to stay with the parent, and a
+    // derivation must name a parent that exists.
+    for (key, value) in [("balance", 5500), ("mtf", ["cyclesPerMM": [1, 2], "response": [1, 0.5]]),
+                         ("grain", ["rmsGranularity": 0.5]), ("derivedFrom", "portra-400")] as [(String, Any)] {
+        var changed = authored
+        changed[key] = value
+        try JSONSerialization.data(withJSONObject: changed).write(to: metadata)
+        let invalid = directory.appendingPathComponent("invalid.filmprofile")
+        let (status, message) = try baker(["bake", curves.appendingPathComponent("cinestill-800t").path, invalid.path])
+        #expect(status != 0, Comment(rawValue: "overriding \(key) was accepted: \(message)"))
+        #expect(!FileManager.default.fileExists(atPath: invalid.path))
+    }
+    // A Profile whose parent Curve Set has since changed is rejected before any
+    // numerical comparison, exactly as a Profile baked from its own sources is.
+    try JSONSerialization.data(withJSONObject: authored).write(to: metadata)
+    let red = curves.appendingPathComponent("vision3-500t/neutral.red.csv")
+    let shifted = try String(contentsOf: red, encoding: .utf8).components(separatedBy: .newlines).map { line -> String in
+        let fields = line.split(separator: ",")
+        guard fields.count == 2, let density = Double(fields[1]) else { return line }
+        return "\(fields[0]),\(density + 0.1)"
+    }.joined(separator: "\n")
+    try shifted.write(to: red, atomically: true, encoding: .utf8)
+    let (status, _) = try baker(["validate", curves.appendingPathComponent("cinestill-800t").path, output.path,
+                                 directory.appendingPathComponent("wedge").path, "0.03"])
+    #expect(status != 0)
 }
 #endif

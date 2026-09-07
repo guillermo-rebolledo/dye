@@ -96,10 +96,20 @@ struct EditorView: View {
                 }
             }
             .pickerStyle(.menu)
+            if let parent = model.derivedFrom {
+                Text("The same emulsion as \(parent.metadata.displayName), modelled without its remjet backing.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if let range = model.developmentRange {
                 LabeledSlider(title: "Development", value: $model.settings.developmentOffset, range: range, step: 0.1,
                               format: developmentLabel)
                 Text(developmentHint).font(.caption).foregroundStyle(.secondary)
+            }
+            if model.hasHalation {
+                LabeledSlider(title: "Halation", value: $model.settings.halationIntensity,
+                              range: RenderSettings.halationRange, step: 0.05,
+                              format: { String(format: "%.0f%%", $0 * 100) })
+                Text(halationHint).font(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -129,6 +139,16 @@ struct EditorView: View {
         if abs(offset) < 0.05 { return "Rated at EI \(Int(rating.rounded())) and developed normally." }
         let change = offset > 0 ? "raises contrast and collapses shadow separation" : "lowers contrast and opens shadows"
         return String(format: "Rated at EI %d, developed %+.1f stops. Blends the nearest baked variants; %@.", Int(rating.rounded()), offset, change)
+    }
+
+    /// 100% is the Stock's own scattering, so the control reads as a departure from it.
+    private var halationHint: String {
+        let intensity = model.settings.halationIntensity
+        let reach = model.halationReachMicrons
+        let base = "Light passing through the emulsion reflects off the back of the film and re-exposes it from behind, "
+            + "reaching about \(Int(reach)) µm furthest in red. It happens before the density curves, not as an effect added afterwards."
+        if abs(intensity - 1) < 0.025 { return "At this stock's own strength. " + base }
+        return String(format: "At %.0f%% of this stock's own strength. ", intensity * 100) + base
     }
 
     private var outputSubtitle: String {

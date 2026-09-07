@@ -4,6 +4,9 @@ MEM-243 adds a 31-band, 400–700 nm model to the macOS Baker. Authoring support
 31–81 uniformly spaced bands if all three spectral CSVs share the same grid.
 The five foundation studies retain their explicit independent-channel fixture
 model. Portra uses `spectral.json`; malformed inputs never fall back to a study.
+Vision3 500T uses the same model over its own digitised sources, and Cinestill
+800T is a derivation of Vision3 500T rather than a second run of the model —
+see [the profile format](profile-format.md) for what a derivation may restate.
 
 ## Forward calculation
 
@@ -16,9 +19,11 @@ model. Portra uses `spectral.json`; malformed inputs never fall back to a study.
 2. Integrate scene spectral power against each measured layer sensitivity with
    trapezoidal endpoint weights. Calibrate neutral exposure against the same
    reference spectrum; the common wavelength interval cancels in normalization.
-3. Interpolate measured Status M Characteristic Curves in physical log exposure.
-   Development changes slope and shadow separation around log H = −1.44, not
-   brightness. A two-evaluation DIR model uses developed density in other layers
+3. Interpolate the measured Characteristic Curves in physical log exposure.
+   Development changes slope and shadow separation around the Curve Set's own
+   reference gray — log H = −1.44 for Portra, −1.54 for Vision3 — not brightness.
+   Portra's curves are Status M; Vision3's are Kodak's ECN-2 densitometry, read
+   here as if they were Status M. A two-evaluation DIR model uses developed density in other layers
    to inhibit local exposure. Subtract the neutral-development contribution
    already present in the published curves, avoiding double-counting DIR.
 4. Separate the measured aggregate midscale-minus-minimum absorption into three
@@ -36,7 +41,7 @@ model. Portra uses `spectral.json`; malformed inputs never fall back to a study.
 
 ## Colour Cube contract
 
-Portra's four 33³ RGBA float16 payloads represent offsets −1, 0, +1, +2, with
+Each spectral Stock's four 33³ RGBA float16 payloads represent offsets −1, 0, +1, +2, with
 red changing fastest. RGB payload values are **display-linear Rec.2020**; alpha
 is 1. `colour.cubeOutput = displayLinearRec2020` distinguishes them from the
 foundation studies' Density Space cubes. Do not invert a scan cube again.
@@ -48,8 +53,8 @@ logH = log10(max(sceneLinearRGB, epsilon) / 0.18) + middleGrayLogExposure
 coordinate = clamp((logH - minimumLogExposure) / (maximumLogExposure - minimumLogExposure), 0, 1)
 ```
 
-The bounds are −3.5…0.6 lux-second log exposure, with reference gray at −1.44;
-roughly 13.6 stops. The Baker evaluates physical exposure at those nodes. Below
+Portra's bounds are −3.5…0.6 lux-second log exposure with reference gray at −1.44,
+roughly 13.6 stops; Vision3 500T's are −4.05…1.05 with reference gray at −1.54. The Baker evaluates physical exposure at those nodes. Below
 and above that domain the renderer clamps to the endpoints. The renderer applies
 this shaper itself whenever `colour.inputShaper` is present, after White Balance
 and Exposure, so callers always supply scene-linear Working Space light. The
@@ -67,6 +72,10 @@ faster by the same number of stops; the validation harness passes an equal
   before scan inversion, because positive display RGB is not optical density.
 - `scan-output`: all offsets, off-grid neutral and chromatic probes of the actual
   supplied Profile, fed as scene-linear light so the runtime shaper is exercised.
+  Both stages render with the Scene Illuminant set to the balance of the Profile
+  being rendered — the Stock's own, and the identity balance for the diagnostic cube
+  — so White Balance passes through and a neutral probe stays neutral on a tungsten
+  Stock, and with Halation off, because adjacent wedge samples are unrelated exposures.
   Compare the renderer to direct forward spectral evaluation
   to 0.03 in display-linear channel values. This bounds bake/interpolation error;
   it is **not** independent proof of the artistic colour or development model.

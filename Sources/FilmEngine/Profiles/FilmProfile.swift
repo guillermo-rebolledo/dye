@@ -42,6 +42,9 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
     public var halation: Halation
     public var mtf: MTF
     public var reciprocity: Reciprocity
+    /// The Profile this one is derived from, when it models the same Emulsion rather
+    /// than its own Curve Set. Lineage, not a physical parameter, so it has no marker.
+    public var derivedFrom: String?
     /// Dotted schema paths, one marker per physical parameter (arrays count as one).
     public var provenance: [String: Provenance]
 
@@ -80,11 +83,17 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         public var channelCorrelation: Double
         public var channelRadiusScale: [Double]
     }
+    /// `strength` is the fraction of above-threshold light scattered back into the
+    /// Emulsion, `threshold` the Working Space value the smooth knee is centred on,
+    /// and `radiusMicrons` the per-channel scattering sigma in Film-Plane Microns.
     public struct Halation: Codable, Equatable, Sendable {
         public var strength: Double
         public var threshold: Double
         public var radiusMicrons: [Double]
         public var tint: [Double]
+        public init(strength: Double, threshold: Double, radiusMicrons: [Double], tint: [Double]) {
+            self.strength = strength; self.threshold = threshold; self.radiusMicrons = radiusMicrons; self.tint = tint
+        }
     }
     public struct MTF: Codable, Equatable, Sendable {
         public var cyclesPerMM: [Double]
@@ -118,8 +127,14 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         try require(nonnegative([grain.rmsGranularity, grain.grainRadiusMicrons], count: 2) &&
                     nonnegative(grain.densityResponse, count: 32) && nonnegative(grain.channelRadiusScale, count: 3) &&
                     (0...1).contains(grain.channelCorrelation), "invalid Grain parameters")
-        try require(nonnegative([halation.strength, halation.threshold], count: 2) &&
-                    nonnegative(halation.radiusMicrons, count: 3) && nonnegative(halation.tint, count: 3), "invalid Halation parameters")
+        try require(nonnegative([halation.strength, halation.threshold], count: 2) && halation.strength <= 1 && halation.threshold > 0 &&
+                    nonnegative(halation.radiusMicrons, count: 3) && halation.radiusMicrons.allSatisfy { $0 <= 5000 } &&
+                    nonnegative(halation.tint, count: 3) && halation.tint.allSatisfy { $0 <= 1 }, "invalid Halation parameters")
+        // Longer wavelengths scatter furthest through the base, so the red radius
+        // leads. A Profile that inverts this is describing something else.
+        try require(halation.radiusMicrons[0] >= halation.radiusMicrons[1] && halation.radiusMicrons[1] >= halation.radiusMicrons[2],
+                    "Halation radii must not increase from red to blue")
+        try require(derivedFrom.map { !$0.isEmpty && $0 != id } ?? true, "a Profile cannot be derived from itself")
         try require(!mtf.cyclesPerMM.isEmpty && nonnegative(mtf.cyclesPerMM, count: mtf.response.count) &&
                     nonnegative(mtf.response, count: mtf.cyclesPerMM.count) &&
                     zip(mtf.cyclesPerMM, mtf.cyclesPerMM.dropFirst()).allSatisfy { $0 < $1 }, "invalid MTF")

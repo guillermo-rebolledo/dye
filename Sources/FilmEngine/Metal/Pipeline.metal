@@ -27,6 +27,114 @@ kernel void exposure(texture2d<half, access::read> input [[texture(0)]],
     output.write(half4(half3(float3(pixel.rgb) * gain), pixel.a), p);
 }
 
+// Pass 5, Halation. Light that passes through the Emulsion reflects off the back
+// of the base and re-exposes it from behind, so this runs on scene-linear light
+// before the Film Response rather than as a post effect on the developed image.
+//
+// `parameters` = (threshold, knee half-width, strength, unused). The knee is the
+// C1 quadratic that joins zero to `x - threshold` across ±knee, so a highlight
+// entering the halo does not switch on at a hard edge.
+static float3 halationKnee(float3 x, float threshold, float knee) {
+    float3 d = x - threshold;
+    float3 soft = (d + knee) * (d + knee) / (4.0f * knee);
+    return select(select(soft, d, d >= knee), float3(0), d <= -knee);
+}
+
+kernel void halationThreshold(texture2d<half, access::read> input [[texture(0)]],
+                              texture2d<half, access::write> output [[texture(1)]],
+                              constant float4 &parameters [[buffer(8)]],
+                              uint2 p [[thread_position_in_grid]]) {
+    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
+    float3 excess = halationKnee(float3(input.read(p).rgb), parameters.x, parameters.y);
+    output.write(half4(half3(excess), 1.0h), p);
+}
+
+// A 2×2 box average halves the resolution between pyramid levels. Its own 0.5-texel
+// sigma is part of the level's effective radius, which the renderer accounts for.
+kernel void halationDownsample(texture2d<half, access::read> input [[texture(0)]],
+                               texture2d<half, access::write> output [[texture(1)]],
+                               uint2 p [[thread_position_in_grid]]) {
+    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
+    uint2 limit = uint2(input.get_width() - 1, input.get_height() - 1);
+    float3 sum = 0.0f;
+    for (uint dy = 0; dy < 2; ++dy) {
+        for (uint dx = 0; dx < 2; ++dx) sum += float3(input.read(min(p * 2 + uint2(dx, dy), limit)).rgb);
+    }
+    output.write(half4(half3(sum * 0.25f), 1.0h), p);
+}
+
+// One separable Gaussian per level. `HALATION_BLUR_SIGMA` texels at every level,
+// so the level scale alone sets how far the pass reaches.
+constant float HALATION_BLUR_SIGMA = 1.5f;
+constant int HALATION_BLUR_RADIUS = 5;
+
+static void halationBlur(texture2d<half, access::read> input, texture2d<half, access::write> output, uint2 p, int2 axis) {
+    int2 limit = int2(input.get_width() - 1, input.get_height() - 1);
+    float3 sum = 0.0f;
+    float total = 0.0f;
+    for (int i = -HALATION_BLUR_RADIUS; i <= HALATION_BLUR_RADIUS; ++i) {
+        float weight = exp(-0.5f * float(i * i) / (HALATION_BLUR_SIGMA * HALATION_BLUR_SIGMA));
+        sum += float3(input.read(uint2(clamp(int2(p) + axis * i, int2(0), limit))).rgb) * weight;
+        total += weight;
+    }
+    output.write(half4(half3(sum / total), 1.0h), p);
+}
+
+kernel void halationBlurHorizontal(texture2d<half, access::read> input [[texture(0)]],
+                                   texture2d<half, access::write> output [[texture(1)]],
+                                   uint2 p [[thread_position_in_grid]]) {
+    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
+    halationBlur(input, output, p, int2(1, 0));
+}
+
+kernel void halationBlurVertical(texture2d<half, access::read> input [[texture(0)]],
+                                 texture2d<half, access::write> output [[texture(1)]],
+                                 uint2 p [[thread_position_in_grid]]) {
+    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
+    halationBlur(input, output, p, int2(0, 1));
+}
+
+// Per-channel level weighting: `weight.rgb` is how much of this level each channel
+// takes, so red can resolve to a coarser level than blue from the same pyramid.
+kernel void halationScale(texture2d<half, access::read> input [[texture(0)]],
+                          texture2d<half, access::write> output [[texture(1)]],
+                          constant float4 &weight [[buffer(10)]],
+                          uint2 p [[thread_position_in_grid]]) {
+    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
+    output.write(half4(half3(float3(input.read(p).rgb) * weight.xyz), 1.0h), p);
+}
+
+// Accumulate coarse to fine. Doubling once per level keeps the interpolation local,
+// which is what stops a 32× magnification of the smallest level from banding.
+kernel void halationUpsample(texture2d<half, access::sample> coarse [[texture(0)]],
+                             texture2d<half, access::read> level [[texture(1)]],
+                             texture2d<half, access::write> output [[texture(2)]],
+                             constant float4 &weight [[buffer(10)]],
+                             uint2 p [[thread_position_in_grid]]) {
+    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
+    constexpr sampler linearSampler(filter::linear, address::clamp_to_edge, coord::normalized);
+    float2 uv = (float2(p) + 0.5f) / float2(output.get_width(), output.get_height());
+    float3 sum = float3(coarse.sample(linearSampler, uv).rgb) + float3(level.read(p).rgb) * weight.xyz;
+    output.write(half4(half3(sum), 1.0h), p);
+}
+
+// The tinted halo goes back into the linear signal the Film Response then reads.
+// `rawWeight` is the share the unblurred extract keeps, for a radius finer than
+// the smallest level's own blur.
+kernel void halationComposite(texture2d<half, access::read> input [[texture(0)]],
+                              texture2d<half, access::write> output [[texture(1)]],
+                              texture2d<half, access::read> halo [[texture(2)]],
+                              texture2d<half, access::read> raw [[texture(3)]],
+                              constant float4 &parameters [[buffer(8)]],
+                              constant float4 &tint [[buffer(9)]],
+                              constant float4 &rawWeight [[buffer(10)]],
+                              uint2 p [[thread_position_in_grid]]) {
+    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
+    half4 pixel = input.read(p);
+    float3 scattered = float3(halo.read(p).rgb) + float3(raw.read(p).rgb) * rawWeight.xyz;
+    output.write(half4(half3(float3(pixel.rgb) + scattered * parameters.z * tint.xyz), pixel.a), p);
+}
+
 static float3 tetrahedral(texture3d<half, access::read> cube, float3 coordinate) {
     float3 q = coordinate * float(cube.get_width() - 1);
     // Extrapolate boundary tetrahedra so identity preserves negative and HDR values.

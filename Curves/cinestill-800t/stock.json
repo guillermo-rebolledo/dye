@@ -1,0 +1,26 @@
+{
+  "derivedFrom": "vision3-500t",
+  "displayName": "Cinestill 800T",
+  "halation": {
+    "radiusMicrons": [
+      420,
+      150,
+      70
+    ],
+    "strength": 0.55,
+    "threshold": 1.1,
+    "tint": [
+      1,
+      0.18,
+      0.08
+    ]
+  },
+  "id": "cinestill-800t",
+  "nominalISO": 800,
+  "process": "c41",
+  "provenance": {
+    "nominalISO": "measured",
+    "trueISO": "artistic"
+  },
+  "trueISO": 500
+}
