@@ -1,0 +1,126 @@
+{
+  "balance": 5500,
+  "colour": {
+    "lutSize": 33,
+    "lutVariants": [],
+    "outputStage": "scan"
+  },
+  "displayName": "Chromogenic study (synthetic)",
+  "format": "135",
+  "grain": {
+    "channelCorrelation": 1,
+    "channelRadiusScale": [
+      1,
+      0.85,
+      0.7
+    ],
+    "densityResponse": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "grainRadiusMicrons": 1.2,
+    "model": "dye-cloud",
+    "rmsGranularity": 0
+  },
+  "halation": {
+    "radiusMicrons": [
+      220,
+      90,
+      45
+    ],
+    "strength": 0,
+    "threshold": 1.6,
+    "tint": [
+      1,
+      0.35,
+      0.18
+    ]
+  },
+  "id": "study-bw-chromogenic",
+  "monochrome": {
+    "densityCurve": "density.curve1d",
+    "spectralWeight": [
+      0.28,
+      0.55,
+      0.17
+    ]
+  },
+  "mtf": {
+    "cyclesPerMM": [
+      5,
+      10,
+      20,
+      40,
+      80
+    ],
+    "response": [
+      1,
+      0.98,
+      0.82,
+      0.51,
+      0.19
+    ]
+  },
+  "nominalISO": 100,
+  "process": "bw-chromogenic",
+  "provenance": {
+    "balance": "artistic",
+    "colour.lutSize": "artistic",
+    "colour.lutVariants": "artistic",
+    "colour.outputStage": "artistic",
+    "format": "artistic",
+    "grain.channelCorrelation": "artistic",
+    "grain.channelRadiusScale": "artistic",
+    "grain.densityResponse": "artistic",
+    "grain.grainRadiusMicrons": "artistic",
+    "grain.model": "artistic",
+    "grain.rmsGranularity": "artistic",
+    "halation.radiusMicrons": "artistic",
+    "halation.strength": "artistic",
+    "halation.threshold": "artistic",
+    "halation.tint": "artistic",
+    "monochrome.densityCurve": "artistic",
+    "monochrome.spectralWeight": "artistic",
+    "mtf.cyclesPerMM": "artistic",
+    "mtf.response": "artistic",
+    "nominalISO": "artistic",
+    "reciprocity.schwarzschildP": "artistic",
+    "reciprocity.thresholdSeconds": "artistic",
+    "trueISO": "artistic"
+  },
+  "reciprocity": {
+    "schwarzschildP": 1,
+    "thresholdSeconds": 1
+  },
+  "trueISO": 100
+}

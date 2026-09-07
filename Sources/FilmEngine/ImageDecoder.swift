@@ -1,0 +1,104 @@
+import CoreGraphics
+import CoreImage
+import ImageIO
+import Metal
+import Foundation
+
+struct ImageDecoder {
+    let device: any MTLDevice
+    let workingSpace = CGColorSpace(name: CGColorSpace.extendedLinearITUR_2020)!
+
+    func decode(_ data: Data) throws -> any MTLTexture {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+            throw FilmError.invalid("Unsupported photo file")
+        }
+        let type = CGImageSourceGetType(source) as String? ?? ""
+        if UTTypeConformsToRaw(type) {
+            guard let raw = CIRAWFilter(imageData: data, identifierHint: type) else {
+                throw FilmError.invalid("The system RAW decoder does not support this photo")
+            }
+            raw.isDraftModeEnabled = false
+            // CIRAWFilter defaults to photographic tone/shadow boosts. They must
+            // be disabled before the scene-referred Working Space handoff.
+            raw.boostAmount = 0
+            raw.shadowBias = 0
+            raw.isGamutMappingEnabled = false
+            raw.extendedDynamicRangeAmount = 1
+            if raw.isLocalToneMapSupported { raw.localToneMapAmount = 0 }
+            if raw.isContrastSupported { raw.contrastAmount = 0 }
+            if raw.isDetailSupported { raw.detailAmount = 0 }
+            if raw.isSharpnessSupported { raw.sharpnessAmount = 0 }
+            if raw.isLuminanceNoiseReductionSupported { raw.luminanceNoiseReductionAmount = 0 }
+            if raw.isColorNoiseReductionSupported { raw.colorNoiseReductionAmount = 0 }
+            guard let image = raw.outputImage, !image.extent.isEmpty, !image.extent.isInfinite else { throw FilmError.invalid("RAW decode failed") }
+            let texture = try makeTexture(width: Int(image.extent.width), height: Int(image.extent.height))
+            // Core Image is confined to RAW decoding and the colour-managed handoff.
+            let context = CIContext(mtlDevice: device, options: [.workingColorSpace: workingSpace])
+            context.render(image, to: texture, commandBuffer: nil, bounds: image.extent, colorSpace: workingSpace)
+            return texture
+        }
+        guard let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+              let space = image.colorSpace, space.model == .rgb || space.model == .monochrome else {
+            throw FilmError.invalid("Photo has no supported input colour profile")
+        }
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let exif = properties?[kCGImagePropertyExifDictionary] as? [CFString: Any]
+        guard properties?[kCGImagePropertyProfileName] != nil || exif?[kCGImagePropertyExifColorSpace] as? Int == 1 else {
+            // ImageIO supplies a default sRGB CGColorSpace even when the file has
+            // no tag. The metadata must establish that assignment explicitly.
+            throw FilmError.invalid("This photo has no colour profile; assign one before opening it")
+        }
+        let orientation = properties?[kCGImagePropertyOrientation] as? Int ?? 1
+        let swapsAxes = (5...8).contains(orientation)
+        let width = swapsAxes ? image.height : image.width
+        let height = swapsAxes ? image.width : image.height
+        let texture = try makeTexture(width: width, height: height)
+        var pixels = [Float](repeating: 0, count: width * height * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            guard let context = CGContext(data: bytes.baseAddress, width: width, height: height,
+                bitsPerComponent: 32, bytesPerRow: width * 16, space: workingSpace,
+                bitmapInfo: CGBitmapInfo.floatComponents.rawValue | CGBitmapInfo.byteOrder32Little.rawValue |
+                    CGImageAlphaInfo.premultipliedLast.rawValue) else {
+                throw FilmError.invalid("Cannot create colour-managed decode context")
+            }
+            // ImageIO exposes EXIF orientation separately from the decoded raster.
+            switch orientation {
+            case 2: context.translateBy(x: CGFloat(width), y: 0); context.scaleBy(x: -1, y: 1)
+            case 3: context.translateBy(x: CGFloat(width), y: CGFloat(height)); context.rotate(by: .pi)
+            case 4: context.translateBy(x: 0, y: CGFloat(height)); context.scaleBy(x: 1, y: -1)
+            case 5: context.rotate(by: -.pi / 2); context.scaleBy(x: -1, y: 1)
+            case 6: context.translateBy(x: 0, y: CGFloat(height)); context.rotate(by: -.pi / 2)
+            case 7: context.translateBy(x: CGFloat(width), y: CGFloat(height)); context.rotate(by: .pi / 2); context.scaleBy(x: -1, y: 1)
+            case 8: context.translateBy(x: CGFloat(width), y: 0); context.rotate(by: .pi / 2)
+            default: break
+            }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+        // CGContext is premultiplied; the Metal pipeline uses straight alpha.
+        for i in stride(from: 0, to: pixels.count, by: 4) where pixels[i + 3] > 0 {
+            for c in 0..<3 { pixels[i + c] /= pixels[i + 3] }
+        }
+        let half = pixels.map(Float16.init)
+        half.withUnsafeBytes {
+            texture.replace(region: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0,
+                            withBytes: $0.baseAddress!, bytesPerRow: width * 8)
+        }
+        return texture
+    }
+
+    func makeTexture(width: Int, height: Int) throws -> any MTLTexture {
+        guard width > 0, height > 0, width <= 16_384, height <= 16_384 else {
+            throw FilmError.invalid("Photo exceeds the supported texture dimensions")
+        }
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: width, height: height, mipmapped: false)
+        descriptor.usage = [.shaderRead, .shaderWrite, .renderTarget]
+        descriptor.storageMode = .shared
+        guard let texture = device.makeTexture(descriptor: descriptor) else { throw FilmError.invalid("Cannot allocate image texture") }
+        return texture
+    }
+}
+
+import UniformTypeIdentifiers
+private func UTTypeConformsToRaw(_ identifier: String) -> Bool {
+    UTType(identifier)?.conforms(to: .rawImage) == true
+}

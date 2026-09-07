@@ -1,0 +1,188 @@
+// !$*UTF8*$!
+{
+archiveVersion = 1;
+classes = {
+
+};
+objectVersion = 56;
+objects = {
+38A007151ABE87CC01A5B6E9 = {
+isa = "PBXFileReference";
+explicitFileType = "wrapper.application";
+path = "FilmApp.app";
+sourceTree = "BUILT_PRODUCTS_DIR";
+};
+F2554E3D1F229ED00B2F5308 = {
+isa = "PBXFileReference";
+lastKnownFileType = "sourcecode.swift";
+path = "FilmApp.swift";
+sourceTree = "<group>";
+};
+635AD633AF697FB11F61C621 = {
+isa = "PBXFileReference";
+lastKnownFileType = "sourcecode.swift";
+path = "FilmCanvas.swift";
+sourceTree = "<group>";
+};
+1658F61DFA296CDD54A13800 = {
+isa = "PBXBuildFile";
+fileRef = "F2554E3D1F229ED00B2F5308";
+};
+9B29201CD1B47CD85A406E75 = {
+isa = "PBXBuildFile";
+fileRef = "635AD633AF697FB11F61C621";
+};
+BCE16DD0260827ECF338C787 = {
+isa = "PBXSourcesBuildPhase";
+buildActionMask = 2147483647;
+files = ("1658F61DFA296CDD54A13800", "9B29201CD1B47CD85A406E75");
+runOnlyForDeploymentPostprocessing = 0;
+};
+582681C2EAE02B3F3D399C0C = {
+isa = "XCLocalSwiftPackageReference";
+relativePath = ".";
+};
+E9FAD0C6CD43534327C0AF90 = {
+isa = "XCSwiftPackageProductDependency";
+package = "582681C2EAE02B3F3D399C0C";
+productName = "FilmEngine";
+};
+9D062BAFFF17BA8B9A1215C4 = {
+isa = "PBXBuildFile";
+productRef = "E9FAD0C6CD43534327C0AF90";
+};
+7561BFB015D8F536760CB671 = {
+isa = "PBXFrameworksBuildPhase";
+buildActionMask = 2147483647;
+files = ("9D062BAFFF17BA8B9A1215C4");
+runOnlyForDeploymentPostprocessing = 0;
+};
+0189424A5A60FED329FA868E = {
+isa = "PBXResourcesBuildPhase";
+buildActionMask = 2147483647;
+files = ();
+runOnlyForDeploymentPostprocessing = 0;
+};
+3A2A88DEEFF3D1D23E496597 = {
+isa = "PBXGroup";
+children = ("F2554E3D1F229ED00B2F5308", "635AD633AF697FB11F61C621");
+path = "FilmApp";
+sourceTree = "<group>";
+};
+FBDC4F23F93125BBEEAE800C = {
+isa = "PBXGroup";
+children = ("38A007151ABE87CC01A5B6E9");
+name = "Products";
+sourceTree = "<group>";
+};
+DC76E9F0C0006E8F919E0C51 = {
+isa = "PBXGroup";
+children = ("3A2A88DEEFF3D1D23E496597", "FBDC4F23F93125BBEEAE800C");
+sourceTree = "<group>";
+};
+7082CC0B6FC1282FCEABD07A = {
+isa = "XCBuildConfiguration";
+buildSettings = {
+IPHONEOS_DEPLOYMENT_TARGET = "17.0";
+SWIFT_VERSION = "6.0";
+SWIFT_STRICT_CONCURRENCY = "complete";
+SDKROOT = "iphoneos";
+CLANG_ENABLE_MODULES = "YES";
+PRODUCT_BUNDLE_IDENTIFIER = "app.memoji.dye";
+PRODUCT_NAME = "$(TARGET_NAME)";
+GENERATE_INFOPLIST_FILE = "YES";
+INFOPLIST_KEY_UILaunchScreen_Generation = "YES";
+INFOPLIST_KEY_UIApplicationSceneManifest_Generation = "YES";
+TARGETED_DEVICE_FAMILY = "1,2";
+CODE_SIGN_STYLE = "Automatic";
+SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+};
+name = "Debug";
+};
+639A7CA24D39909E713B47F7 = {
+isa = "XCBuildConfiguration";
+buildSettings = {
+IPHONEOS_DEPLOYMENT_TARGET = "17.0";
+SWIFT_VERSION = "6.0";
+SWIFT_STRICT_CONCURRENCY = "complete";
+SDKROOT = "iphoneos";
+CLANG_ENABLE_MODULES = "YES";
+PRODUCT_BUNDLE_IDENTIFIER = "app.memoji.dye";
+PRODUCT_NAME = "$(TARGET_NAME)";
+GENERATE_INFOPLIST_FILE = "YES";
+INFOPLIST_KEY_UILaunchScreen_Generation = "YES";
+INFOPLIST_KEY_UIApplicationSceneManifest_Generation = "YES";
+TARGETED_DEVICE_FAMILY = "1,2";
+CODE_SIGN_STYLE = "Automatic";
+SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+SWIFT_OPTIMIZATION_LEVEL = "-O";
+};
+name = "Release";
+};
+C57128001CE614BF8549D6BB = {
+isa = "XCConfigurationList";
+buildConfigurations = ("7082CC0B6FC1282FCEABD07A", "639A7CA24D39909E713B47F7");
+defaultConfigurationIsVisible = 0;
+defaultConfigurationName = "Release";
+};
+0E8A3AD980EC179856012B7E = {
+isa = "PBXNativeTarget";
+buildConfigurationList = "C57128001CE614BF8549D6BB";
+buildPhases = ("BCE16DD0260827ECF338C787", "7561BFB015D8F536760CB671", "0189424A5A60FED329FA868E");
+buildRules = ();
+dependencies = ();
+name = "FilmApp";
+packageProductDependencies = ("E9FAD0C6CD43534327C0AF90");
+productName = "FilmApp";
+productReference = "38A007151ABE87CC01A5B6E9";
+productType = "com.apple.product-type.application";
+};
+89E1FD6268CC0F221A2BE178 = {
+isa = "XCBuildConfiguration";
+buildSettings = {
+IPHONEOS_DEPLOYMENT_TARGET = "17.0";
+SWIFT_VERSION = "6.0";
+SWIFT_STRICT_CONCURRENCY = "complete";
+SDKROOT = "iphoneos";
+CLANG_ENABLE_MODULES = "YES";
+};
+name = "Debug";
+};
+E6DE6C99132752C914FEF632 = {
+isa = "XCBuildConfiguration";
+buildSettings = {
+IPHONEOS_DEPLOYMENT_TARGET = "17.0";
+SWIFT_VERSION = "6.0";
+SWIFT_STRICT_CONCURRENCY = "complete";
+SDKROOT = "iphoneos";
+CLANG_ENABLE_MODULES = "YES";
+};
+name = "Release";
+};
+862894B703A6DEDF96A9DD6C = {
+isa = "XCConfigurationList";
+buildConfigurations = ("89E1FD6268CC0F221A2BE178", "E6DE6C99132752C914FEF632");
+defaultConfigurationIsVisible = 0;
+defaultConfigurationName = "Release";
+};
+98F54143AB4E86B28C3AFEE0 = {
+isa = "PBXProject";
+attributes = {
+LastUpgradeCheck = "2660";
+};
+buildConfigurationList = "862894B703A6DEDF96A9DD6C";
+compatibilityVersion = "Xcode 14.0";
+developmentRegion = "en";
+hasScannedForEncodings = 0;
+knownRegions = ("en", "Base");
+mainGroup = "DC76E9F0C0006E8F919E0C51";
+packageReferences = ("582681C2EAE02B3F3D399C0C");
+productRefGroup = "FBDC4F23F93125BBEEAE800C";
+projectDirPath = "";
+projectRoot = "";
+targets = ("0E8A3AD980EC179856012B7E");
+};
+};
+rootObject = "98F54143AB4E86B28C3AFEE0";
+}
