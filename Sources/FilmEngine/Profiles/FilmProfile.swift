@@ -82,6 +82,16 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         public var densityResponse: [Double]
         public var channelCorrelation: Double
         public var channelRadiusScale: [Double]
+        /// Whether the Stock grains at all. A Profile with no granularity, or a
+        /// Density Response that is zero everywhere, has nothing for the Pass to add
+        /// and no control to offer.
+        public var isSilent: Bool { rmsGranularity <= 0 || !densityResponse.contains { $0 > 0 } }
+        public init(model: GrainModel, rmsGranularity: Double, grainRadiusMicrons: Double,
+                    densityResponse: [Double], channelCorrelation: Double, channelRadiusScale: [Double]) {
+            self.model = model; self.rmsGranularity = rmsGranularity; self.grainRadiusMicrons = grainRadiusMicrons
+            self.densityResponse = densityResponse; self.channelCorrelation = channelCorrelation
+            self.channelRadiusScale = channelRadiusScale
+        }
     }
     /// `strength` is the fraction of above-threshold light scattered back into the
     /// Emulsion, `threshold` the Working Space value the smooth knee is centred on,
@@ -98,6 +108,9 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
     public struct MTF: Codable, Equatable, Sendable {
         public var cyclesPerMM: [Double]
         public var response: [Double]
+        public init(cyclesPerMM: [Double], response: [Double]) {
+            self.cyclesPerMM = cyclesPerMM; self.response = response
+        }
     }
     public struct Reciprocity: Codable, Equatable, Sendable {
         public var schwarzschildP: Double

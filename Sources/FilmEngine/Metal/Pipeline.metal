@@ -135,6 +135,51 @@ kernel void halationComposite(texture2d<half, access::read> input [[texture(0)]]
     output.write(half4(half3(float3(pixel.rgb) + scattered * parameters.z * tint.xyz), pixel.a), p);
 }
 
+// Pass 6, MTF. A Stock's published response is a modulation transfer curve in
+// cycles per millimetre, so it is fixed relative to the frame and converts to
+// pixels through Frame Width exactly as the Halation and Grain radii do.
+//
+// The curve is realised as a sum of two Gaussians plus the original signal:
+// a Gaussian blur of sigma s has frequency response exp(-2 pi^2 s^2 f^2), so
+// c0 + c1 G(fine) + c2 G(coarse) spans both the roll-off of a fine-grained stock
+// and the adjacency effect that lifts a curve above one at low frequencies. The
+// renderer fits c against the published points; the shader only applies them.
+struct MTFBlur { float sigma; float radius; float axisX; float axisY; };
+
+kernel void mtfBlur(texture2d<half, access::read> input [[texture(0)]],
+                    texture2d<half, access::write> output [[texture(1)]],
+                    constant MTFBlur &blur [[buffer(14)]],
+                    uint2 p [[thread_position_in_grid]]) {
+    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
+    int2 limit = int2(input.get_width() - 1, input.get_height() - 1);
+    int2 axis = int2(int(blur.axisX), int(blur.axisY));
+    int radius = int(blur.radius);
+    float3 sum = 0.0f;
+    float total = 0.0f;
+    for (int i = -radius; i <= radius; ++i) {
+        float weight = exp(-0.5f * float(i * i) / (blur.sigma * blur.sigma));
+        sum += float3(input.read(uint2(clamp(int2(p) + axis * i, int2(0), limit))).rgb) * weight;
+        total += weight;
+    }
+    output.write(half4(half3(sum / total), input.read(p).a), p);
+}
+
+// c0 + c1 + c2 = 1, so a flat field is unchanged and the pass alters micro-contrast
+// only. Values stay signed: the Working Space carries out-of-gamut light, and the
+// Film Response is what decides where the signal is clamped.
+kernel void mtfCombine(texture2d<half, access::read> input [[texture(0)]],
+                       texture2d<half, access::write> output [[texture(1)]],
+                       texture2d<half, access::read> fine [[texture(4)]],
+                       texture2d<half, access::read> coarse [[texture(5)]],
+                       constant float4 &coefficients [[buffer(14)]],
+                       uint2 p [[thread_position_in_grid]]) {
+    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
+    half4 pixel = input.read(p);
+    float3 value = float3(pixel.rgb) * coefficients.x
+        + float3(fine.read(p).rgb) * coefficients.y + float3(coarse.read(p).rgb) * coefficients.z;
+    output.write(half4(half3(value), pixel.a), p);
+}
+
 static float3 tetrahedral(texture3d<half, access::read> cube, float3 coordinate) {
     float3 q = coordinate * float(cube.get_width() - 1);
     // Extrapolate boundary tetrahedra so identity preserves negative and HDR values.
@@ -195,6 +240,87 @@ kernel void monochromeResponse(texture2d<half, access::read> input [[texture(0)]
     output.write(half4(density, density, density, pixel.a), p);
 }
 
+// Pass 8, Grain. Density Space, after the Film Response and before the Output
+// Stage, so the scan or print acts on the grain the way it would on real film.
+//
+// `cell` is the noise correlation length in pixels, derived from
+// `grainRadiusMicrons` through Frame Width and never from a pixel count, and
+// floored at the sampling pitch: a frame that cannot resolve a 1.2 um crystal
+// records its fluctuation within one pixel rather than across several. `sigma`
+// carries the corresponding Selwyn amplitude, and `mix` splits each channel
+// between its own noise and the shared field so `channelCorrelation` decides how
+// far the three Emulsion layers grain together.
+struct GrainUniforms {
+    float4 sigma;   // per-channel density sigma, already scaled by the user's intensity
+    float4 cell;    // per-channel noise cell in pixels, at least one
+    float4 mix;     // (independent weight, shared weight, shared cell, density space)
+    float4 base;    // the Stock's base value per channel
+    float4 scale;   // maps base to 0 and mid-grey to 0.5 of the Density Response
+    uint4 seed;
+};
+
+static uint grainHash(uint3 v) {
+    uint h = v.x * 0x9E3779B9u ^ v.y * 0x85EBCA6Bu ^ v.z * 0xC2B2AE35u;
+    h ^= h >> 15; h *= 0x2C1B3C6Du; h ^= h >> 12; h *= 0x297A2D39u; h ^= h >> 15;
+    return h;
+}
+
+/// Unit-variance lattice value. Global pixel coordinates, so a later tiled Export
+/// samples the same field from any tile origin.
+static float grainLattice(int2 cell, uint channel, uint seed) {
+    uint h = grainHash(uint3(uint(cell.x + 0x8000), uint(cell.y + 0x8000), channel * 0x9E3779B9u + seed));
+    return (float(h) * (1.0f / 4294967296.0f) - 0.5f) * 3.4641016f;
+}
+
+// Smoothstep-interpolated value noise loses variance to the interpolation; the
+// constant restores unit variance so `sigma` is the density sigma it claims to be.
+constant float GRAIN_NOISE_NORMALISATION = 1.3462f;
+
+static float grainNoise(float2 position, float cell, uint channel, uint seed) {
+    // A cell of one pixel is grain the frame cannot resolve, and one pixel then
+    // holds one independent sample of it. Interpolating there would average four
+    // lattice points into every pixel, correlating neighbours that share none of
+    // the same crystals and costing a third of the amplitude.
+    if (cell <= 1.0f) return grainLattice(int2(floor(position)), channel, seed);
+    float2 q = position / cell;
+    float2 corner = floor(q);
+    float2 f = q - corner;
+    float2 s = f * f * (3.0f - 2.0f * f);
+    int2 c = int2(corner);
+    float n00 = grainLattice(c, channel, seed);
+    float n10 = grainLattice(c + int2(1, 0), channel, seed);
+    float n01 = grainLattice(c + int2(0, 1), channel, seed);
+    float n11 = grainLattice(c + int2(1, 1), channel, seed);
+    return mix(mix(n00, n10, s.x), mix(n01, n11, s.x), s.y) * GRAIN_NOISE_NORMALISATION;
+}
+
+kernel void grain(texture2d<half, access::read> input [[texture(0)]],
+                  texture2d<half, access::write> output [[texture(1)]],
+                  constant GrainUniforms &grain [[buffer(11)]],
+                  constant float *densityResponse [[buffer(12)]],
+                  uint2 p [[thread_position_in_grid]]) {
+    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
+    half4 pixel = input.read(p);
+    float2 position = float2(p) + 0.5f;
+    float3 value = float3(pixel.rgb);
+    float shared = grainNoise(position, grain.mix.z, 3u, grain.seed.x);
+    float3 result;
+    for (uint c = 0; c < 3; ++c) {
+        // The Density Response is loud in the midtones and quiet at both ends,
+        // which is what separates emulsion from noise added to the whole frame.
+        float t = clamp((value[c] - grain.base[c]) * grain.scale[c], 0.0f, 1.0f) * 31.0f;
+        uint low = min(uint(t), 30u);
+        float amplitude = mix(densityResponse[low], densityResponse[low + 1], t - float(low));
+        float noise = grain.mix.x * grainNoise(position, grain.cell[c], c, grain.seed.x) + grain.mix.y * shared;
+        float density = grain.sigma[c] * amplitude * noise;
+        // A Density Space signal takes the fluctuation directly. A Colour Cube that
+        // already carries the Baker's scan returns a positive, where the same extra
+        // density is a transmission the light has to pass through.
+        result[c] = grain.mix.w > 0.5f ? value[c] + density : value[c] * exp10(-density);
+    }
+    output.write(half4(half3(result), pixel.a), p);
+}
+
 // Pass 9, Scan. Inverts Density Space above the Stock's base density and
 // auto-balances so its mid-grey density lands on 0.18 in every channel, with the
 // same rational shoulder the Baker uses for spectral scan cubes.
@@ -210,6 +336,33 @@ kernel void scanOutput(texture2d<half, access::read> input [[texture(0)]],
     float3 linear = (0.18f / 0.82f) * signal / gray;
     float3 positive = linear / (1.0f + linear);
     output.write(half4(half3(positive), pixel.a), p);
+}
+
+// Pass 10, Geometry. The lens's falloff, the gate's unsteadiness and the frame's
+// own edge: everything whose value depends on where in the frame a pixel sits.
+// `geometry` = (vignette, gate weave x, gate weave y, border half-width), the
+// weave and the border in pixels converted from Film-Plane Microns.
+kernel void geometry(texture2d<half, access::sample> input [[texture(0)]],
+                     texture2d<half, access::write> output [[texture(1)]],
+                     constant float4 &geometry [[buffer(16)]],
+                     uint2 p [[thread_position_in_grid]]) {
+    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
+    float2 size = float2(output.get_width(), output.get_height());
+    constexpr sampler frameSampler(filter::linear, address::clamp_to_edge, coord::normalized);
+    float2 uv = (float2(p) + 0.5f + geometry.yz) / size;
+    half4 pixel = input.sample(frameSampler, uv);
+    // Radius from the frame centre, one at the corners in either orientation, so
+    // the falloff is a circle on the film rather than an ellipse in pixels.
+    float2 offset = (float2(p) + 0.5f - size * 0.5f) / (0.5f * length(size));
+    float r2 = dot(offset, offset);
+    // cos^4 of the angle off axis: a lens's own falloff, two stops in the corners
+    // at full strength.
+    float falloff = mix(1.0f, 1.0f / ((1.0f + r2) * (1.0f + r2)), geometry.x);
+    // The rebate outside the exposed frame carries no image at all.
+    float2 edge = min(float2(p) + 0.5f, size - float2(p) - 0.5f);
+    float border = geometry.w <= 0.0f ? 1.0f
+        : smoothstep(geometry.w - 0.5f, geometry.w + 0.5f, min(edge.x, edge.y));
+    output.write(half4(half3(float3(pixel.rgb) * falloff * border), pixel.a), p);
 }
 
 float transfer(float x) {

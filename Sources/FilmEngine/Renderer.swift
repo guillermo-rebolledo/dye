@@ -11,6 +11,7 @@ public actor Renderer {
     private let textureCacheCapacity: Int
     private var responseCache: [ResponseEntry] = []
     private var halationPyramid: HalationPyramid?
+    private var mtfTextures: [any MTLTexture]?
 
     private struct ResponseEntry {
         let id: UUID
@@ -39,7 +40,8 @@ public actor Renderer {
         var pipelines: [String: any MTLComputePipelineState] = [:]
         for name in ["passthrough", "whiteBalance", "exposure", "filmResponse", "monochromeResponse", "scanOutput", "outputTransform",
                      "halationThreshold", "halationDownsample", "halationBlurHorizontal", "halationBlurVertical",
-                     "halationScale", "halationUpsample", "halationComposite"] {
+                     "halationScale", "halationUpsample", "halationComposite",
+                     "mtfBlur", "mtfCombine", "grain", "geometry"] {
             guard let function = library.makeFunction(name: name) else { throw FilmError.invalid("Missing shader \(name)") }
             pipelines[name] = try device.makeComputePipelineState(function: function)
         }
@@ -73,14 +75,32 @@ public actor Renderer {
         var source = input
         var destination = scratch
         for pass in Pass.allCases {
+            // Four passes need more than one dispatch, or resources of their own, so
+            // they encode themselves rather than going through the loop below. A Pass
+            // the Plan resolved to nil does not run at all, and releases whatever it
+            // was holding: neither a Stock nor an intensity that will not use those
+            // textures should keep them alive.
             if pass == .halation {
-                guard let halation = plan.halation else {
-                    // Nothing scatters, so release the pyramid rather than hold its
-                    // textures for a Stock or an intensity that will not use them.
-                    halationPyramid = nil
-                    continue
-                }
+                guard let halation = plan.halation else { halationPyramid = nil; continue }
                 try encodeHalation(halation, command: command, source: source, destination: destination)
+                swap(&source, &destination)
+                continue
+            }
+            if pass == .mtf {
+                guard let mtf = plan.mtf else { mtfTextures = nil; continue }
+                try encodeMTF(mtf, command: command, source: source, destination: destination)
+                swap(&source, &destination)
+                continue
+            }
+            if pass == .grain {
+                guard let grain = plan.grain else { continue }
+                try encodeGrain(grain, command: command, source: source, destination: destination)
+                swap(&source, &destination)
+                continue
+            }
+            if pass == .geometry {
+                guard let geometry = plan.geometry else { continue }
+                try encodeGeometry(geometry, command: command, source: source, destination: destination)
                 swap(&source, &destination)
                 continue
             }
@@ -134,6 +154,9 @@ public actor Renderer {
         let grayDensity: SIMD4<Float>
         let baseDensity: SIMD4<Float>
         let halation: Halation?
+        let mtf: MTF?
+        let grain: Grain?
+        let geometry: Geometry?
     }
 
     /// Everything the Halation Pass needs, resolved against the image it will run on.
@@ -143,6 +166,41 @@ public actor Renderer {
         let tint: SIMD4<Float>
         /// Per level, how much of that level each channel takes. Sums to one per channel.
         let levelWeights: [SIMD4<Float>]
+    }
+
+    /// The Stock's published response curve fitted to two Gaussians for this image.
+    private struct MTF {
+        /// (direct, fine, coarse, unused) weights summing to one.
+        let coefficients: SIMD4<Float>
+        /// (sigma, kernel radius) in pixels, for the fine and the coarse Gaussian.
+        let fine: SIMD2<Float>
+        let coarse: SIMD2<Float>
+    }
+
+    /// Laid out to match `GrainUniforms` in the shader; every member is 16-byte aligned.
+    private struct GrainUniforms {
+        var sigma: SIMD4<Float>
+        var cell: SIMD4<Float>
+        var mix: SIMD4<Float>
+        var base: SIMD4<Float>
+        var scale: SIMD4<Float>
+        var seed: SIMD4<UInt32>
+    }
+
+    /// The Geometry Pass's parameters, all of them already in pixels.
+    private struct Geometry {
+        let vignette: Float
+        /// The gate's displacement, fixed by the Seed rather than animated.
+        let weave: SIMD2<Float>
+        /// Half the width of the unexposed rebate around the frame.
+        let border: Float
+        var packed: SIMD4<Float> { SIMD4(vignette, weave.x, weave.y, border) }
+    }
+
+    private struct Grain {
+        let uniforms: GrainUniforms
+        /// The Profile's 32-entry Density Response, passed as its own buffer.
+        let response: [Float]
     }
 
     private func plan(profile: Profile, settings: RenderSettings, width: Int, height: Int) throws -> Plan {
@@ -186,7 +244,127 @@ public actor Renderer {
         return Plan(whiteBalance: whiteBalance, gain: gain, lower: lower, upper: upper, blend: blend, shaper: shaper, scan: scan,
                     grayDensity: SIMD4(Float(gray.x), Float(gray.y), Float(gray.z), scan ? 1 : 0),
                     baseDensity: SIMD4(Float(base.x), Float(base.y), Float(base.z), 0),
-                    halation: halation(profile: profile, settings: settings, width: width, height: height))
+                    halation: halation(profile: profile, settings: settings, width: width, height: height),
+                    mtf: mtf(profile: profile, width: width, height: height),
+                    grain: grain(profile: profile, settings: settings, width: width, height: height, base: base, gray: gray),
+                    geometry: geometry(profile: profile, settings: settings, width: width, height: height))
+    }
+
+    /// Film-Plane Microns become pixels through the Stock's Frame Width, which is the
+    /// frame's long edge — a portrait photograph records it down its height.
+    private static func pixelsPerMicron(_ profile: Profile, width: Int, height: Int) -> Double {
+        Double(max(width, height)) / (profile.metadata.format.frameWidthMM * 1000)
+    }
+
+    /// The aperture ISO 10505 measures RMS granularity through. Selwyn's law makes
+    /// granularity inversely proportional to the sampling aperture's diameter, so a
+    /// Profile's single published figure sets the amplitude at every resolution.
+    private static let granularityApertureMicrons = 48.0
+
+    /// Resolves the Profile's Grain against this image, or nil when the Stock, the
+    /// user or the Density Response leaves nothing to add.
+    private func grain(profile: Profile, settings: RenderSettings, width: Int, height: Int,
+                       base: SIMD3<Double>, gray: SIMD3<Double>) -> Grain? {
+        let metadata = profile.metadata.grain
+        guard settings.grainIntensity > 0, !metadata.isSilent,
+              (0..<3).allSatisfy({ gray[$0] - base[$0] > 1e-4 }) else { return nil }
+        let pixelsPerMicron = Self.pixelsPerMicron(profile, width: width, height: height)
+        // What one pixel covers on the film. A frame that cannot resolve a crystal
+        // still records its fluctuation; that is where Selwyn's law takes over from
+        // the grain's own size, and it is why this is not a pixel-count scaling.
+        let pitchMicrons = 1 / pixelsPerMicron
+        var sigma = SIMD4<Float>(), cell = SIMD4<Float>()
+        for channel in 0..<3 {
+            let diameter = 2 * metadata.grainRadiusMicrons * metadata.channelRadiusScale[channel]
+            let apertureMicrons = max(diameter, pitchMicrons)
+            // Exactly one pixel when the frame cannot resolve the grain, so the shader
+            // reads that as one independent sample rather than as a wide interpolation.
+            cell[channel] = diameter > pitchMicrons ? Float(diameter * pixelsPerMicron) : 1
+            sigma[channel] = Float(metadata.rmsGranularity * settings.grainIntensity
+                                   * Self.granularityApertureMicrons / apertureMicrons)
+        }
+        // Variance-preserving split between a channel's own field and the one all
+        // three share, so `channelCorrelation` reads as the correlation it names.
+        let correlation = metadata.channelCorrelation
+        let sharedDiameter = 2 * metadata.grainRadiusMicrons
+        let sharedCell = sharedDiameter > pitchMicrons ? Float(sharedDiameter * pixelsPerMicron) : 1
+        // Density Space takes the fluctuation directly; a Colour Cube carrying the
+        // Baker's scan has already returned a positive, so it is a transmission there.
+        let densitySpace = profile.metadata.colour.cubeOutput != .displayLinearRec2020
+        var scale = SIMD4<Float>()
+        for channel in 0..<3 { scale[channel] = Float(0.5 / (gray[channel] - base[channel])) }
+        let uniforms = GrainUniforms(sigma: sigma, cell: cell,
+                                     mix: SIMD4(Float((1 - correlation).squareRoot()), Float(correlation.squareRoot()),
+                                                sharedCell, densitySpace ? 1 : 0),
+                                     base: SIMD4(Float(base.x), Float(base.y), Float(base.z), 0),
+                                     scale: scale, seed: SIMD4(repeating: settings.seed))
+        return Grain(uniforms: uniforms, response: metadata.densityResponse.map(Float.init))
+    }
+
+    /// Fits the Profile's published MTF with two Gaussians and the signal itself.
+    /// A Gaussian blur of sigma s has frequency response exp(−2π²s²f²), so the three
+    /// together span both a roll-off and the adjacency effect that lifts a curve
+    /// above one. Published points above Nyquist are dropped rather than fitted:
+    /// a frame that cannot carry 80 cycles per millimetre has nothing to say there.
+    private func mtf(profile: Profile, width: Int, height: Int) -> MTF? {
+        let metadata = profile.metadata.mtf
+        let pixelsPerMM = Self.pixelsPerMicron(profile, width: width, height: height) * 1000
+        let points = zip(metadata.cyclesPerMM, metadata.response)
+            .map { (cycles: $0 / pixelsPerMM, response: $1) }
+            .filter { $0.cycles > 0 && $0.cycles <= 0.5 }
+        guard let lowest = points.map(\.cycles).min(), let highest = points.map(\.cycles).max(),
+              points.contains(where: { abs($0.response - 1) > 0.005 }) else { return nil }
+        // The shader convolves a truncated, sampled Gaussian, whose response departs
+        // from the continuous exp(−2π²s²f²) below about one pixel of sigma. Fitting
+        // the kernel that actually runs is what keeps the rendered curve on the
+        // published one; a sigma under 0.8 also has too little reach to attenuate
+        // anything, so the fine Gaussian is held at least that wide.
+        let fine = max(1 / (2 * .pi * highest), 0.8)
+        let coarse = min(max(1 / (2 * .pi * lowest), 2 * fine), 16)
+        func radius(_ sigma: Double) -> Int { min(24, max(1, Int((3 * sigma).rounded(.up)))) }
+        func response(_ sigma: Double, _ cycles: Double) -> Double {
+            var sum = 0.0, total = 0.0
+            for tap in -radius(sigma)...radius(sigma) {
+                let weight = exp(-0.5 * Double(tap * tap) / (sigma * sigma))
+                sum += weight * cos(2 * .pi * cycles * Double(tap))
+                total += weight
+            }
+            return sum / total
+        }
+        // Least squares on the two blur weights, with the direct weight taking the
+        // remainder so the fit cannot change a flat field's value. A little Tikhonov
+        // keeps a Profile with one usable point from being under-determined.
+        var aa = 1e-3, ab = 0.0, bb = 1e-3, ay = 0.0, by = 0.0
+        for point in points {
+            let a = response(fine, point.cycles) - 1, b = response(coarse, point.cycles) - 1, y = point.response - 1
+            aa += a * a; ab += a * b; bb += b * b; ay += a * y; by += b * y
+        }
+        let determinant = aa * bb - ab * ab
+        var weights = SIMD2<Double>(ay / aa, 0)
+        if abs(determinant) > 1e-9 { weights = SIMD2((ay * bb - by * ab) / determinant, (by * aa - ay * ab) / determinant) }
+        weights = simd_clamp(weights, SIMD2(repeating: -4), SIMD2(repeating: 4))
+        guard weights.x.isFinite, weights.y.isFinite else { return nil }
+        return MTF(coefficients: SIMD4(Float(1 - weights.x - weights.y), Float(weights.x), Float(weights.y), 0),
+                   fine: SIMD2(Float(fine), Float(radius(fine))), coarse: SIMD2(Float(coarse), Float(radius(coarse))))
+    }
+
+    /// Everything in the frame whose value depends on where in the frame it is.
+    private func geometry(profile: Profile, settings: RenderSettings, width: Int, height: Int) -> Geometry? {
+        guard settings.vignette > 0 || settings.gateWeave > 0 || settings.frameBorder > 0 else { return nil }
+        let pixelsPerMicron = Self.pixelsPerMicron(profile, width: width, height: height)
+        // A worn gate lets the frame wander a fraction of a millimetre; 200 µm is a
+        // visibly unsteady projector and the top of the control. The displacement is
+        // fixed by the seed, because a still frame weaves once rather than shimmering.
+        var hash = settings.seed &* 0x9E37_79B9 &+ 0x85EB_CA6B
+        func phase() -> Double {
+            hash ^= hash >> 15; hash = hash &* 0x2C1B_3C6D; hash ^= hash >> 12; hash = hash &* 0x297A_2D39; hash ^= hash >> 15
+            return Double(hash) / Double(UInt32.max) * 2 - 1
+        }
+        let excursion = settings.gateWeave * 200 * pixelsPerMicron
+        // 1.5 mm of unexposed rebate alongside a 36 mm frame at the full setting.
+        let border = settings.frameBorder * 1500 * pixelsPerMicron
+        return Geometry(vignette: Float(settings.vignette),
+                        weave: SIMD2(Float(phase() * excursion), Float(phase() * excursion)), border: Float(border))
     }
 
     /// The pyramid the Halation Pass blurs in, kept between renders because a
@@ -227,9 +405,8 @@ public actor Renderer {
         let strength = metadata.strength * settings.halationIntensity
         guard strength > 0, metadata.radiusMicrons.contains(where: { $0 > 0 }) else { return nil }
         // Film-Plane Microns become pixels through the Stock's Frame Width, so the halo
-        // covers the same fraction of the frame at any resolution. Frame Width is the
-        // frame's long edge, which a portrait photograph records down its height.
-        let pixelsPerMicron = Double(max(width, height)) / (profile.metadata.format.frameWidthMM * 1000)
+        // covers the same fraction of the frame at any resolution.
+        let pixelsPerMicron = Self.pixelsPerMicron(profile, width: width, height: height)
         let largest = metadata.radiusMicrons.max()! * pixelsPerMicron
         // Deep enough for the widest channel, and never deeper than the image allows:
         // a level that collapsed to a single texel would carry no radius at all.
@@ -320,6 +497,69 @@ public actor Renderer {
         try dispatch("halationComposite", label: "halation.composite",
                      textures: [source, destination, pyramid.scratch[0], pyramid.raw],
                      weight: halation.levelWeights[0], grid: destination)
+    }
+
+    /// Two separable Gaussians of the source, combined with the source itself. The
+    /// three textures are kept between renders for the same reason the Halation
+    /// pyramid is: a Preview re-renders the same dimensions on every change.
+    private func mtfTextures(width: Int, height: Int) throws -> [any MTLTexture] {
+        if let textures = mtfTextures, textures[0].width == width, textures[0].height == height { return textures }
+        let textures = try (0..<3).map { _ in try decoder.makeTexture(width: width, height: height) }
+        mtfTextures = textures
+        return textures
+    }
+
+    private func encodeMTF(_ mtf: MTF, command: any MTLCommandBuffer,
+                           source: any MTLTexture, destination: any MTLTexture) throws {
+        let textures = try mtfTextures(width: source.width, height: source.height)
+        func blur(_ gaussian: SIMD2<Float>, into result: any MTLTexture, label: String) throws {
+            for (index, axis) in [SIMD2<Float>(1, 0), SIMD2<Float>(0, 1)].enumerated() {
+                var parameters = SIMD4<Float>(gaussian.x, gaussian.y, axis.x, axis.y)
+                try dispatch("mtfBlur", label: "\(label).\(index == 0 ? "h" : "v")",
+                             textures: [(index == 0 ? source : textures[2], 0), (index == 0 ? textures[2] : result, 1)],
+                             command: command, grid: result) { $0.setBytes(&parameters, length: MemoryLayout<SIMD4<Float>>.size, index: 14) }
+            }
+        }
+        try blur(mtf.fine, into: textures[0], label: "mtf.fine")
+        try blur(mtf.coarse, into: textures[1], label: "mtf.coarse")
+        var coefficients = mtf.coefficients
+        try dispatch("mtfCombine", label: "mtf.combine",
+                     textures: [(source, 0), (destination, 1), (textures[0], 4), (textures[1], 5)],
+                     command: command, grid: destination) { $0.setBytes(&coefficients, length: MemoryLayout<SIMD4<Float>>.size, index: 14) }
+    }
+
+    private func encodeGrain(_ grain: Grain, command: any MTLCommandBuffer,
+                             source: any MTLTexture, destination: any MTLTexture) throws {
+        var uniforms = grain.uniforms
+        try dispatch("grain", label: Pass.grain.rawValue, textures: [(source, 0), (destination, 1)],
+                     command: command, grid: destination) {
+            $0.setBytes(&uniforms, length: MemoryLayout<GrainUniforms>.stride, index: 11)
+            $0.setBytes(grain.response, length: MemoryLayout<Float>.stride * grain.response.count, index: 12)
+        }
+    }
+
+    private func encodeGeometry(_ geometry: Geometry, command: any MTLCommandBuffer,
+                                source: any MTLTexture, destination: any MTLTexture) throws {
+        var parameters = geometry.packed
+        try dispatch("geometry", label: Pass.geometry.rawValue, textures: [(source, 0), (destination, 1)],
+                     command: command, grid: destination) {
+            $0.setBytes(&parameters, length: MemoryLayout<SIMD4<Float>>.size, index: 16)
+        }
+    }
+
+    private func dispatch(_ name: String, label: String, textures: [(any MTLTexture, Int)],
+                          command: any MTLCommandBuffer, grid: any MTLTexture,
+                          bind: (any MTLComputeCommandEncoder) -> Void) throws {
+        guard let encoder = command.makeComputeCommandEncoder(), let pipeline = pipelines[name] else {
+            throw FilmError.invalid("Cannot encode \(label)")
+        }
+        encoder.label = label
+        encoder.setComputePipelineState(pipeline)
+        for (texture, index) in textures { encoder.setTexture(texture, index: index) }
+        bind(encoder)
+        encoder.dispatchThreads(MTLSize(width: grid.width, height: grid.height, depth: 1),
+                                threadsPerThreadgroup: MTLSize(width: 16, height: 16, depth: 1))
+        encoder.endEncoding()
     }
 
     private func pipelineName(for pass: Pass, plan: Plan, profile: Profile) -> String {

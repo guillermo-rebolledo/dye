@@ -22,9 +22,9 @@ The renderer's sole entry point accepts encoded photo bytes or linear Rec.2020
 float16 pixels, a Profile and RenderSettings. ImageIO/Core Graphics honour the
 input colour profile; CIRAWFilter handles RAW's camera colour matrix. Core Image
 is confined to RAW decode. The ordered eleven-pass Metal graph uses RGBA16Float
-textures throughout. White Balance, Exposure, Film Response (tetrahedral Colour
-Cube sampling), Halation, the Scan Output Stage and the Display P3 output transform
-alter pixels; Reciprocity, MTF, Grain and Geometry are explicit pass-throughs.
+textures throughout. White Balance, Exposure, Halation, MTF, Film Response
+(tetrahedral Colour Cube sampling), Grain, the Scan Output Stage, Geometry and the
+Display P3 output transform alter pixels; Reciprocity is an explicit pass-through.
 The canvas displays the tagged P3 result with Metal.
 
 RenderSettings carry the user's controls in pipeline order. White Balance names
@@ -38,6 +38,16 @@ Halation scatters above-threshold light back into the linear signal **before** t
 Film Response, through a six-level float16 pyramid whose per-channel radii come
 from the Profile in Film-Plane Microns; its intensity control scales the Stock's
 own strength on a 0–200% scale. See [the Halation Pass](docs/halation.md).
+Grain is applied in **Density Space**, after the Film Response and before the
+Output Stage, as procedural value noise sized from `grainRadiusMicrons` through
+Frame Width, amplitude-modulated by the Density Response and decorrelated across
+channels; its own 0–200% control scales the Stock's published granularity, and a
+seed fixes the field. See [the Grain Pass](docs/grain.md). The MTF Pass fits each
+Stock's published response curve with two Gaussians before the Film Response, and
+the Geometry Pass adds a vignette, gate weave and frame borders after the Output
+Stage. See [the MTF and Geometry Passes](docs/mtf-and-geometry.md). Bloom is still
+the open question `CONTEXT.md` records: it is named as a user control but has no
+Profile parameter to default to and no Pass, so no bloom control ships.
 Spectral Profiles apply their log-exposure shaper at render time; Density Space
 Colour Cubes and Density Curves with a `scan` Output Stage are inverted through
 transmission and auto-balanced so the Stock's mid-grey returns 0.18. Portra's
@@ -77,4 +87,5 @@ separately: the same Emulsion without its Remjet backing, so the two Profiles sh
 byte-identical Colour Cubes and differ in Halation, Box Speed and Process. Both are
 tungsten Stocks, so a daylight scene records blue and the renderer does not correct
 it. Portra 400, Vision3 500T and Cinestill 800T render in the app with exposure,
-white balance, development and halation controls; Grain and MTF are still to come.
+white balance, development, halation and grain controls, plus the vignette, gate
+weave and frame border of the Geometry Pass.

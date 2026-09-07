@@ -212,6 +212,12 @@ _Avoid_: noise, texture
 The curve modulating grain amplitude by local density: loud in midtones, quiet in
 deep shadow and blown highlight.
 
+**RMS Granularity**:
+The density fluctuation a Stock records through the standard 48 µm measuring
+aperture. Selwyn's law converts that one published figure to any other aperture,
+which is how it sets the Grain amplitude at every output resolution.
+_Avoid_: noise level, grain amount, grain strength
+
 **Film-Plane Micron**:
 The unit every Halation and Grain radius is stored in, converted to pixels at render
 time via Frame Width. Storing pixel values instead breaks resolution independence
@@ -235,6 +241,31 @@ _Avoid_: Frontier, Noritsu, digitisation
 **Print**:
 Optical enlargement emulation — RA-4 paper density curve plus enlarger filtration.
 _Avoid_: darkroom, paper, optical
+
+**Geometry**:
+The Pass applying everything whose value depends on where in the frame a pixel
+sits: the Vignette, the Gate Weave and the Frame Border. All three are the user's
+controls rather than Profile parameters, and all three default to off.
+_Avoid_: framing, transform, crop, geometry correction
+
+**Vignette**:
+Falloff toward the corners of the frame, following cos⁴ of the angle off axis.
+A lens's own behaviour rather than a Stock's.
+_Avoid_: edge darkening, corner falloff
+
+**Gate Weave**:
+The frame's displacement in the gate, in Film-Plane Microns. Fixed by the render's
+Seed rather than animated: a still frame weaves once.
+_Avoid_: jitter, shake, wobble
+
+**Frame Border**:
+The unexposed rebate around the exposed frame.
+_Avoid_: sprocket holes, matte, letterbox
+
+**Seed**:
+The value fixing the Grain field and the Gate Weave displacement. The same Seed
+renders the same frame, which is what makes Golden Images possible with Grain on.
+_Avoid_: random seed, noise offset
 
 ### Rendering and output
 
@@ -294,8 +325,10 @@ _Avoid_: grid, gallery, preview sheet
 
 **Bloom has no home.** It is named as a user-facing intensity control alongside
 Halation and Grain, but no Profile parameter describes it and no Pass produces it.
-Either it needs both, or the control should be dropped and Halation left to carry
-the effect. Unresolved.
+Halation and Grain now each have all three — a Pass, a Profile parameter, and a
+0–200% control scaling it — and Bloom has none, so no Bloom control ships. Either
+it needs a parameter and a Pass, or the control should be dropped and Halation left
+to carry the effect. Unresolved.
 
 **"Approximation" is not yet a term.** Foma and Kentmere profiles will be materially
 less rigorous than Kodak ones, and the decision on whether to ship them labelled as

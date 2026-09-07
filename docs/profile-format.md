@@ -29,6 +29,14 @@ is positive, and `halation.radiusMicrons` must not increase from red to blue: lo
 wavelengths scatter furthest through the base. See [the Halation Pass](halation.md)
 for what the renderer does with them.
 
+`grain.densityResponse` carries exactly 32 entries and `grain.channelRadiusScale`
+exactly three, `grain.channelCorrelation` is 0…1, and `grain.rmsGranularity` is a
+density measured through the standard 48 µm aperture. `mtf.cyclesPerMM` is strictly
+ascending and the same length as `mtf.response`, which may exceed one where a
+Stock's adjacency effect raises micro-contrast. See [the Grain Pass](grain.md) and
+[the MTF and Geometry Passes](mtf-and-geometry.md) for what the renderer does with
+them.
+
 ## Derived Profiles
 
 A Profile that models another's Emulsion names it in `derivedFrom`. This is lineage
