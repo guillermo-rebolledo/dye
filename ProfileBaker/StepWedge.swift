@@ -1,7 +1,22 @@
 import Foundation
 import FilmEngine
 
+enum StepWedgeStage: String {
+    case density
+    case measuredDensity = "measured-density"
+    case scanOutput = "scan-output"
+    case chromaticOutput = "chromatic-output"
+
+    var units: String {
+        switch self {
+        case .density, .measuredDensity: "optical density"
+        case .scanOutput, .chromaticOutput: "display-linear channel value"
+        }
+    }
+}
+
 struct StepWedgeRow {
+    var stage: StepWedgeStage = .density
     let developmentOffset: Double
     let channel: Int
     let logExposure: Double
@@ -12,8 +27,11 @@ struct StepWedgeRow {
 
 /// Composes the Baker/codec and renderer seams; no individual pass is exposed.
 func stepWedge(curves: CurveSet, profile: Profile) async throws -> [StepWedgeRow] {
-    guard profile.id == curves.metadata.id, profile.metadata == curves.metadata else {
+    guard profile.id == curves.metadata.id, profile.metadata == (try curves.bakedMetadata) else {
         throw FilmError.invalid("Profile metadata does not match the reference Curve Set")
+    }
+    if curves.metadata.colour.inputShaper != nil {
+        return try await spectralStepWedge(curves: curves, profile: profile)
     }
     let variants: [(Double, String)] = curves.metadata.monochrome.map { [(0, $0.densityCurve)] }
         ?? curves.metadata.colour.lutVariants.map { ($0.pushStops, $0.lut) }
@@ -46,37 +64,55 @@ func stepWedge(curves: CurveSet, profile: Profile) async throws -> [StepWedgeRow
 }
 
 func writeStepWedge(_ rows: [StepWedgeRow], prefix: URL) throws {
-    var csv = "developmentOffset,channel,logExposure,referenceDensity,renderedDensity,absoluteError\n"
-    for row in rows { csv += "\(row.developmentOffset),\(row.channel),\(row.logExposure),\(row.reference),\(row.rendered),\(row.error)\n" }
+    var csv = "stage,developmentOffset,channel,logExposure,reference,rendered,absoluteError\n"
+    for row in rows { csv += "\(row.stage.rawValue),\(row.developmentOffset),\(row.channel),\(row.logExposure),\(row.reference),\(row.rendered),\(row.error)\n" }
     try csv.write(to: prefix.appendingPathExtension("csv"), atomically: true, encoding: .utf8)
-    let minX = rows.map(\.logExposure).min() ?? -1
-    let maxX = rows.map(\.logExposure).max() ?? 0
-    let maxY = max(rows.map { max($0.reference, $0.rendered) }.max() ?? 1, 0.001)
-    func point(_ row: StepWedgeRow, reference: Bool) -> String {
-        let x = 60 + 690 * (row.logExposure - minX) / max(maxX - minX, 0.001)
-        let y = 340 - 300 * (reference ? row.reference : row.rendered) / maxY
-        return "\(x),\(y)"
-    }
+    let stages = Set(rows.map(\.stage)).sorted { $0.rawValue < $1.rawValue }
+    let height = max(1, stages.count) * 400
     var svg = """
-    <svg xmlns="http://www.w3.org/2000/svg" width="800" height="400" viewBox="0 0 800 400">
-    <rect width="800" height="400" fill="white"/>
-    <g font-family="sans-serif" font-size="12" fill="#222">
-    <text x="60" y="20">Step Wedge — reference (solid) / rendered (dashed)</text>
-    <text x="330" y="390">log10 exposure (\(minX) to \(maxX))</text>
-    <text x="60" y="365">Density: 0 to \(maxY); max absolute error: \(rows.map(\.error).max() ?? 0)</text>
-    </g><path d="M60 35 V340 H750" fill="none" stroke="#555"/>
+    <svg xmlns="http://www.w3.org/2000/svg" width="800" height="\(height)" viewBox="0 0 800 \(height)">
+    <rect width="800" height="\(height)" fill="white"/>
     """
-    for offset in Set(rows.map(\.developmentOffset)).sorted() {
-        for channel in 0..<3 {
-            let selected = rows.filter { $0.developmentOffset == offset && $0.channel == channel }
-            guard !selected.isEmpty else { continue }
-            let colour = ["#b52222", "#18762b", "#2256bb"][channel]
-            for reference in [true, false] {
-                let points = selected.map { point($0, reference: reference) }.joined(separator: " ")
-                let dash = reference ? "" : " stroke-dasharray=\"5 4\""
-                svg += "<polyline points=\"\(points)\" fill=\"none\" stroke=\"\(colour)\"\(dash)/>"
+    for (panel, stage) in stages.enumerated() {
+        let selected = rows.filter { $0.stage == stage }
+        let minX = selected.map(\.logExposure).min() ?? -1
+        let maxX = selected.map(\.logExposure).max() ?? 0
+        let maxY = max(selected.map { max($0.reference, $0.rendered) }.max() ?? 1, 0.001)
+        let units = stage.units
+        func point(_ row: StepWedgeRow, reference: Bool) -> (Double, Double) {
+            let x = 60 + 690 * (row.logExposure - minX) / max(maxX - minX, 0.001)
+            let y = 340 - 300 * (reference ? row.reference : row.rendered) / maxY
+            return (x, y)
+        }
+        svg += """
+        <g transform="translate(0,\(panel * 400))">
+        <g font-family="sans-serif" font-size="12" fill="#222">
+        <text x="60" y="20">\(stage.rawValue): reference solid/filled; rendered dashed/open; RGB channel colours</text>
+        <text x="250" y="390">log10 exposure (\(minX) to \(maxX))</text>
+        <text x="60" y="365">\(units): 0 to \(maxY); max error: \(selected.map(\.error).max() ?? 0)</text>
+        <text x="60" y="380">Development Offsets: \(Set(selected.map(\.developmentOffset)).sorted().map { String($0) }.joined(separator: ", "))</text>
+        </g><path d="M60 35 V340 H750" fill="none" stroke="#555"/>
+        """
+        for offset in Set(selected.map(\.developmentOffset)).sorted() {
+            for channel in 0..<3 {
+                let curve = selected.filter { $0.developmentOffset == offset && $0.channel == channel }.sorted { $0.logExposure < $1.logExposure }
+                guard !curve.isEmpty else { continue }
+                let colour = ["#b52222", "#18762b", "#2256bb"][channel]
+                for reference in [true, false] {
+                    if stage == .chromaticOutput {
+                        for row in curve {
+                            let (x, y) = point(row, reference: reference)
+                            svg += "<circle cx=\"\(x)\" cy=\"\(y)\" r=\"\(reference ? 2 : 4)\" fill=\"\(reference ? colour : "none")\" stroke=\"\(colour)\"/>"
+                        }
+                    } else {
+                        let points = curve.map { row in let (x, y) = point(row, reference: reference); return "\(x),\(y)" }.joined(separator: " ")
+                        let dash = reference ? "" : " stroke-dasharray=\"5 4\""
+                        svg += "<polyline points=\"\(points)\" fill=\"none\" stroke=\"\(colour)\"\(dash)/>"
+                    }
+                }
             }
         }
+        svg += "</g>"
     }
     svg += "</svg>\n"
     try svg.write(to: prefix.appendingPathExtension("svg"), atomically: true, encoding: .utf8)

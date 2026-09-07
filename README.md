@@ -42,7 +42,10 @@ loading. The five synthetic studies are intentionally not claims of stock accura
 The offline macOS `ProfileBaker` converts version-controlled CSV Curve Sets into
 loadable Profiles and validates them through the renderer using numerical Step
 Wedges. See [contributor instructions](Curves/README.md) to add a Stock, bake the
-Catalogue, and inspect CSV/SVG validation reports. No third-party simulation code,
-profiles or LUTs are reused. MEM-239's referenced [spektrafilm](https://github.com/andreavolpato/spektrafilm)
-was consulted for its high-level pipeline and licensing; this ticket implements
-only independent per-channel interpolation, not its spectral model.
+Catalogue, and inspect CSV/SVG validation reports. The Portra 400 Curve Set now uses an independent 31-band spectral model with
+DIR interactions and four Development Offsets. Its measured density gate and
+baked scan checks run in CI. See [the model and integration contract](docs/spectral-model.md)
+and [measurement sources and assumptions](Curves/portra-400/SOURCES.md).
+Kodak publishes Print Grain Index rather than RMS; RMS and unmeasured model
+parameters are explicitly artistic. Applying the log-exposure shaper and Portra
+Profile in the app remains MEM-244.

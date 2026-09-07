@@ -44,7 +44,7 @@ private func baker(_ arguments: [String]) throws -> (Int32, String) {
 #endif
 
 #if os(macOS)
-@Test(arguments: ["study-c41", "study-e6", "study-bw-silver", "study-bw-chromogenic", "study-ecn2"])
+@Test(arguments: ["study-c41", "study-e6", "study-bw-silver", "study-bw-chromogenic", "study-ecn2", "portra-400"])
 func everyCurveSetBakesDeterministicallyAndMatchesReference(stock: String) throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -88,5 +88,135 @@ func everyCurveSetBakesDeterministicallyAndMatchesReference(stock: String) throw
         #expect(!FileManager.default.fileExists(atPath: destination.path))
     }
     #expect(try baker(["validate", curves.path, output.path, directory.appendingPathComponent("wedge").path, "nan"]).0 != 0)
+}
+#endif
+
+#if os(macOS)
+@Test func portraCLIEmitsFourSpectralVariantsAndPassesDensityGate() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let curves = repository.appendingPathComponent("Curves/portra-400")
+    let output = directory.appendingPathComponent("portra.filmprofile")
+    let (status, message) = try baker(["bake", curves.path, output.path])
+    try #require(status == 0, Comment(rawValue: message))
+    let profile = try ProfileContainer.decode(Data(contentsOf: output))
+    #expect(profile.metadata.colour.lutSize == 33)
+    #expect(profile.metadata.colour.lutVariants.map(\.pushStops) == [-1, 0, 1, 2])
+    #expect(profile.metadata.provenance["grain.rmsGranularity"] == .artistic)
+    let (validationStatus, report) = try baker(["validate", curves.path, output.path,
+        directory.appendingPathComponent("wedge").path, "0.03"])
+    #expect(validationStatus == 0, Comment(rawValue: report))
+}
+#endif
+
+#if os(macOS)
+@Test func spectralValidationRejectsAProfileFromDifferentSourceMeasurements() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let curves = directory.appendingPathComponent("curves")
+    try FileManager.default.copyItem(at: repository.appendingPathComponent("Curves/portra-400"), to: curves)
+    let output = directory.appendingPathComponent("portra.filmprofile")
+    let (status, message) = try baker(["bake", curves.path, output.path])
+    try #require(status == 0, Comment(rawValue: message))
+    // A uniform change in absolute base density cancels in an auto-balanced scan.
+    // Validation must still detect that the profile came from different measurements.
+    let red = curves.appendingPathComponent("neutral.red.csv")
+    let changed = try String(contentsOf: red, encoding: .utf8).components(separatedBy: .newlines).map { line in
+        let fields = line.split(separator: ",")
+        guard fields.count == 2, let density = Double(fields[1]) else { return line }
+        return "\(fields[0]),\(density + 0.1)"
+    }.joined(separator: "\n")
+    try changed.write(to: red, atomically: true, encoding: .utf8)
+    let (validationStatus, _) = try baker(["validate", curves.path, output.path, directory.appendingPathComponent("wedge").path, "0.03"])
+    #expect(validationStatus != 0)
+}
+#endif
+
+#if os(macOS)
+@Test func portraDevelopmentChangesShapeAroundReferenceGray() async throws {
+    let profile = try ProfileContainer.load(from: repository.appendingPathComponent("Sources/FilmEngine/Catalogue/portra-400.filmprofile"))
+    let shaper = try #require(profile.metadata.colour.inputShaper)
+    #expect(profile.metadata.colour.cubeOutput == .displayLinearRec2020)
+    #expect(profile.metadata.colour.sourceFingerprint?.count == 64)
+    let gray = Float16((shaper.middleGrayLogExposure - shaper.minimumLogExposure) / (shaper.maximumLogExposure - shaper.minimumLogExposure))
+    let image = try LinearImage(width: 3, height: 1, rgba: [0.3, 0.3, 0.3, 1, gray, gray, gray, 1, 0.7, 0.7, 0.7, 1])
+    let renderer = try Renderer()
+    var shadows: [Float] = []
+    var highlights: [Float] = []
+    for offset in [-1.0, 0, 1, 2] {
+        let result = try await renderer.render(image: .linear(image), profile: profile,
+            settings: .init(output: .workingSpace, developmentOffset: offset))
+        for c in 0..<3 { #expect(abs(Float(result.rgba[4 + c]) - 0.18) < 0.006) }
+        shadows.append(Float(result.rgba[0]))
+        highlights.append(Float(result.rgba[8]))
+    }
+    #expect(zip(shadows, shadows.dropFirst()).allSatisfy { $0 > $1 })
+    #expect(zip(highlights, highlights.dropFirst()).allSatisfy { $0 < $1 })
+}
+
+@Test(arguments: ["dir", "sensitivity", "dyes"])
+func portraChromaticResponseDependsOnSpectralInputs(feature: String) async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let curves = directory.appendingPathComponent("curves")
+    try FileManager.default.copyItem(at: repository.appendingPathComponent("Curves/portra-400"), to: curves)
+    if feature == "dir" {
+        let url = curves.appendingPathComponent("spectral.json")
+        var json = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        json["dirCouplers"] = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
+        try JSONSerialization.data(withJSONObject: json).write(to: url)
+    } else {
+        let url = curves.appendingPathComponent(feature == "sensitivity" ? "sensitivity.csv" : "dye-density.csv")
+        let changed = try String(contentsOf: url, encoding: .utf8).components(separatedBy: .newlines).map { line in
+            var fields = line.components(separatedBy: ",")
+            guard let nm = Double(fields[0]), fields.count >= 3 else { return line }
+            if feature == "sensitivity" { fields.swapAt(1, 2) }
+            else if nm >= 570, let density = Double(fields[2]) { fields[2] = String(density + 0.4) }
+            return fields.joined(separator: ",")
+        }.joined(separator: "\n")
+        try changed.write(to: url, atomically: true, encoding: .utf8)
+    }
+    let output = directory.appendingPathComponent("altered.filmprofile")
+    let (status, message) = try baker(["bake", curves.path, output.path])
+    try #require(status == 0, Comment(rawValue: message))
+    let original = try ProfileContainer.load(from: repository.appendingPathComponent("Sources/FilmEngine/Catalogue/portra-400.filmprofile"))
+    let altered = try ProfileContainer.load(from: output)
+    let input = try LinearImage(width: 4, height: 1, rgba: [0.55, 0.35, 0.2, 1, 0.3, 0.6, 0.4, 1, 0.4, 0.3, 0.6, 1, 0.5, 0.5, 0.5, 1])
+    let renderer = try Renderer()
+    let before = try await renderer.render(image: .linear(input), profile: original, settings: .init(output: .workingSpace))
+    let after = try await renderer.render(image: .linear(input), profile: altered, settings: .init(output: .workingSpace))
+    let differences = zip(before.rgba.prefix(12), after.rgba.prefix(12)).map { abs(Float($0) - Float($1)) }
+    #expect(differences.max()! > 0.002)
+    // Neutral Characteristic Curves already contain DIR, so ablation must preserve gray.
+    if feature == "dir" {
+        for c in 12..<15 { #expect(abs(Float(before.rgba[c]) - Float(after.rgba[c])) < 0.001) }
+    }
+}
+
+@Test func spectralCLIRejectsMisalignedBandsAndMissingProvenance() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let curves = directory.appendingPathComponent("curves")
+    try FileManager.default.copyItem(at: repository.appendingPathComponent("Curves/portra-400"), to: curves)
+    let sensitivity = curves.appendingPathComponent("sensitivity.csv")
+    let valid = try String(contentsOf: sensitivity, encoding: .utf8)
+    let destination = directory.appendingPathComponent("invalid.filmprofile")
+    for malformed in [valid.replacingOccurrences(of: "410,", with: "411,"), valid.replacingOccurrences(of: "410,", with: "400,"), "wavelengthNM,red,green,blue\n400,nan,1,1\n700,1,1,1\n"] {
+        try malformed.write(to: sensitivity, atomically: true, encoding: .utf8)
+        #expect(try baker(["bake", curves.path, destination.path]).0 != 0)
+        #expect(!FileManager.default.fileExists(atPath: destination.path))
+    }
+    try valid.write(to: sensitivity, atomically: true, encoding: .utf8)
+    let metadata = curves.appendingPathComponent("stock.json")
+    var json = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: metadata)) as? [String: Any])
+    var provenance = try #require(json["provenance"] as? [String: String])
+    provenance.removeValue(forKey: "spectral.dirCouplers")
+    json["provenance"] = provenance
+    try JSONSerialization.data(withJSONObject: json).write(to: metadata)
+    #expect(try baker(["bake", curves.path, destination.path]).0 != 0)
 }
 #endif

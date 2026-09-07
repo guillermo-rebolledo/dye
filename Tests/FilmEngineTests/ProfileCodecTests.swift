@@ -14,7 +14,7 @@ func profileCodecRoundTripsEveryProcess(_ process: FilmProcess) throws {
 }
 
 @Test func sparseVariantsAndDisplayNameAreIndependentOfPayloadIdentity() throws {
-    let original = try #require(ProfileCatalogue.bundled().profiles.first { $0.metadata.process == .c41 })
+    let original = try #require(ProfileCatalogue.bundled().profiles.first { $0.id == "study-c41" })
     let encoded = try ProfileContainer.encode(original)
     let decoded = try ProfileContainer.decode(encoded)
     #expect(decoded.metadata.colour.lutVariants.map(\.pushStops) == [0, 2])
@@ -66,4 +66,27 @@ func profileCodecRoundTripsEveryProcess(_ process: FilmProcess) throws {
     await #expect(throws: (any Error).self) {
         try await renderer.render(image: .linear(try LinearImage(width: 1, height: 1, rgba: [0.5, 0.5, 0.5, 1])), profile: lazy)
     }
+}
+
+@Test func spectralCoordinateContractSurvivesCodecAndRejectsInvalidDomains() throws {
+    let original = try #require(ProfileCatalogue.bundled().profiles.first { $0.id == "portra-400" })
+    let decoded = try ProfileContainer.decode(ProfileContainer.encode(original))
+    #expect(decoded.metadata.colour == original.metadata.colour)
+    let cube = ColourCube.identity.payload
+    let payloads = Dictionary(uniqueKeysWithValues: original.metadata.colour.lutVariants.map { ($0.lut, cube) })
+    var invalid = original.metadata
+    invalid.colour.inputShaper?.minimumLogExposure = 1
+    #expect(throws: (any Error).self) { try Profile(metadata: invalid, payloads: payloads) }
+    invalid = original.metadata
+    invalid.colour.inputShaper?.maximumLogExposure = .infinity
+    #expect(throws: (any Error).self) { try Profile(metadata: invalid, payloads: payloads) }
+    invalid = original.metadata
+    invalid.colour.inputShaper = nil
+    #expect(throws: (any Error).self) { try Profile(metadata: invalid, payloads: payloads) }
+    invalid = original.metadata
+    invalid.colour.cubeOutput = .density
+    #expect(throws: (any Error).self) { try Profile(metadata: invalid, payloads: payloads) }
+    invalid = original.metadata
+    invalid.provenance.removeValue(forKey: "colour.inputShaper")
+    #expect(throws: (any Error).self) { try Profile(metadata: invalid, payloads: payloads) }
 }
