@@ -1,0 +1,5 @@
+# Kodak E-4050 revised 2-16 page 3; measured PGI, not RMS.
+format,printWidthInches,printHeightInches,magnification,printGrainIndex
+135,4,6,4.4,37
+135,8,10,8.8,59
+135,16,20,17.8,89

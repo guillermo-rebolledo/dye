@@ -3,6 +3,13 @@ import FilmEngine
 
 func bake(_ curves: CurveSet) throws -> Profile {
     var payloads: [String: Data] = [:]
+    if curves.metadata.colour.inputShaper != nil {
+        let model = try SpectralModel(curves: curves)
+        for variant in curves.metadata.colour.lutVariants {
+            payloads[variant.lut] = try model.cube(offset: variant.pushStops).payload
+        }
+        return try Profile(metadata: curves.bakedMetadata, payloads: payloads)
+    }
     if let monochrome = curves.metadata.monochrome {
         let curve = try curves.characteristicCurves(for: monochrome.densityCurve)[0]
         var bytes = Data()
@@ -26,5 +33,5 @@ func bake(_ curves: CurveSet) throws -> Profile {
             payloads[variant.lut] = try ColourCube(size: size, rgba: rgba).payload
         }
     }
-    return try Profile(metadata: curves.metadata, payloads: payloads)
+    return try Profile(metadata: curves.bakedMetadata, payloads: payloads)
 }

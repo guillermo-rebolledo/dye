@@ -49,3 +49,22 @@ uploads Colour Cubes and keeps the three most recently used textures by default.
 Cache keys identify loaded content, so identical ids in different files and
 renamed Display Names cannot accidentally reuse stale textures. The app picker
 lists the bundled synthetic studies by Process; selection is data-only in MEM-241.
+
+## Spectral extensions (MEM-243)
+
+Optional `colour.inputShaper` contains `minimumLogExposure`, `maximumLogExposure`,
+and `middleGrayLogExposure` in log10 lux-seconds. They are finite, ordered and
+bounded to −10…10. With this shaper, `colour.cubeOutput` must be
+`displayLinearRec2020`, the Profile must be colour, and Output Stage must be
+`scan`. A display-linear cube without a shaper is rejected. Absent extensions
+retain the existing linear [0, 1] input / Density Space output contract.
+
+The Baker adds `colour.sourceFingerprint`, a lowercase 64-character SHA-256
+covering the model version and consumed source files. This is build identity,
+not a physical parameter. It is absent from authoring metadata and study Profiles.
+Both shaper and cube-output parameters require Provenance. Extra spectral
+Provenance paths describe measured source arrays and artistic model parameters.
+
+The binary payload layout is unchanged. These extensions describe offline cubes;
+the renderer's automatic shaper application belongs to MEM-244. Until then, only
+already-shaped coordinates are valid for Portra's offline renderer checks.

@@ -7,7 +7,9 @@ together so reviewers can inspect changed numbers and CI can verify reproducibil
 The five `study-*` directories are **synthetic fixtures**, not manufacturer data or
 accurate emulations. Their Display Names say so and all Provenance is artistic.
 They exercise every Process and the entire authoring/loading/rendering path.
-Real datasheet digitisation and the spectral model belong to MEM-243 and later.
+`portra-400` is the first measured Curve Set, using the spectral Baker path.
+See [its sources](portra-400/SOURCES.md) and the [model contract](../docs/spectral-model.md)
+for its measured inputs and explicitly artistic assumptions.
 
 ## Files
 
@@ -72,9 +74,9 @@ The app still renders Identity in these foundation tickets; physical film contro
 and stock application come later. The CLI is a separate macOS executable product
 and is not a dependency of FilmApp or the FilmEngine library.
 
-## What this model does
+## What the foundation study model does
 
-The Baker linearly interpolates density **in log-exposure space**, clamps beyond
+For Curve Sets without `colour.inputShaper`, the Baker linearly interpolates density **in log-exposure space**, clamps beyond
 the CSV endpoints, and evaluates that curve at the 33³ Colour Cube's linear grid
 points. Each colour channel is independent: there is no spectral integration, DIR
 coupling, Orange Mask, or scan/print transform. B&W uses the same interpolation to
@@ -95,3 +97,22 @@ CI runs the process-level CLI tests, checks deterministic catalogue bytes and
 validates every Curve Set, uploading the reports. Renderer tests require Metal;
 a missing Metal device is a failure, not a silent test skip. For a custom SwiftPM
 build directory set `PROFILE_BAKER_EXECUTABLE` to its absolute CLI path.
+
+## Spectral Curve Sets
+
+Portra adds `spectral.json`, `sensitivity.csv`, `dye-density.csv`, `observer.csv`,
+`mtf.csv` and `rms-granularity.csv`. The three spectral tables must share a uniform
+400…700 nm grid with 31–81 samples. Characteristic Curves use physical log10
+lux-seconds within the metadata shaper range; `neutral.*.csv` supplies measured
+normal development. Other offsets are calculated using the artistic contrast
+and shadow-loss entries in `spectral.json`, not invented measured CSVs.
+
+The Baker records a SHA-256 source fingerprint in the final Profile. It covers
+the model version and all consumed authoring files, including metadata. Validation
+rejects a Profile from a different source revision before comparing measurements.
+Do not author a fingerprint in `stock.json`; it is derived during baking.
+
+The spectral validation report distinguishes measured optical density (normal
+development only) from numerical scan-output error (all variants). The default
+0.03 bound applies in each stage's units. A passing scan comparison does not
+validate the artistic colour model against a real photograph.

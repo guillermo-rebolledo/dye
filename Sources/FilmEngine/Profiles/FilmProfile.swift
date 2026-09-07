@@ -49,6 +49,19 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         public var lutVariants: [Variant]
         public var lutSize: Int
         public var outputStage: OutputStage
+        /// Nil retains the foundation profiles' linear [0, 1] input and Density Space output.
+        public var inputShaper: LogExposureShaper?
+        public var cubeOutput: CubeOutput?
+        /// SHA-256 of the offline model version and its authoring inputs; nil in stock.json.
+        public var sourceFingerprint: String?
+    }
+    public enum CubeOutput: String, Codable, Sendable { case density, displayLinearRec2020 }
+    /// Offline Colour Cube coordinates. Runtime application is the MEM-244 integration gate.
+    public struct LogExposureShaper: Codable, Equatable, Sendable {
+        public var minimumLogExposure: Double
+        public var maximumLogExposure: Double
+        /// Physical log10 lux-seconds corresponding to scene-linear 0.18.
+        public var middleGrayLogExposure: Double
     }
     public struct Variant: Codable, Equatable, Sendable {
         public var pushStops: Double
@@ -112,7 +125,22 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
                     zip(mtf.cyclesPerMM, mtf.cyclesPerMM.dropFirst()).allSatisfy { $0 < $1 }, "invalid MTF")
         try require(reciprocity.schwarzschildP.isFinite && reciprocity.schwarzschildP > 0 &&
                     reciprocity.thresholdSeconds.isFinite && reciprocity.thresholdSeconds >= 0, "invalid Reciprocity Failure")
+        if let fingerprint = colour.sourceFingerprint {
+            try require(colour.inputShaper != nil && fingerprint.count == 64 && fingerprint.allSatisfy { "0123456789abcdef".contains($0) },
+                        "invalid spectral source fingerprint")
+        }
+        if let shaper = colour.inputShaper {
+            try require([shaper.minimumLogExposure, shaper.maximumLogExposure, shaper.middleGrayLogExposure].allSatisfy { $0.isFinite && (-10...10).contains($0) } &&
+                        shaper.minimumLogExposure < shaper.middleGrayLogExposure && shaper.middleGrayLogExposure < shaper.maximumLogExposure,
+                        "invalid log-exposure shaper")
+            try require(!process.isMonochrome && colour.cubeOutput == .displayLinearRec2020 && colour.outputStage == .scan,
+                        "spectral Colour Cubes require the scan output contract")
+        } else {
+            try require(colour.cubeOutput != .displayLinearRec2020, "display-linear Colour Cube requires an input shaper")
+        }
         var parameters = Self.parameterPaths
+        if colour.inputShaper != nil { parameters += ["colour.inputShaper"] }
+        if colour.cubeOutput != nil { parameters += ["colour.cubeOutput"] }
         if monochrome != nil { parameters += ["monochrome.spectralWeight", "monochrome.densityCurve"] }
         try require(parameters.allSatisfy { provenance[$0] != nil }, "missing per-parameter Provenance")
     }
