@@ -55,12 +55,6 @@ public struct ColourCube: Sendable, Equatable {
     }()
 }
 
-public struct Profile: Sendable {
-    public let colourCube: ColourCube
-    public init(colourCube: ColourCube) { self.colourCube = colourCube }
-    public static let identity = Profile(colourCube: .identity)
-}
-
 /// Pixels returned by the renderer, tagged with the requested output encoding.
 public struct RenderedPixels: Sendable {
     public let width: Int

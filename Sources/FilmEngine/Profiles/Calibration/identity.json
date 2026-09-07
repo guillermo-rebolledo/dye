@@ -1,0 +1,121 @@
+{
+  "id": "identity",
+  "displayName": "Identity",
+  "process": "e6",
+  "nominalISO": 100,
+  "trueISO": 100,
+  "balance": 5500,
+  "format": "135",
+  "colour": {
+    "lutVariants": [
+      {
+        "pushStops": 0,
+        "lut": "identity.lut3d"
+      }
+    ],
+    "lutSize": 33,
+    "outputStage": "none"
+  },
+  "grain": {
+    "model": "procedural",
+    "rmsGranularity": 0,
+    "grainRadiusMicrons": 1.2,
+    "densityResponse": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "channelCorrelation": 0.15,
+    "channelRadiusScale": [
+      1,
+      0.85,
+      0.7
+    ]
+  },
+  "halation": {
+    "strength": 0,
+    "threshold": 1.6,
+    "radiusMicrons": [
+      220,
+      90,
+      45
+    ],
+    "tint": [
+      1,
+      0.35,
+      0.18
+    ]
+  },
+  "mtf": {
+    "cyclesPerMM": [
+      5,
+      10,
+      20,
+      40,
+      80
+    ],
+    "response": [
+      1,
+      0.98,
+      0.82,
+      0.51,
+      0.19
+    ]
+  },
+  "reciprocity": {
+    "schwarzschildP": 1,
+    "thresholdSeconds": 1
+  },
+  "provenance": {
+    "nominalISO": "artistic",
+    "trueISO": "artistic",
+    "balance": "artistic",
+    "format": "artistic",
+    "colour.lutVariants": "artistic",
+    "colour.lutSize": "artistic",
+    "colour.outputStage": "artistic",
+    "grain.model": "artistic",
+    "grain.rmsGranularity": "artistic",
+    "grain.grainRadiusMicrons": "artistic",
+    "grain.densityResponse": "artistic",
+    "grain.channelCorrelation": "artistic",
+    "grain.channelRadiusScale": "artistic",
+    "halation.strength": "artistic",
+    "halation.threshold": "artistic",
+    "halation.radiusMicrons": "artistic",
+    "halation.tint": "artistic",
+    "mtf.cyclesPerMM": "artistic",
+    "mtf.response": "artistic",
+    "reciprocity.schwarzschildP": "artistic",
+    "reciprocity.thresholdSeconds": "artistic"
+  }
+}

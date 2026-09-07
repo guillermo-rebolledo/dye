@@ -1,0 +1,125 @@
+import Foundation
+
+public enum FilmProcess: String, Codable, Sendable, CaseIterable {
+    case c41, e6, bwSilver = "bw-silver", bwChromogenic = "bw-chromogenic", ecn2
+    public var isMonochrome: Bool { self == .bwSilver || self == .bwChromogenic }
+    public var displayName: String {
+        switch self {
+        case .c41: "Colour negative (C-41)"
+        case .e6: "Reversal (E-6)"
+        case .bwSilver: "Black & white silver"
+        case .bwChromogenic: "Black & white chromogenic"
+        case .ecn2: "Motion picture (ECN-2)"
+        }
+    }
+}
+
+public enum FilmFormat: String, Codable, Sendable {
+    case film135 = "135", film120 = "120", sheet4x5 = "4x5"
+    /// Nominal exposed frame width; 120 assumes a 6×6 frame, 4×5 the long edge.
+    public var frameWidthMM: Double {
+        switch self { case .film135: 36; case .film120: 56; case .sheet4x5: 120 }
+    }
+}
+
+public enum Provenance: String, Codable, Sendable { case measured, artistic }
+public enum OutputStage: String, Codable, Sendable { case scan, print, none }
+public enum GrainModel: String, Codable, Sendable { case stochastic, procedural, dyeCloud = "dye-cloud" }
+
+/// The JSON metadata schema; payload references are stable names inside the container.
+/// `balance` is Stock Balance in kelvin, never the user's White Balance.
+public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var displayName: String
+    public var process: FilmProcess
+    public var nominalISO: Double
+    public var trueISO: Double
+    public var balance: Double
+    public var format: FilmFormat
+    public var colour: Colour
+    public var monochrome: Monochrome?
+    public var grain: Grain
+    public var halation: Halation
+    public var mtf: MTF
+    public var reciprocity: Reciprocity
+    /// Dotted schema paths, one marker per physical parameter (arrays count as one).
+    public var provenance: [String: Provenance]
+
+    public struct Colour: Codable, Equatable, Sendable {
+        public var lutVariants: [Variant]
+        public var lutSize: Int
+        public var outputStage: OutputStage
+    }
+    public struct Variant: Codable, Equatable, Sendable {
+        public var pushStops: Double
+        public var lut: String
+        public init(pushStops: Double, lut: String) { self.pushStops = pushStops; self.lut = lut }
+    }
+    public struct Monochrome: Codable, Equatable, Sendable {
+        public var spectralWeight: [Double]
+        public var densityCurve: String
+    }
+    public struct Grain: Codable, Equatable, Sendable {
+        public var model: GrainModel
+        public var rmsGranularity: Double
+        public var grainRadiusMicrons: Double
+        public var densityResponse: [Double]
+        public var channelCorrelation: Double
+        public var channelRadiusScale: [Double]
+    }
+    public struct Halation: Codable, Equatable, Sendable {
+        public var strength: Double
+        public var threshold: Double
+        public var radiusMicrons: [Double]
+        public var tint: [Double]
+    }
+    public struct MTF: Codable, Equatable, Sendable {
+        public var cyclesPerMM: [Double]
+        public var response: [Double]
+    }
+    public struct Reciprocity: Codable, Equatable, Sendable {
+        public var schwarzschildP: Double
+        public var thresholdSeconds: Double
+    }
+
+    public func validate() throws {
+        func require(_ condition: Bool, _ message: String) throws {
+            if !condition { throw FilmError.invalid("Profile \(id): \(message)") }
+        }
+        func nonnegative(_ values: [Double], count: Int) -> Bool {
+            values.count == count && values.allSatisfy { $0.isFinite && $0 >= 0 }
+        }
+        try require(!id.isEmpty && !displayName.isEmpty, "missing identity or Display Name")
+        try require([nominalISO, trueISO, balance].allSatisfy { $0.isFinite && $0 > 0 }, "invalid Stock speed or Stock Balance")
+        try require((2...65).contains(colour.lutSize), "Colour Cube size must be 2...65")
+        try require(process.isMonochrome == (monochrome != nil), "Monochrome section must occur only for B&W")
+        try require(process.isMonochrome ? colour.lutVariants.isEmpty : !colour.lutVariants.isEmpty,
+                    "B&W uses a Density Curve; colour uses Colour Cubes")
+        try require(Set(colour.lutVariants.map(\.pushStops)).count == colour.lutVariants.count &&
+                    colour.lutVariants.allSatisfy { $0.pushStops.isFinite && !$0.lut.isEmpty }, "invalid sparse Development Offsets")
+        try require(process != .e6 || colour.outputStage == .none, "reversal has no Output Stage")
+        if let monochrome {
+            try require(nonnegative(monochrome.spectralWeight, count: 3) && monochrome.spectralWeight.reduce(0, +) > 0 &&
+                        !monochrome.densityCurve.isEmpty, "invalid Monochrome Collapse")
+        }
+        try require(nonnegative([grain.rmsGranularity, grain.grainRadiusMicrons], count: 2) &&
+                    nonnegative(grain.densityResponse, count: 32) && nonnegative(grain.channelRadiusScale, count: 3) &&
+                    (0...1).contains(grain.channelCorrelation), "invalid Grain parameters")
+        try require(nonnegative([halation.strength, halation.threshold], count: 2) &&
+                    nonnegative(halation.radiusMicrons, count: 3) && nonnegative(halation.tint, count: 3), "invalid Halation parameters")
+        try require(!mtf.cyclesPerMM.isEmpty && nonnegative(mtf.cyclesPerMM, count: mtf.response.count) &&
+                    nonnegative(mtf.response, count: mtf.cyclesPerMM.count) &&
+                    zip(mtf.cyclesPerMM, mtf.cyclesPerMM.dropFirst()).allSatisfy { $0 < $1 }, "invalid MTF")
+        try require(reciprocity.schwarzschildP.isFinite && reciprocity.schwarzschildP > 0 &&
+                    reciprocity.thresholdSeconds.isFinite && reciprocity.thresholdSeconds >= 0, "invalid Reciprocity Failure")
+        var parameters = Self.parameterPaths
+        if monochrome != nil { parameters += ["monochrome.spectralWeight", "monochrome.densityCurve"] }
+        try require(parameters.allSatisfy { provenance[$0] != nil }, "missing per-parameter Provenance")
+    }
+
+    private static let parameterPaths = ["nominalISO", "trueISO", "balance", "format",
+        "colour.lutVariants", "colour.lutSize", "colour.outputStage", "grain.model", "grain.rmsGranularity",
+        "grain.grainRadiusMicrons", "grain.densityResponse", "grain.channelCorrelation", "grain.channelRadiusScale",
+        "halation.strength", "halation.threshold", "halation.radiusMicrons", "halation.tint", "mtf.cyclesPerMM",
+        "mtf.response", "reciprocity.schwarzschildP", "reciprocity.thresholdSeconds"]
+}

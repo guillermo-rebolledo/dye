@@ -7,8 +7,12 @@ public actor Renderer {
     private let queue: any MTLCommandQueue
     private let pipelines: [String: any MTLComputePipelineState]
     private let decoder: ImageDecoder
+    private let textureCacheCapacity: Int
+    private var colourCubeCache: [(id: UUID, name: String, texture: any MTLTexture)] = []
 
-    public init() throws {
+    public init(textureCacheCapacity: Int = 3) throws {
+        guard (1...32).contains(textureCacheCapacity) else { throw FilmError.invalid("Texture cache capacity must be 1...32") }
+        self.textureCacheCapacity = textureCacheCapacity
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else {
             throw FilmError.invalid("Metal is unavailable")
         }
@@ -41,7 +45,7 @@ public actor Renderer {
                               withBytes: $0.baseAddress!, bytesPerRow: image.width * 8)
             }
         }
-        let cube = try makeColourCube(profile.colourCube)
+        let cube = try colourCubeTexture(for: profile)
         let scratch = try decoder.makeTexture(width: input.width, height: input.height)
         guard let command = queue.makeCommandBuffer() else { throw FilmError.invalid("Cannot create render command") }
         var source = input
@@ -72,6 +76,23 @@ public actor Renderer {
                             from: MTLRegionMake2D(0, 0, input.width, input.height), mipmapLevel: 0)
         }
         return RenderedPixels(width: input.width, height: input.height, rgba: rgba, output: settings.output)
+    }
+
+    private func colourCubeTexture(for profile: Profile) throws -> any MTLTexture {
+        // B&W response is introduced with the Baker. Its payload remains lazy here.
+        let selected = profile.metadata.colour.lutVariants.min { abs($0.pushStops) < abs($1.pushStops) }
+        let source = selected == nil ? Profile.identity : profile
+        let name = selected?.lut ?? "identity.lut3d"
+        if let index = colourCubeCache.firstIndex(where: { $0.id == source.cacheID && $0.name == name }) {
+            let entry = colourCubeCache.remove(at: index)
+            colourCubeCache.append(entry)
+            return entry.texture
+        }
+        let cube = try ColourCube(size: source.metadata.colour.lutSize, payload: source.readPayload(name))
+        let texture = try makeColourCube(cube)
+        colourCubeCache.append((source.cacheID, name, texture))
+        if colourCubeCache.count > textureCacheCapacity { colourCubeCache.removeFirst() }
+        return texture
     }
 
     private func makeColourCube(_ cube: ColourCube) throws -> any MTLTexture {

@@ -13,6 +13,8 @@ struct EditorView: View {
     @State private var error: String?
     @State private var isRendering = false
     @State private var renderer: Renderer?
+    @State private var catalogue: [Profile] = []
+    @State private var selectedStock = "identity"
 
     var body: some View {
         NavigationStack {
@@ -26,11 +28,25 @@ struct EditorView: View {
                 }
                 if isRendering { ProgressView("Rendering…") }
                 if let error { Text(error).foregroundStyle(.red).accessibilityLabel("Error: \(error)") }
+                Picker("Stock", selection: $selectedStock) {
+                    Text("Identity").tag("identity")
+                    ForEach(FilmProcess.allCases, id: \.self) { process in
+                        Section(process.displayName) {
+                            ForEach(catalogue.filter { $0.metadata.process == process }) { profile in
+                                Text(profile.metadata.displayName).tag(profile.id)
+                            }
+                        }
+                    }
+                }
                 PhotosPicker("Choose photo", selection: $selection, matching: .images, preferredItemEncoding: .current)
                     .buttonStyle(.borderedProminent)
             }
             .padding()
             .navigationTitle("Dye")
+            .task {
+                do { catalogue = try ProfileCatalogue.bundled().profiles }
+                catch { self.error = error.localizedDescription }
+            }
             .task(id: selection) {
                 guard let selection else { return }
                 isRendering = true
