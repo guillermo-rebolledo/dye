@@ -30,7 +30,7 @@ struct EditorView: View {
                     }
                     StageArrow()
                     StageCard(number: 3, title: "After the film", subtitle: outputSubtitle) {
-                        Text(outputDescription).font(.footnote).foregroundStyle(.secondary)
+                        outputControls
                     }
                 }
                 .padding()
@@ -105,12 +105,41 @@ struct EditorView: View {
                               format: developmentLabel)
                 Text(developmentHint).font(.caption).foregroundStyle(.secondary)
             }
+            if model.hasBloom {
+                LabeledSlider(title: "Bloom", value: $model.settings.bloomIntensity,
+                              range: RenderSettings.bloomRange, step: 0.05,
+                              format: { String(format: "%.0f%%", $0 * 100) })
+                Text(bloomHint).font(.caption).foregroundStyle(.secondary)
+            }
             if model.hasHalation {
                 LabeledSlider(title: "Halation", value: $model.settings.halationIntensity,
                               range: RenderSettings.halationRange, step: 0.05,
                               format: { String(format: "%.0f%%", $0 * 100) })
                 Text(halationHint).font(.caption).foregroundStyle(.secondary)
             }
+            if model.hasGrain {
+                LabeledSlider(title: "Grain", value: $model.settings.grainIntensity,
+                              range: RenderSettings.grainRange, step: 0.05,
+                              format: { String(format: "%.0f%%", $0 * 100) })
+                Text(grainHint).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// The Geometry Pass is the frame and the lens rather than the film, so it sits
+    /// after the negative alongside the scan.
+    private var outputControls: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(outputDescription).font(.footnote).foregroundStyle(.secondary)
+            LabeledSlider(title: "Vignette", value: $model.settings.vignette, range: RenderSettings.vignetteRange, step: 0.05,
+                          format: { $0 == 0 ? "none" : String(format: "%.0f%%", $0 * 100) })
+            LabeledSlider(title: "Gate weave", value: $model.settings.gateWeave, range: RenderSettings.gateWeaveRange, step: 0.05,
+                          format: { $0 == 0 ? "steady" : String(format: "%.0f%%", $0 * 100) })
+            LabeledSlider(title: "Frame border", value: $model.settings.frameBorder, range: RenderSettings.frameBorderRange, step: 0.05,
+                          format: { $0 == 0 ? "none" : String(format: "%.0f%%", $0 * 100) })
+            Text("The lens's own falloff, how unsteadily the frame sat in the gate, and the unexposed "
+                 + "rebate around it. None of the three is a property of the stock, so all three start at zero.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -141,6 +170,18 @@ struct EditorView: View {
         return String(format: "Rated at EI %d, developed %+.1f stops. Blends the nearest baked variants; %@.", Int(rating.rounded()), offset, change)
     }
 
+    /// Bloom is the lens rather than the film, which is the distinction the hint has
+    /// to carry: it sits next to halation and is easily mistaken for it.
+    private var bloomHint: String {
+        let intensity = model.settings.bloomIntensity
+        let base = "The taking lens spreads a little of every part of the scene across the frame, over about "
+            + "\(Int(model.bloomRadiusMicrons)) µm of film. It takes that light from the scene rather than adding it, "
+            + "and the film records the result, so it softens a highlight's surroundings instead of brightening them. "
+            + "Halation, below, is the film reflecting light back into itself and is a different thing."
+        if abs(intensity - 1) < 0.025 { return "At the modelled lens's own diffusion. " + base }
+        return String(format: "At %.0f%% of the modelled lens's own diffusion. ", intensity * 100) + base
+    }
+
     /// 100% is the Stock's own scattering, so the control reads as a departure from it.
     private var halationHint: String {
         let intensity = model.settings.halationIntensity
@@ -149,6 +190,24 @@ struct EditorView: View {
             + "reaching about \(Int(reach)) µm furthest in red. It happens before the density curves, not as an effect added afterwards."
         if abs(intensity - 1) < 0.025 { return "At this stock's own strength. " + base }
         return String(format: "At %.0f%% of this stock's own strength. ", intensity * 100) + base
+    }
+
+    /// 100% is the Stock's own granularity, and the pixel pitch is what decides
+    /// whether the Preview resolves that as texture at all.
+    private var grainHint: String {
+        let radius = model.grainRadiusMicrons
+        let intensity = model.settings.grainIntensity
+        var base = "Grain is applied in density space, after the film response and before the scan, so the scan acts on it "
+            + "the way it would on real film. It is loudest in the midtones and quiet in deep shadow and blown highlight."
+        if let pitch = model.previewPitchMicrons {
+            base += pitch > 2 * radius
+                ? String(format: " One preview pixel covers %.0f µm of film, wider than the %.1f µm crystals, "
+                         + "so what you see is their fluctuation within a pixel; a full-resolution export "
+                         + "resolves more of it.", pitch, radius)
+                : " The preview resolves the crystals themselves at this size."
+        }
+        if abs(intensity - 1) < 0.025 { return "At this stock's own granularity. " + base }
+        return String(format: "At %.0f%% of this stock's own granularity. ", intensity * 100) + base
     }
 
     private var outputSubtitle: String {

@@ -1,5 +1,9 @@
 {
   "balance": 5500,
+  "bloom": {
+    "radiusMicrons": 900.0,
+    "strength": 0.0
+  },
   "colour": {
     "lutSize": 33,
     "lutVariants": [
@@ -96,6 +100,8 @@
   "process": "c41",
   "provenance": {
     "balance": "artistic",
+    "bloom.radiusMicrons": "artistic",
+    "bloom.strength": "artistic",
     "colour.lutSize": "artistic",
     "colour.lutVariants": "artistic",
     "colour.outputStage": "artistic",

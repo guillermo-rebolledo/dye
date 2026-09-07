@@ -136,18 +136,15 @@ private func practicalLight(size: Int, value: Float16 = 400) throws -> LinearIma
     return try LinearImage(width: size, height: size, rgba: rgba)
 }
 
-/// Rewrites a shipped Profile's Halation radii through the documented container
-/// layout. Payload offsets are relative to the end of the header, so only the
-/// length prefix moves. A 2048-pixel render of the result carries the pixel sigma an
-/// 8000-pixel frame would ask this Stock for, without allocating one.
-private func widening(_ profile: Profile, by factor: Double) throws -> Profile {
+/// Rewrites a shipped Profile's metadata through the documented container layout.
+/// Payload offsets are relative to the end of the header, so only the length prefix
+/// moves.
+private func rewriting(_ profile: Profile, _ edit: (inout [String: Any]) throws -> Void) throws -> Profile {
     let bytes = try ProfileContainer.encode(profile)
     let length = (0..<4).reduce(0) { $0 | Int(bytes[12 + $1]) << ($1 * 8) }
     var header = try #require(JSONSerialization.jsonObject(with: bytes.subdata(in: 16..<(16 + length))) as? [String: Any])
     var metadata = try #require(header["profile"] as? [String: Any])
-    var halation = try #require(metadata["halation"] as? [String: Any])
-    halation["radiusMicrons"] = try #require(halation["radiusMicrons"] as? [Double]).map { $0 * factor }
-    metadata["halation"] = halation
+    try edit(&metadata)
     header["profile"] = metadata
     let json = try JSONSerialization.data(withJSONObject: header, options: [.sortedKeys])
     var rebuilt = Data(bytes.prefix(12))
@@ -157,18 +154,46 @@ private func widening(_ profile: Profile, by factor: Double) throws -> Profile {
     return try ProfileContainer.decode(rebuilt)
 }
 
+/// A 2048-pixel render of the result carries the pixel sigma an 8000-pixel frame
+/// would ask this Stock for, without allocating one.
+private func widening(_ profile: Profile, by factor: Double) throws -> Profile {
+    try rewriting(profile) { metadata in
+        var halation = try #require(metadata["halation"] as? [String: Any])
+        halation["radiusMicrons"] = try #require(halation["radiusMicrons"] as? [Double]).map { $0 * factor }
+        metadata["halation"] = halation
+    }
+}
+
+/// The same Stock with no spatial response, so the halo under test is the pyramid's.
+private func flattening(_ profile: Profile) throws -> Profile {
+    try rewriting(profile) { metadata in
+        var mtf = try #require(metadata["mtf"] as? [String: Any])
+        let cycles: [Double] = try #require(mtf["cyclesPerMM"] as? [Double])
+        mtf["response"] = [Double](repeating: 1, count: cycles.count)
+        metadata["mtf"] = mtf
+    }
+}
+
 @Test func cinestillHaloIsSmoothAtFullStrength() async throws {
     // The stress case: the largest radius and strength in the Catalogue, at the top of
     // the user's control, on the highest contrast edge there is. Banding would show as
-    // a staircase — flat runs separated by steps — in the radial falloff.
+    // a staircase — flat runs separated by steps — in the radial falloff. Grain is off,
+    // because a fluctuation the Stock is supposed to have would read here as the defect
+    // this test is looking for, and so is the lens's Bloom. The Stock's own MTF
+    // stays on for the shipped case, because banding is what is under test and the
+    // MTF Pass is part of what could cause it; only the strictly monotone falloff is asked of the flattened cases,
+    // since the published curve sits above one at low frequency and that adjacency
+    // overshoot at the edge of the source is development, not a step in the pyramid.
     let renderer = try Renderer()
     let cinestill = try stock("cinestill-800t")
     // The last case is this Stock's radius at Export resolution, where the pyramid is
     // deepest and its coarsest level is stretched furthest.
-    for (size, profile) in [(512, cinestill), (1024, cinestill), (2048, cinestill),
-                            (2048, try widening(cinestill, by: 4))] {
+    let smooth = try flattening(cinestill), widest = try flattening(try widening(cinestill, by: 4))
+    for (size, profile, monotone) in [(512, smooth, true), (1024, smooth, true), (2048, smooth, true),
+                                      (2048, widest, true), (1024, cinestill, false), (2048, cinestill, false)] {
         let result = try await renderer.render(image: .linear(try practicalLight(size: size)), profile: profile,
-                                               settings: .init(temperatureKelvin: 3200, halationIntensity: 2))
+                                               settings: .init(temperatureKelvin: 3200, halationIntensity: 2,
+                                                               bloomIntensity: 0, grainIntensity: 0))
         let centre = size / 2
         for (dx, dy) in [(1, 0), (0, 1), (1, 1)] {
             let line = ((size / 40 + 2)..<(size / 2 - 2)).map {
@@ -193,7 +218,7 @@ private func widening(_ profile: Profile, by factor: Double) throws -> Profile {
             // Averaged over four samples the falloff is strictly monotone, so the wobble
             // above is quantisation and not a reversal in the halo itself.
             let smoothed = (0...(halo.count - 4)).map { halo[$0..<($0 + 4)].reduce(0, +) }
-            #expect(zip(smoothed, smoothed.dropFirst()).allSatisfy { $0 >= $1 })
+            if monotone { #expect(zip(smoothed, smoothed.dropFirst()).allSatisfy { $0 >= $1 }) }
             // A banded falloff also collapses onto a handful of levels; this one does not.
             #expect(Set(codes).count > halo.count / 3)
         }
@@ -205,9 +230,11 @@ private func widening(_ profile: Profile, by factor: Double) throws -> Profile {
     let cinestill = try stock("cinestill-800t")
     let size = 1024
     let image = try practicalLight(size: size)
+    // Bloom is off: the lens diffusing a fraction of the source across the frame
+    // would light the field this test needs unlit to read the halo against.
     func render(_ intensity: Double) async throws -> [Float16] {
         try await renderer.render(image: .linear(image), profile: cinestill,
-                                  settings: .init(temperatureKelvin: 3200, halationIntensity: intensity)).rgba
+                                  settings: .init(temperatureKelvin: 3200, halationIntensity: intensity, bloomIntensity: 0)).rgba
     }
     let (off, normal, full) = (try await render(0), try await render(1), try await render(2))
     // Sample where the halo is halfway up: unlit without Halation, burning red with
@@ -226,7 +253,8 @@ private func widening(_ profile: Profile, by factor: Double) throws -> Profile {
     #expect(channel(full, 0) < 1.5 * channel(normal, 0))
     #expect(channel(full, 0) > channel(normal, 0))
     // The control defaults to the Profile's own strength.
-    let byDefault = try await renderer.render(image: .linear(image), profile: cinestill, settings: .init(temperatureKelvin: 3200)).rgba
+    let byDefault = try await renderer.render(image: .linear(image), profile: cinestill,
+                                              settings: .init(temperatureKelvin: 3200, bloomIntensity: 0)).rgba
     #expect(byDefault == normal)
     await #expect(throws: FilmError.self) {
         _ = try await renderer.render(image: .linear(image), profile: cinestill, settings: .init(halationIntensity: 2.5))

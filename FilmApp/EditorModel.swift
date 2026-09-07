@@ -36,6 +36,25 @@ import FilmEngine
     /// How far the Stock scatters in its widest channel, in Film-Plane Microns.
     var halationReachMicrons: Double { profile.metadata.halation.radiusMicrons[0] }
 
+    /// Whether the modelled taking lens diffuses at all.
+    var hasBloom: Bool { profile.metadata.bloom.strength > 0 }
+
+    /// How far the lens spreads what it diffuses, in Film-Plane Microns.
+    var bloomRadiusMicrons: Double { profile.metadata.bloom.radiusMicrons }
+
+    /// Whether the Stock grains at all; a Profile with no granularity has no control.
+    var hasGrain: Bool { !profile.metadata.grain.isSilent }
+
+    /// The crystal or dye-cloud radius the Stock grains at, in Film-Plane Microns.
+    var grainRadiusMicrons: Double { profile.metadata.grain.grainRadiusMicrons }
+
+    /// What one Preview pixel covers on the film, which is what decides whether the
+    /// grain is resolved as texture or recorded as the fluctuation within a pixel.
+    var previewPitchMicrons: Double? {
+        guard let preview else { return nil }
+        return profile.metadata.format.frameWidthMM * 1000 / Double(max(preview.width, preview.height))
+    }
+
     /// Baked Development Offsets, or nil when the Stock has a single variant.
     var developmentRange: ClosedRange<Double>? {
         let stops = profile.metadata.colour.lutVariants.map(\.pushStops)

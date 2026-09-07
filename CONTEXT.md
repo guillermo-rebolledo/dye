@@ -27,8 +27,8 @@ followed by a **Density Curve**, and only negative stocks reach an **Output Stag
 A render applies **Passes** in a fixed order to a photograph, in the **Working Space**.
 The user's controls sit at specific points in that order — **Exposure** and
 **White Balance** before the **Film Response**, **Development Offset** selecting
-between Colour Cubes, **Grain** and **Halation** scaled relative to the Profile's own
-values. A **Preset** saves a Stock plus those settings.
+between Colour Cubes, **Bloom**, **Halation** and **Grain** scaled relative to the
+Profile's own values. A **Preset** saves a Stock plus those settings.
 
 ## Language
 
@@ -140,7 +140,7 @@ _Avoid_: generator, compiler, toolchain
 ### The pipeline
 
 **Pass**:
-One stage of the eleven-stage render pipeline. Their order is a correctness
+One stage of the twelve-stage render pipeline. Their order is a correctness
 requirement, not a performance preference.
 _Avoid_: step, stage (collides with Output Stage), filter, node
 
@@ -212,6 +212,12 @@ _Avoid_: noise, texture
 The curve modulating grain amplitude by local density: loud in midtones, quiet in
 deep shadow and blown highlight.
 
+**RMS Granularity**:
+The density fluctuation a Stock records through the standard 48 µm measuring
+aperture. Selwyn's law converts that one published figure to any other aperture,
+which is how it sets the Grain amplitude at every output resolution.
+_Avoid_: noise level, grain amount, grain strength
+
 **Film-Plane Micron**:
 The unit every Halation and Grain radius is stored in, converted to pixels at render
 time via Frame Width. Storing pixel values instead breaks resolution independence
@@ -235,6 +241,31 @@ _Avoid_: Frontier, Noritsu, digitisation
 **Print**:
 Optical enlargement emulation — RA-4 paper density curve plus enlarger filtration.
 _Avoid_: darkroom, paper, optical
+
+**Geometry**:
+The Pass applying everything whose value depends on where in the frame a pixel
+sits: the Vignette, the Gate Weave and the Frame Border. All three are the user's
+controls rather than Profile parameters, and all three default to off.
+_Avoid_: framing, transform, crop, geometry correction
+
+**Vignette**:
+Falloff toward the corners of the frame, following cos⁴ of the angle off axis.
+A lens's own behaviour rather than a Stock's.
+_Avoid_: edge darkening, corner falloff
+
+**Gate Weave**:
+The frame's displacement in the gate, in Film-Plane Microns. Fixed by the render's
+Seed rather than animated: a still frame weaves once.
+_Avoid_: jitter, shake, wobble
+
+**Frame Border**:
+The unexposed rebate around the exposed frame.
+_Avoid_: sprocket holes, matte, letterbox
+
+**Seed**:
+The value fixing the Grain field and the Gate Weave displacement. The same Seed
+renders the same frame, which is what makes Golden Images possible with Grain on.
+_Avoid_: random seed, noise offset
 
 ### Rendering and output
 
@@ -292,10 +323,12 @@ _Avoid_: grid, gallery, preview sheet
 
 ## Open questions
 
-**Bloom has no home.** It is named as a user-facing intensity control alongside
-Halation and Grain, but no Profile parameter describes it and no Pass produces it.
-Either it needs both, or the control should be dropped and Halation left to carry
-the effect. Unresolved.
+**Bloom's home is now the lens.** It was recorded here as having no Profile
+parameter and no Pass. It now has both, on the reading that it is veiling glare in
+the taking lens rather than anything the film does — which is why every Stock
+carries the same modelled lens and both its parameters are artistic. If the
+Catalogue ever wants to distinguish lenses, `bloom` is where that belongs, and it
+should stop living in the Profile at that point. **Resolved, but note the seam.**
 
 **"Approximation" is not yet a term.** Foma and Kentmere profiles will be materially
 less rigorous than Kodak ones, and the decision on whether to ship them labelled as

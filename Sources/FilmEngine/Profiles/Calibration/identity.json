@@ -85,10 +85,10 @@
     ],
     "response": [
       1,
-      0.98,
-      0.82,
-      0.51,
-      0.19
+      1,
+      1,
+      1,
+      1
     ]
   },
   "reciprocity": {
@@ -116,6 +116,12 @@
     "mtf.cyclesPerMM": "artistic",
     "mtf.response": "artistic",
     "reciprocity.schwarzschildP": "artistic",
-    "reciprocity.thresholdSeconds": "artistic"
+    "reciprocity.thresholdSeconds": "artistic",
+    "bloom.strength": "artistic",
+    "bloom.radiusMicrons": "artistic"
+  },
+  "bloom": {
+    "strength": 0.0,
+    "radiusMicrons": 900.0
   }
 }

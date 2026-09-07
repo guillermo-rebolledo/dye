@@ -2,12 +2,13 @@
 
 Halation is light that passes through the Emulsion, reflects off the back of the
 film base and re-exposes the Emulsion from behind. It is an **exposure**
-phenomenon, so it runs at Pass 5 — after White Balance, Exposure and Reciprocity,
-and **before** the Film Response. Applying it after the density curves is the
+phenomenon, so it runs at Pass 6 — after White Balance, Exposure, Reciprocity and
+Bloom, and **before** the Film Response. Applying it after the density curves is the
 common mistake in this domain and is immediately visible: the halo it adds
 scales linearly with its own strength, where real Halation is compressed by the
 curve the way any other light is. Bloom, which is lens diffusion and a different
-phenomenon, still has no Pass and no Profile parameter.
+phenomenon, is [its own Pass](bloom.md) immediately before this one and shares its
+pyramid; the differences between them are tabulated there.
 
 ## Profile parameters
 
@@ -40,7 +41,8 @@ one scene.
 1. **Threshold with a smooth knee.** Per channel, across ±half the threshold, a C1
    quadratic joins zero to `value − threshold`. A hard cutoff would make a
    highlight's halo switch on as it crosses, which reads as an outline.
-2. **Blur in a pyramid**, kept in float16 like every other intermediate. Each level
+2. **Blur in a pyramid** — the Scattering Pyramid, which the Bloom Pass uses too —
+   kept in float16 like every other intermediate. Each level
    is blurred with a separable Gaussian of 1.5 texels, then halved with a 2×2 box
    average to produce the next. The pyramid is exactly as deep as the widest
    requested radius needs — five or six levels at photographic sizes, fewer for a
