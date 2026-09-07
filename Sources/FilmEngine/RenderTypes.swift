@@ -56,6 +56,9 @@ public struct RenderSettings: Sendable, Equatable, Hashable {
     /// Halation scaled relative to the Profile's own strength: 1 is the Profile
     /// value, 0 disables the Pass, 2 is the top of the user's 0–200% control.
     public var halationIntensity: Double
+    /// Bloom scaled relative to the Profile's own lens diffusion: 1 is the Profile
+    /// value, 0 disables the Pass, 2 is the top of the user's 0–200% control.
+    public var bloomIntensity: Double
     /// Grain scaled relative to the Profile's own granularity: 1 is the Profile
     /// value, 0 disables the Pass, 2 is the top of the user's 0–200% control.
     public var grainIntensity: Double
@@ -79,6 +82,7 @@ public struct RenderSettings: Sendable, Equatable, Hashable {
     public static let exposureRange = -6.0...6.0
     public static let developmentRange = -3.0...3.0
     public static let halationRange = 0.0...2.0
+    public static let bloomRange = 0.0...2.0
     public static let grainRange = 0.0...2.0
     public static let vignetteRange = 0.0...1.0
     public static let gateWeaveRange = 0.0...1.0
@@ -86,7 +90,7 @@ public struct RenderSettings: Sendable, Equatable, Hashable {
 
     public init(output: Output = .displayP3, temperatureKelvin: Double = RenderSettings.defaultTemperatureKelvin, tint: Double = 0,
                 exposureStops: Double = 0, developmentOffset: Double = 0, halationIntensity: Double = 1,
-                grainIntensity: Double = 1, vignette: Double = 0, gateWeave: Double = 0, frameBorder: Double = 0,
+                bloomIntensity: Double = 1, grainIntensity: Double = 1, vignette: Double = 0, gateWeave: Double = 0, frameBorder: Double = 0,
                 seed: UInt32 = 0, outputStage: OutputStage? = nil) {
         self.output = output
         self.temperatureKelvin = temperatureKelvin
@@ -94,6 +98,7 @@ public struct RenderSettings: Sendable, Equatable, Hashable {
         self.exposureStops = exposureStops
         self.developmentOffset = developmentOffset
         self.halationIntensity = halationIntensity
+        self.bloomIntensity = bloomIntensity
         self.grainIntensity = grainIntensity
         self.vignette = vignette
         self.gateWeave = gateWeave
@@ -113,6 +118,9 @@ public struct RenderSettings: Sendable, Equatable, Hashable {
         }
         guard halationIntensity.isFinite, Self.halationRange.contains(halationIntensity) else {
             throw FilmError.invalid("Halation intensity must be 0...2")
+        }
+        guard bloomIntensity.isFinite, Self.bloomRange.contains(bloomIntensity) else {
+            throw FilmError.invalid("Bloom intensity must be 0...2")
         }
         guard grainIntensity.isFinite, Self.grainRange.contains(grainIntensity) else {
             throw FilmError.invalid("Grain intensity must be 0...2")

@@ -179,9 +179,9 @@ private func flattening(_ profile: Profile) throws -> Profile {
     // the user's control, on the highest contrast edge there is. Banding would show as
     // a staircase — flat runs separated by steps — in the radial falloff. Grain is off,
     // because a fluctuation the Stock is supposed to have would read here as the defect
-    // this test is looking for. The Stock's own MTF stays on for the shipped case,
-    // because banding is what is under test and the MTF Pass is part of what could
-    // cause it; only the strictly monotone falloff is asked of the flattened cases,
+    // this test is looking for, and so is the lens's Bloom. The Stock's own MTF
+    // stays on for the shipped case, because banding is what is under test and the
+    // MTF Pass is part of what could cause it; only the strictly monotone falloff is asked of the flattened cases,
     // since the published curve sits above one at low frequency and that adjacency
     // overshoot at the edge of the source is development, not a step in the pyramid.
     let renderer = try Renderer()
@@ -192,7 +192,8 @@ private func flattening(_ profile: Profile) throws -> Profile {
     for (size, profile, monotone) in [(512, smooth, true), (1024, smooth, true), (2048, smooth, true),
                                       (2048, widest, true), (1024, cinestill, false), (2048, cinestill, false)] {
         let result = try await renderer.render(image: .linear(try practicalLight(size: size)), profile: profile,
-                                               settings: .init(temperatureKelvin: 3200, halationIntensity: 2, grainIntensity: 0))
+                                               settings: .init(temperatureKelvin: 3200, halationIntensity: 2,
+                                                               bloomIntensity: 0, grainIntensity: 0))
         let centre = size / 2
         for (dx, dy) in [(1, 0), (0, 1), (1, 1)] {
             let line = ((size / 40 + 2)..<(size / 2 - 2)).map {
@@ -229,9 +230,11 @@ private func flattening(_ profile: Profile) throws -> Profile {
     let cinestill = try stock("cinestill-800t")
     let size = 1024
     let image = try practicalLight(size: size)
+    // Bloom is off: the lens diffusing a fraction of the source across the frame
+    // would light the field this test needs unlit to read the halo against.
     func render(_ intensity: Double) async throws -> [Float16] {
         try await renderer.render(image: .linear(image), profile: cinestill,
-                                  settings: .init(temperatureKelvin: 3200, halationIntensity: intensity)).rgba
+                                  settings: .init(temperatureKelvin: 3200, halationIntensity: intensity, bloomIntensity: 0)).rgba
     }
     let (off, normal, full) = (try await render(0), try await render(1), try await render(2))
     // Sample where the halo is halfway up: unlit without Halation, burning red with
@@ -250,7 +253,8 @@ private func flattening(_ profile: Profile) throws -> Profile {
     #expect(channel(full, 0) < 1.5 * channel(normal, 0))
     #expect(channel(full, 0) > channel(normal, 0))
     // The control defaults to the Profile's own strength.
-    let byDefault = try await renderer.render(image: .linear(image), profile: cinestill, settings: .init(temperatureKelvin: 3200)).rgba
+    let byDefault = try await renderer.render(image: .linear(image), profile: cinestill,
+                                              settings: .init(temperatureKelvin: 3200, bloomIntensity: 0)).rgba
     #expect(byDefault == normal)
     await #expect(throws: FilmError.self) {
         _ = try await renderer.render(image: .linear(image), profile: cinestill, settings: .init(halationIntensity: 2.5))

@@ -29,13 +29,13 @@ struct StepWedgeRow {
 /// The Scene Illuminant is the balance of the Profile being rendered — the Stock's
 /// own for a shipped Profile, and the identity balance for the Baker's diagnostic
 /// cube — which makes White Balance an exact pass-through even on a tungsten Stock.
-/// Halation and Grain are off, because neighbouring wedge samples are unrelated
-/// exposures rather than adjacent points in one scene, and a Step Wedge measures
-/// the curve rather than the fluctuation around it. The push rating is cancelled
+/// Bloom, Halation and Grain are off, because neighbouring wedge samples are
+/// unrelated exposures rather than adjacent points in one scene, and a Step Wedge
+/// measures the curve rather than the fluctuation around it. The push rating is cancelled
 /// by an equal exposure so each variant is probed at the CSV's own log exposure.
 func wedgeSettings(balancedFor profile: Profile, offset: Double = 0, outputStage: OutputStage? = nil) -> RenderSettings {
     RenderSettings(output: .workingSpace, temperatureKelvin: profile.metadata.balance, exposureStops: offset,
-                   developmentOffset: offset, halationIntensity: 0, grainIntensity: 0, outputStage: outputStage)
+                   developmentOffset: offset, halationIntensity: 0, bloomIntensity: 0, grainIntensity: 0, outputStage: outputStage)
 }
 
 /// Composes the Baker/codec and renderer seams; no individual pass is exposed.

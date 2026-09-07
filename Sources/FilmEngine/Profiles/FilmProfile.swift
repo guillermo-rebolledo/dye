@@ -39,6 +39,7 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
     public var colour: Colour
     public var monochrome: Monochrome?
     public var grain: Grain
+    public var bloom: Bloom
     public var halation: Halation
     public var mtf: MTF
     public var reciprocity: Reciprocity
@@ -93,6 +94,18 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
             self.channelRadiusScale = channelRadiusScale
         }
     }
+    /// Lens diffusion: `strength` is the fraction of all light the taking lens spreads
+    /// across the frame, and `radiusMicrons` the sigma it spreads it over in Film-Plane
+    /// Microns. A property of the lens rather than of the Stock, carried per Profile so
+    /// the user's control has a physically motivated default to scale, and therefore
+    /// always `artistic`.
+    public struct Bloom: Codable, Equatable, Sendable {
+        public var strength: Double
+        public var radiusMicrons: Double
+        public init(strength: Double, radiusMicrons: Double) {
+            self.strength = strength; self.radiusMicrons = radiusMicrons
+        }
+    }
     /// `strength` is the fraction of above-threshold light scattered back into the
     /// Emulsion, `threshold` the Working Space value the smooth knee is centred on,
     /// and `radiusMicrons` the per-channel scattering sigma in Film-Plane Microns.
@@ -140,6 +153,8 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         try require(nonnegative([grain.rmsGranularity, grain.grainRadiusMicrons], count: 2) &&
                     nonnegative(grain.densityResponse, count: 32) && nonnegative(grain.channelRadiusScale, count: 3) &&
                     (0...1).contains(grain.channelCorrelation), "invalid Grain parameters")
+        try require(nonnegative([bloom.strength, bloom.radiusMicrons], count: 2) && bloom.strength <= 1 &&
+                    bloom.radiusMicrons <= 5000, "invalid Bloom parameters")
         try require(nonnegative([halation.strength, halation.threshold], count: 2) && halation.strength <= 1 && halation.threshold > 0 &&
                     nonnegative(halation.radiusMicrons, count: 3) && halation.radiusMicrons.allSatisfy { $0 <= 5000 } &&
                     nonnegative(halation.tint, count: 3) && halation.tint.allSatisfy { $0 <= 1 }, "invalid Halation parameters")
@@ -176,6 +191,7 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
     private static let parameterPaths = ["nominalISO", "trueISO", "balance", "format",
         "colour.lutVariants", "colour.lutSize", "colour.outputStage", "grain.model", "grain.rmsGranularity",
         "grain.grainRadiusMicrons", "grain.densityResponse", "grain.channelCorrelation", "grain.channelRadiusScale",
+        "bloom.strength", "bloom.radiusMicrons",
         "halation.strength", "halation.threshold", "halation.radiusMicrons", "halation.tint", "mtf.cyclesPerMM",
         "mtf.response", "reciprocity.schwarzschildP", "reciprocity.thresholdSeconds"]
 }

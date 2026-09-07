@@ -1,5 +1,9 @@
 {
   "balance": 3200,
+  "bloom": {
+    "radiusMicrons": 900.0,
+    "strength": 0.02
+  },
   "colour": {
     "cubeOutput": "displayLinearRec2020",
     "inputShaper": {
@@ -120,6 +124,8 @@
   "process": "ecn2",
   "provenance": {
     "balance": "measured",
+    "bloom.radiusMicrons": "artistic",
+    "bloom.strength": "artistic",
     "colour.cubeOutput": "artistic",
     "colour.inputShaper": "artistic",
     "colour.lutSize": "artistic",

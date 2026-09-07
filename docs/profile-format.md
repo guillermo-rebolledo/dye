@@ -24,6 +24,10 @@ height. Format widths are
 36 mm (135), 56 mm (120, nominal 6×6), and 120 mm (4×5, exposed long edge).
 A future format/aspect extension can refine these nominal frame widths.
 
+`bloom.strength` is 0…1 and `bloom.radiusMicrons` at most 5000. Bloom describes the
+taking lens rather than the Stock and is always `artistic`; see
+[the Bloom Pass](bloom.md).
+
 `halation.strength` and each `halation.tint` component are 0…1, `halation.threshold`
 is positive, and `halation.radiusMicrons` must not increase from red to blue: longer
 wavelengths scatter furthest through the base. See [the Halation Pass](halation.md)

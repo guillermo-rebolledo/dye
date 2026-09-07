@@ -52,7 +52,7 @@ struct CurveSet {
     /// Remjet removal changes what light does inside the film and what the box says.
     /// Everything the Colour Cubes are baked from stays with the parent Curve Set.
     static let derivableKeys: Set<String> = ["derivedFrom", "id", "displayName", "process",
-                                             "nominalISO", "trueISO", "halation", "provenance"]
+                                             "nominalISO", "trueISO", "bloom", "halation", "provenance"]
 
     init(directory: URL) throws {
         let document = try Data(contentsOf: directory.appendingPathComponent("stock.json"))

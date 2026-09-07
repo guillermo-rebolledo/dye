@@ -10,7 +10,9 @@ public actor Renderer {
     private let decoder: ImageDecoder
     private let textureCacheCapacity: Int
     private var responseCache: [ResponseEntry] = []
-    private var halationPyramid: HalationPyramid?
+    /// One per Scattering Pass: Bloom and Halation ask for different radii, so they
+    /// resolve to pyramids of different depths and cannot share one allocation.
+    private var pyramids: [Scattering: Pyramid] = [:]
     private var mtfTextures: [any MTLTexture]?
 
     private struct ResponseEntry {
@@ -39,8 +41,8 @@ public actor Renderer {
         let library = try device.makeLibrary(source: String(contentsOf: url, encoding: .utf8), options: options)
         var pipelines: [String: any MTLComputePipelineState] = [:]
         for name in ["passthrough", "whiteBalance", "exposure", "filmResponse", "monochromeResponse", "scanOutput", "outputTransform",
-                     "halationThreshold", "halationDownsample", "halationBlurHorizontal", "halationBlurVertical",
-                     "halationScale", "halationUpsample", "halationComposite",
+                     "scatterThreshold", "scatterDownsample", "scatterBlurHorizontal", "scatterBlurVertical",
+                     "scatterScale", "scatterUpsample", "scatterComposite",
                      "mtfBlur", "mtfCombine", "grain", "geometry"] {
             guard let function = library.makeFunction(name: name) else { throw FilmError.invalid("Missing shader \(name)") }
             pipelines[name] = try device.makeComputePipelineState(function: function)
@@ -80,9 +82,12 @@ public actor Renderer {
             // the Plan resolved to nil does not run at all, and releases whatever it
             // was holding: neither a Stock nor an intensity that will not use those
             // textures should keep them alive.
-            if pass == .halation {
-                guard let halation = plan.halation else { halationPyramid = nil; continue }
-                try encodeHalation(halation, command: command, source: source, destination: destination)
+            if let scattering = Scattering(pass) {
+                guard let scatter = scattering == .bloom ? plan.bloom : plan.halation else {
+                    pyramids[scattering] = nil
+                    continue
+                }
+                try encodeScatter(scatter, scattering, command: command, source: source, destination: destination)
                 swap(&source, &destination)
                 continue
             }
@@ -153,15 +158,26 @@ public actor Renderer {
         let scan: Bool
         let grayDensity: SIMD4<Float>
         let baseDensity: SIMD4<Float>
-        let halation: Halation?
+        let bloom: Scatter?
+        let halation: Scatter?
         let mtf: MTF?
         let grain: Grain?
         let geometry: Geometry?
     }
 
-    /// Everything the Halation Pass needs, resolved against the image it will run on.
-    private struct Halation {
-        /// (threshold, knee half-width, strength × intensity, unused).
+    /// The two Passes that blur before the Film Response, in the order the light
+    /// meets them: the taking lens first, then the film's own base.
+    private enum Scattering: String, Hashable {
+        case bloom, halation
+        init?(_ pass: Pass) {
+            switch pass { case .bloom: self = .bloom; case .halation: self = .halation; default: return nil }
+        }
+    }
+
+    /// Everything a Scattering Pass needs, resolved against the image it will run on.
+    private struct Scatter {
+        /// (threshold, knee half-width, strength × intensity, how much of the source
+        /// the scattered light replaces rather than adds to).
         let parameters: SIMD4<Float>
         let tint: SIMD4<Float>
         /// Per level, how much of that level each channel takes. Sums to one per channel.
@@ -244,6 +260,7 @@ public actor Renderer {
         return Plan(whiteBalance: whiteBalance, gain: gain, lower: lower, upper: upper, blend: blend, shaper: shaper, scan: scan,
                     grayDensity: SIMD4(Float(gray.x), Float(gray.y), Float(gray.z), scan ? 1 : 0),
                     baseDensity: SIMD4(Float(base.x), Float(base.y), Float(base.z), 0),
+                    bloom: bloom(profile: profile, settings: settings, width: width, height: height),
                     halation: halation(profile: profile, settings: settings, width: width, height: height),
                     mtf: mtf(profile: profile, width: width, height: height),
                     grain: grain(profile: profile, settings: settings, width: width, height: height, base: base, gray: gray),
@@ -367,9 +384,9 @@ public actor Renderer {
                         weave: SIMD2(Float(phase() * excursion), Float(phase() * excursion)), border: Float(border))
     }
 
-    /// The pyramid the Halation Pass blurs in, kept between renders because a
-    /// Preview re-renders the same dimensions on every parameter change.
-    private struct HalationPyramid {
+    /// The Scattering Pyramid a Bloom or Halation Pass blurs in, kept between renders
+    /// because a Preview re-renders the same dimensions on every parameter change.
+    private struct Pyramid {
         /// The thresholded light before any blur: the pyramid's zero-sigma level, so a
         /// radius finer than the smallest level's blur still resolves instead of clamping.
         let raw: any MTLTexture
@@ -382,15 +399,15 @@ public actor Renderer {
     /// levels at photographic sizes, fewer for a small Preview, and more only when a
     /// full-resolution frame asks for a halo six could not carry. Nine levels reach a
     /// 449-pixel sigma; beyond that the radius clamps.
-    private static let maximumHalationLevels = 9
+    private static let maximumScatterLevels = 9
 
     /// Effective Gaussian sigma of the unblurred extract and of each level, in level-0
     /// pixels: that level's own blur plus every downsample and blur that produced it.
-    private static let halationLevelSigmas: [Double] = {
+    private static let scatterLevelSigmas: [Double] = {
         let blur = 1.5
         var variance = blur * blur
         var sigmas = [0, variance.squareRoot()]
-        for level in 1..<maximumHalationLevels {
+        for level in 1..<maximumScatterLevels {
             let scale = pow(2.0, Double(level))
             variance += pow(0.5 * scale / 2, 2) + pow(blur * scale, 2)
             sigmas.append(variance.squareRoot())
@@ -398,24 +415,46 @@ public actor Renderer {
         return sigmas
     }()
 
+    /// The lens spreads a fraction of all the light across the frame, so Bloom has no
+    /// threshold, no tint and one radius, and replaces what it takes rather than adding
+    /// to it. Nil when the modelled lens or the user has nothing to diffuse.
+    private func bloom(profile: Profile, settings: RenderSettings, width: Int, height: Int) -> Scatter? {
+        let metadata = profile.metadata.bloom
+        let strength = metadata.strength * settings.bloomIntensity
+        guard strength > 0, metadata.radiusMicrons > 0 else { return nil }
+        // A zero threshold with the narrowest knee takes every positive value: light a
+        // lens cannot have received is not light it can diffuse.
+        return scatter(profile: profile, radiusMicrons: [Double](repeating: metadata.radiusMicrons, count: 3),
+                       parameters: SIMD4(0, 1e-4, Float(strength), 1), tint: [1, 1, 1], width: width, height: height)
+    }
+
     /// Resolves the Profile's Film-Plane Micron radii against this image, or nil when
     /// the Stock or the user has no Halation to add.
-    private func halation(profile: Profile, settings: RenderSettings, width: Int, height: Int) -> Halation? {
+    private func halation(profile: Profile, settings: RenderSettings, width: Int, height: Int) -> Scatter? {
         let metadata = profile.metadata.halation
         let strength = metadata.strength * settings.halationIntensity
         guard strength > 0, metadata.radiusMicrons.contains(where: { $0 > 0 }) else { return nil }
-        // Film-Plane Microns become pixels through the Stock's Frame Width, so the halo
-        // covers the same fraction of the frame at any resolution.
+        let threshold = metadata.threshold
+        return scatter(profile: profile, radiusMicrons: metadata.radiusMicrons,
+                       parameters: SIMD4(Float(threshold), Float(max(threshold / 2, 1e-4)), Float(strength), 0),
+                       tint: metadata.tint, width: width, height: height)
+    }
+
+    /// Splits each channel's requested radius across the pyramid's levels. Film-Plane
+    /// Microns become pixels through the Stock's Frame Width, so what is scattered
+    /// covers the same fraction of the frame at any resolution.
+    private func scatter(profile: Profile, radiusMicrons: [Double], parameters: SIMD4<Float>,
+                         tint: [Double], width: Int, height: Int) -> Scatter {
         let pixelsPerMicron = Self.pixelsPerMicron(profile, width: width, height: height)
-        let largest = metadata.radiusMicrons.max()! * pixelsPerMicron
+        let largest = radiusMicrons.max()! * pixelsPerMicron
         // Deep enough for the widest channel, and never deeper than the image allows:
         // a level that collapsed to a single texel would carry no radius at all.
-        let reach = Self.halationLevelSigmas.firstIndex { $0 >= largest } ?? Self.maximumHalationLevels
+        let reach = Self.scatterLevelSigmas.firstIndex { $0 >= largest } ?? Self.maximumScatterLevels
         let count = min(max(reach, 1), max(1, Int(log2(Double(min(width, height))))))
-        let sigmas = Array(Self.halationLevelSigmas.prefix(count + 1))
+        let sigmas = Array(Self.scatterLevelSigmas.prefix(count + 1))
         var weights = [SIMD4<Float>](repeating: .zero, count: count + 1)
         for channel in 0..<3 {
-            let sigma = metadata.radiusMicrons[channel] * pixelsPerMicron
+            let sigma = radiusMicrons[channel] * pixelsPerMicron
             if sigma >= sigmas[count] {
                 weights[count][channel] = 1
             } else {
@@ -429,14 +468,12 @@ public actor Renderer {
                 weights[lower + 1][channel] = Float(fraction)
             }
         }
-        let threshold = metadata.threshold
-        return Halation(parameters: SIMD4(Float(threshold), Float(max(threshold / 2, 1e-4)), Float(strength), 0),
-                        tint: SIMD4(Float(metadata.tint[0]), Float(metadata.tint[1]), Float(metadata.tint[2]), 0),
-                        levelWeights: weights)
+        return Scatter(parameters: parameters, tint: SIMD4(Float(tint[0]), Float(tint[1]), Float(tint[2]), 0),
+                       levelWeights: weights)
     }
 
-    private func halationPyramid(width: Int, height: Int, count: Int) throws -> HalationPyramid {
-        if let pyramid = halationPyramid, pyramid.count == count,
+    private func pyramid(_ scattering: Scattering, width: Int, height: Int, count: Int) throws -> Pyramid {
+        if let pyramid = pyramids[scattering], pyramid.count == count,
            pyramid.levels[0].width == width, pyramid.levels[0].height == height { return pyramid }
         var levels: [any MTLTexture] = []
         var scratch: [any MTLTexture] = []
@@ -445,18 +482,19 @@ public actor Renderer {
             levels.append(try decoder.makeTexture(width: w, height: h))
             scratch.append(try decoder.makeTexture(width: w, height: h))
         }
-        let pyramid = HalationPyramid(raw: try decoder.makeTexture(width: width, height: height), levels: levels, scratch: scratch)
-        halationPyramid = pyramid
+        let pyramid = Pyramid(raw: try decoder.makeTexture(width: width, height: height), levels: levels, scratch: scratch)
+        pyramids[scattering] = pyramid
         return pyramid
     }
 
     /// Threshold, blur each level, then accumulate coarse to fine and composite the
     /// tinted result back into the linear signal the Film Response reads.
-    private func encodeHalation(_ halation: Halation, command: any MTLCommandBuffer,
-                                source: any MTLTexture, destination: any MTLTexture) throws {
-        let pyramid = try halationPyramid(width: source.width, height: source.height, count: halation.levelWeights.count - 1)
-        var parameters = halation.parameters
-        var tint = halation.tint
+    private func encodeScatter(_ scatter: Scatter, _ scattering: Scattering, command: any MTLCommandBuffer,
+                               source: any MTLTexture, destination: any MTLTexture) throws {
+        let pyramid = try pyramid(scattering, width: source.width, height: source.height,
+                                  count: scatter.levelWeights.count - 1)
+        var parameters = scatter.parameters
+        var tint = scatter.tint
         func dispatch(_ name: String, label: String, textures: [any MTLTexture], weight: SIMD4<Float>? = nil,
                       grid: any MTLTexture) throws {
             guard let encoder = command.makeComputeCommandEncoder(), let pipeline = pipelines[name] else {
@@ -474,29 +512,29 @@ public actor Renderer {
             encoder.endEncoding()
         }
         // Weight 0 belongs to the unblurred extract; weight L + 1 to pyramid level L.
-        try dispatch("halationThreshold", label: "halation.threshold", textures: [source, pyramid.raw], grid: pyramid.raw)
+        try dispatch("scatterThreshold", label: "\(scattering).threshold", textures: [source, pyramid.raw], grid: pyramid.raw)
         for level in 0..<pyramid.count {
             let input = level == 0 ? pyramid.raw : pyramid.levels[level]
-            try dispatch("halationBlurHorizontal", label: "halation.blurH.\(level)",
+            try dispatch("scatterBlurHorizontal", label: "\(scattering).blurH.\(level)",
                          textures: [input, pyramid.scratch[level]], grid: pyramid.levels[level])
-            try dispatch("halationBlurVertical", label: "halation.blurV.\(level)",
+            try dispatch("scatterBlurVertical", label: "\(scattering).blurV.\(level)",
                          textures: [pyramid.scratch[level], pyramid.levels[level]], grid: pyramid.levels[level])
             if level + 1 < pyramid.count {
-                try dispatch("halationDownsample", label: "halation.downsample.\(level + 1)",
+                try dispatch("scatterDownsample", label: "\(scattering).downsample.\(level + 1)",
                              textures: [pyramid.levels[level], pyramid.levels[level + 1]], grid: pyramid.levels[level + 1])
             }
         }
         let top = pyramid.count - 1
-        try dispatch("halationScale", label: "halation.scale.\(top)", textures: [pyramid.levels[top], pyramid.scratch[top]],
-                     weight: halation.levelWeights[top + 1], grid: pyramid.levels[top])
+        try dispatch("scatterScale", label: "\(scattering).scale.\(top)", textures: [pyramid.levels[top], pyramid.scratch[top]],
+                     weight: scatter.levelWeights[top + 1], grid: pyramid.levels[top])
         for level in stride(from: top - 1, through: 0, by: -1) {
-            try dispatch("halationUpsample", label: "halation.upsample.\(level)",
+            try dispatch("scatterUpsample", label: "\(scattering).upsample.\(level)",
                          textures: [pyramid.scratch[level + 1], pyramid.levels[level], pyramid.scratch[level]],
-                         weight: halation.levelWeights[level + 1], grid: pyramid.levels[level])
+                         weight: scatter.levelWeights[level + 1], grid: pyramid.levels[level])
         }
-        try dispatch("halationComposite", label: "halation.composite",
+        try dispatch("scatterComposite", label: "\(scattering).composite",
                      textures: [source, destination, pyramid.scratch[0], pyramid.raw],
-                     weight: halation.levelWeights[0], grid: destination)
+                     weight: scatter.levelWeights[0], grid: destination)
     }
 
     /// Two separable Gaussians of the source, combined with the source itself. The
@@ -636,6 +674,9 @@ public actor Renderer {
     }
 }
 
+/// The twelve-stage pipeline, in the order the light meets it. Bloom is the taking
+/// lens and so precedes Halation, which happens inside the film.
 private enum Pass: String, CaseIterable {
-    case decode, whiteBalance, exposure, reciprocity, halation, mtf, filmResponse, grain, outputStage, geometry, outputTransform
+    case decode, whiteBalance, exposure, reciprocity, bloom, halation, mtf, filmResponse, grain,
+         outputStage, geometry, outputTransform
 }

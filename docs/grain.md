@@ -1,7 +1,7 @@
 # The Grain Pass
 
 Grain is the developed Emulsion's own structure, so it belongs to the negative
-rather than to the picture of it. It runs at Pass 8, in **Density Space** — after
+rather than to the picture of it. It runs at Pass 9, in **Density Space** — after
 the Film Response and before the Output Stage — which is what makes the scan or
 the print act on it the way it would on real film. Grain added after the Output
 Stage would be noise laid on a positive, and would not compress in the highlights

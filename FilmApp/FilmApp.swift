@@ -105,6 +105,12 @@ struct EditorView: View {
                               format: developmentLabel)
                 Text(developmentHint).font(.caption).foregroundStyle(.secondary)
             }
+            if model.hasBloom {
+                LabeledSlider(title: "Bloom", value: $model.settings.bloomIntensity,
+                              range: RenderSettings.bloomRange, step: 0.05,
+                              format: { String(format: "%.0f%%", $0 * 100) })
+                Text(bloomHint).font(.caption).foregroundStyle(.secondary)
+            }
             if model.hasHalation {
                 LabeledSlider(title: "Halation", value: $model.settings.halationIntensity,
                               range: RenderSettings.halationRange, step: 0.05,
@@ -162,6 +168,18 @@ struct EditorView: View {
         if abs(offset) < 0.05 { return "Rated at EI \(Int(rating.rounded())) and developed normally." }
         let change = offset > 0 ? "raises contrast and collapses shadow separation" : "lowers contrast and opens shadows"
         return String(format: "Rated at EI %d, developed %+.1f stops. Blends the nearest baked variants; %@.", Int(rating.rounded()), offset, change)
+    }
+
+    /// Bloom is the lens rather than the film, which is the distinction the hint has
+    /// to carry: it sits next to halation and is easily mistaken for it.
+    private var bloomHint: String {
+        let intensity = model.settings.bloomIntensity
+        let base = "The taking lens spreads a little of every part of the scene across the frame, over about "
+            + "\(Int(model.bloomRadiusMicrons)) µm of film. It takes that light from the scene rather than adding it, "
+            + "and the film records the result, so it softens a highlight's surroundings instead of brightening them. "
+            + "Halation, below, is the film reflecting light back into itself and is a different thing."
+        if abs(intensity - 1) < 0.025 { return "At the modelled lens's own diffusion. " + base }
+        return String(format: "At %.0f%% of the modelled lens's own diffusion. ", intensity * 100) + base
     }
 
     /// 100% is the Stock's own scattering, so the control reads as a departure from it.

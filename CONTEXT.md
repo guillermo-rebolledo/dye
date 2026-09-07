@@ -27,8 +27,8 @@ followed by a **Density Curve**, and only negative stocks reach an **Output Stag
 A render applies **Passes** in a fixed order to a photograph, in the **Working Space**.
 The user's controls sit at specific points in that order — **Exposure** and
 **White Balance** before the **Film Response**, **Development Offset** selecting
-between Colour Cubes, **Grain** and **Halation** scaled relative to the Profile's own
-values. A **Preset** saves a Stock plus those settings.
+between Colour Cubes, **Bloom**, **Halation** and **Grain** scaled relative to the
+Profile's own values. A **Preset** saves a Stock plus those settings.
 
 ## Language
 
@@ -140,7 +140,7 @@ _Avoid_: generator, compiler, toolchain
 ### The pipeline
 
 **Pass**:
-One stage of the eleven-stage render pipeline. Their order is a correctness
+One stage of the twelve-stage render pipeline. Their order is a correctness
 requirement, not a performance preference.
 _Avoid_: step, stage (collides with Output Stage), filter, node
 
@@ -323,12 +323,12 @@ _Avoid_: grid, gallery, preview sheet
 
 ## Open questions
 
-**Bloom has no home.** It is named as a user-facing intensity control alongside
-Halation and Grain, but no Profile parameter describes it and no Pass produces it.
-Halation and Grain now each have all three — a Pass, a Profile parameter, and a
-0–200% control scaling it — and Bloom has none, so no Bloom control ships. Either
-it needs a parameter and a Pass, or the control should be dropped and Halation left
-to carry the effect. Unresolved.
+**Bloom's home is now the lens.** It was recorded here as having no Profile
+parameter and no Pass. It now has both, on the reading that it is veiling glare in
+the taking lens rather than anything the film does — which is why every Stock
+carries the same modelled lens and both its parameters are artistic. If the
+Catalogue ever wants to distinguish lenses, `bloom` is where that belongs, and it
+should stop living in the Profile at that point. **Resolved, but note the seam.**
 
 **"Approximation" is not yet a term.** Foma and Kentmere profiles will be materially
 less rigorous than Kodak ones, and the decision on whether to ship them labelled as

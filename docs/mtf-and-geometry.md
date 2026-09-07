@@ -1,9 +1,9 @@
 # The MTF and Geometry Passes
 
-Two spatial passes bracket the film. **MTF** is Pass 6, on the light before the
+Two spatial passes bracket the film. **MTF** is Pass 7, on the light before the
 Film Response: it is the Emulsion's own micro-contrast, which is why a fine-grained
 tabular Stock reads as sharper than a coarse cubic one at the same resolution.
-**Geometry** is Pass 10, after the Output Stage: the lens's falloff, the gate's
+**Geometry** is Pass 11, after the Output Stage: the lens's falloff, the gate's
 unsteadiness and the frame's edge, none of which is a property of the Stock.
 
 ## MTF

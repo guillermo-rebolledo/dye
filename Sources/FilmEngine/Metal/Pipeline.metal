@@ -27,31 +27,35 @@ kernel void exposure(texture2d<half, access::read> input [[texture(0)]],
     output.write(half4(half3(float3(pixel.rgb) * gain), pixel.a), p);
 }
 
-// Pass 5, Halation. Light that passes through the Emulsion reflects off the back
-// of the base and re-exposes it from behind, so this runs on scene-linear light
-// before the Film Response rather than as a post effect on the developed image.
+// Passes 5 and 6, Bloom and Halation. Both scatter light before the Film Response
+// rather than after it, and both blur in the same pyramid, so they share these
+// kernels and differ only in what they extract and how they composite it back.
+// Bloom is the taking lens spreading a fraction of *all* the light across the
+// frame; Halation is light that passed through the Emulsion, reflected off the
+// back of the base and re-exposed it from behind.
 //
-// `parameters` = (threshold, knee half-width, strength, unused). The knee is the
-// C1 quadratic that joins zero to `x - threshold` across ±knee, so a highlight
-// entering the halo does not switch on at a hard edge.
-static float3 halationKnee(float3 x, float threshold, float knee) {
+// `parameters` = (threshold, knee half-width, strength, dim). The knee is the C1
+// quadratic that joins zero to `x - threshold` across ±knee, so a highlight
+// entering a halo does not switch on at a hard edge; Bloom sets a zero threshold
+// and takes everything.
+static float3 scatterKnee(float3 x, float threshold, float knee) {
     float3 d = x - threshold;
     float3 soft = (d + knee) * (d + knee) / (4.0f * knee);
     return select(select(soft, d, d >= knee), float3(0), d <= -knee);
 }
 
-kernel void halationThreshold(texture2d<half, access::read> input [[texture(0)]],
+kernel void scatterThreshold(texture2d<half, access::read> input [[texture(0)]],
                               texture2d<half, access::write> output [[texture(1)]],
                               constant float4 &parameters [[buffer(8)]],
                               uint2 p [[thread_position_in_grid]]) {
     if (p.x >= output.get_width() || p.y >= output.get_height()) return;
-    float3 excess = halationKnee(float3(input.read(p).rgb), parameters.x, parameters.y);
+    float3 excess = scatterKnee(float3(input.read(p).rgb), parameters.x, parameters.y);
     output.write(half4(half3(excess), 1.0h), p);
 }
 
 // A 2×2 box average halves the resolution between pyramid levels. Its own 0.5-texel
 // sigma is part of the level's effective radius, which the renderer accounts for.
-kernel void halationDownsample(texture2d<half, access::read> input [[texture(0)]],
+kernel void scatterDownsample(texture2d<half, access::read> input [[texture(0)]],
                                texture2d<half, access::write> output [[texture(1)]],
                                uint2 p [[thread_position_in_grid]]) {
     if (p.x >= output.get_width() || p.y >= output.get_height()) return;
@@ -63,40 +67,40 @@ kernel void halationDownsample(texture2d<half, access::read> input [[texture(0)]
     output.write(half4(half3(sum * 0.25f), 1.0h), p);
 }
 
-// One separable Gaussian per level. `HALATION_BLUR_SIGMA` texels at every level,
+// One separable Gaussian per level. `SCATTER_BLUR_SIGMA` texels at every level,
 // so the level scale alone sets how far the pass reaches.
-constant float HALATION_BLUR_SIGMA = 1.5f;
-constant int HALATION_BLUR_RADIUS = 5;
+constant float SCATTER_BLUR_SIGMA = 1.5f;
+constant int SCATTER_BLUR_RADIUS = 5;
 
-static void halationBlur(texture2d<half, access::read> input, texture2d<half, access::write> output, uint2 p, int2 axis) {
+static void scatterBlur(texture2d<half, access::read> input, texture2d<half, access::write> output, uint2 p, int2 axis) {
     int2 limit = int2(input.get_width() - 1, input.get_height() - 1);
     float3 sum = 0.0f;
     float total = 0.0f;
-    for (int i = -HALATION_BLUR_RADIUS; i <= HALATION_BLUR_RADIUS; ++i) {
-        float weight = exp(-0.5f * float(i * i) / (HALATION_BLUR_SIGMA * HALATION_BLUR_SIGMA));
+    for (int i = -SCATTER_BLUR_RADIUS; i <= SCATTER_BLUR_RADIUS; ++i) {
+        float weight = exp(-0.5f * float(i * i) / (SCATTER_BLUR_SIGMA * SCATTER_BLUR_SIGMA));
         sum += float3(input.read(uint2(clamp(int2(p) + axis * i, int2(0), limit))).rgb) * weight;
         total += weight;
     }
     output.write(half4(half3(sum / total), 1.0h), p);
 }
 
-kernel void halationBlurHorizontal(texture2d<half, access::read> input [[texture(0)]],
+kernel void scatterBlurHorizontal(texture2d<half, access::read> input [[texture(0)]],
                                    texture2d<half, access::write> output [[texture(1)]],
                                    uint2 p [[thread_position_in_grid]]) {
     if (p.x >= output.get_width() || p.y >= output.get_height()) return;
-    halationBlur(input, output, p, int2(1, 0));
+    scatterBlur(input, output, p, int2(1, 0));
 }
 
-kernel void halationBlurVertical(texture2d<half, access::read> input [[texture(0)]],
+kernel void scatterBlurVertical(texture2d<half, access::read> input [[texture(0)]],
                                  texture2d<half, access::write> output [[texture(1)]],
                                  uint2 p [[thread_position_in_grid]]) {
     if (p.x >= output.get_width() || p.y >= output.get_height()) return;
-    halationBlur(input, output, p, int2(0, 1));
+    scatterBlur(input, output, p, int2(0, 1));
 }
 
 // Per-channel level weighting: `weight.rgb` is how much of this level each channel
 // takes, so red can resolve to a coarser level than blue from the same pyramid.
-kernel void halationScale(texture2d<half, access::read> input [[texture(0)]],
+kernel void scatterScale(texture2d<half, access::read> input [[texture(0)]],
                           texture2d<half, access::write> output [[texture(1)]],
                           constant float4 &weight [[buffer(10)]],
                           uint2 p [[thread_position_in_grid]]) {
@@ -106,7 +110,7 @@ kernel void halationScale(texture2d<half, access::read> input [[texture(0)]],
 
 // Accumulate coarse to fine. Doubling once per level keeps the interpolation local,
 // which is what stops a 32× magnification of the smallest level from banding.
-kernel void halationUpsample(texture2d<half, access::sample> coarse [[texture(0)]],
+kernel void scatterUpsample(texture2d<half, access::sample> coarse [[texture(0)]],
                              texture2d<half, access::read> level [[texture(1)]],
                              texture2d<half, access::write> output [[texture(2)]],
                              constant float4 &weight [[buffer(10)]],
@@ -118,10 +122,13 @@ kernel void halationUpsample(texture2d<half, access::sample> coarse [[texture(0)
     output.write(half4(half3(sum), 1.0h), p);
 }
 
-// The tinted halo goes back into the linear signal the Film Response then reads.
-// `rawWeight` is the share the unblurred extract keeps, for a radius finer than
-// the smallest level's own blur.
-kernel void halationComposite(texture2d<half, access::read> input [[texture(0)]],
+// The scattered light goes back into the linear signal the Film Response then
+// reads. `rawWeight` is the share the unblurred extract keeps, for a radius finer
+// than the smallest level's own blur. `parameters.w` is how much of the source the
+// scattered light replaces rather than adds to: Halation adds, because it is a
+// second exposure of the same frame, and Bloom replaces, because a lens
+// redistributes the light it already had rather than creating more.
+kernel void scatterComposite(texture2d<half, access::read> input [[texture(0)]],
                               texture2d<half, access::write> output [[texture(1)]],
                               texture2d<half, access::read> halo [[texture(2)]],
                               texture2d<half, access::read> raw [[texture(3)]],
@@ -132,10 +139,11 @@ kernel void halationComposite(texture2d<half, access::read> input [[texture(0)]]
     if (p.x >= output.get_width() || p.y >= output.get_height()) return;
     half4 pixel = input.read(p);
     float3 scattered = float3(halo.read(p).rgb) + float3(raw.read(p).rgb) * rawWeight.xyz;
-    output.write(half4(half3(float3(pixel.rgb) + scattered * parameters.z * tint.xyz), pixel.a), p);
+    float3 kept = float3(pixel.rgb) * (1.0f - parameters.w * parameters.z);
+    output.write(half4(half3(kept + scattered * parameters.z * tint.xyz), pixel.a), p);
 }
 
-// Pass 6, MTF. A Stock's published response is a modulation transfer curve in
+// Pass 7, MTF. A Stock's published response is a modulation transfer curve in
 // cycles per millimetre, so it is fixed relative to the frame and converts to
 // pixels through Frame Width exactly as the Halation and Grain radii do.
 //
@@ -198,7 +206,7 @@ static float3 tetrahedral(texture3d<half, access::read> cube, float3 coordinate)
     return x0 + f[a] * (x1 - x0) + f[b] * (x2 - x1) + f[c] * (x3 - x2);
 }
 
-// Pass 7. `shaper` = (enabled, minimumLogExposure, 1 / log range, middleGrayLogExposure)
+// Pass 8. `shaper` = (enabled, minimumLogExposure, 1 / log range, middleGrayLogExposure)
 // maps scene-linear light to the spectral Colour Cube's log-exposure coordinate;
 // disabled, the cube is addressed by linear [0, 1] values. `blend.x` weights the
 // second Colour Cube, the neighbouring Development Offset variant.
@@ -240,7 +248,7 @@ kernel void monochromeResponse(texture2d<half, access::read> input [[texture(0)]
     output.write(half4(density, density, density, pixel.a), p);
 }
 
-// Pass 8, Grain. Density Space, after the Film Response and before the Output
+// Pass 9, Grain. Density Space, after the Film Response and before the Output
 // Stage, so the scan or print acts on the grain the way it would on real film.
 //
 // `cell` is the noise correlation length in pixels, derived from
@@ -321,7 +329,7 @@ kernel void grain(texture2d<half, access::read> input [[texture(0)]],
     output.write(half4(half3(result), pixel.a), p);
 }
 
-// Pass 9, Scan. Inverts Density Space above the Stock's base density and
+// Pass 10, Scan. Inverts Density Space above the Stock's base density and
 // auto-balances so its mid-grey density lands on 0.18 in every channel, with the
 // same rational shoulder the Baker uses for spectral scan cubes.
 kernel void scanOutput(texture2d<half, access::read> input [[texture(0)]],
@@ -338,7 +346,7 @@ kernel void scanOutput(texture2d<half, access::read> input [[texture(0)]],
     output.write(half4(half3(positive), pixel.a), p);
 }
 
-// Pass 10, Geometry. The lens's falloff, the gate's unsteadiness and the frame's
+// Pass 11, Geometry. The lens's falloff, the gate's unsteadiness and the frame's
 // own edge: everything whose value depends on where in the frame a pixel sits.
 // `geometry` = (vignette, gate weave x, gate weave y, border half-width), the
 // weave and the border in pixels converted from Film-Plane Microns.

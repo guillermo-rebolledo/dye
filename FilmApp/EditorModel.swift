@@ -36,6 +36,12 @@ import FilmEngine
     /// How far the Stock scatters in its widest channel, in Film-Plane Microns.
     var halationReachMicrons: Double { profile.metadata.halation.radiusMicrons[0] }
 
+    /// Whether the modelled taking lens diffuses at all.
+    var hasBloom: Bool { profile.metadata.bloom.strength > 0 }
+
+    /// How far the lens spreads what it diffuses, in Film-Plane Microns.
+    var bloomRadiusMicrons: Double { profile.metadata.bloom.radiusMicrons }
+
     /// Whether the Stock grains at all; a Profile with no granularity has no control.
     var hasGrain: Bool { !profile.metadata.grain.isSilent }
 

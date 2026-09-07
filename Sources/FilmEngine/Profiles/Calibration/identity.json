@@ -116,6 +116,12 @@
     "mtf.cyclesPerMM": "artistic",
     "mtf.response": "artistic",
     "reciprocity.schwarzschildP": "artistic",
-    "reciprocity.thresholdSeconds": "artistic"
+    "reciprocity.thresholdSeconds": "artistic",
+    "bloom.strength": "artistic",
+    "bloom.radiusMicrons": "artistic"
+  },
+  "bloom": {
+    "strength": 0.0,
+    "radiusMicrons": 900.0
   }
 }
