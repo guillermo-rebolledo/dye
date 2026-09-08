@@ -244,6 +244,13 @@ What happens to a negative after the film: `scan`, `print`, or `none`. Reversal
 stocks use `none`, because the film is already the final image.
 _Avoid_: post, output, development (means Development Offset)
 
+**Viewing Light**:
+The illuminant and observer a Transparency is read by, standing where the Scan's
+scanner stands for a negative. A standard viewer is a defined white, so it
+cancels against the Curve Set's own reference neutral and what survives is the
+dyes, not a white balance.
+_Avoid_: light table, viewer, illuminant (unqualified — collides with Scene Illuminant)
+
 **Scan**:
 Scanner emulation — inversion plus auto-balance. The default for negative stocks,
 because most people's mental image of a Stock is a scan rather than a print.
@@ -257,7 +264,7 @@ _Avoid_: darkroom, paper, optical
 The developed reversal image itself, read by transmission under a viewing light
 rather than scanned or printed. A reversal Stock's Colour Cube carries one, which
 is what makes its Output Stage `none` rather than merely unimplemented.
-_Avoid_: slide, chrome, positive, projection
+_Avoid_: slide, chrome, projection
 
 **Geometry**:
 The Pass applying everything whose value depends on where in the frame a pixel

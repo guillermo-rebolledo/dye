@@ -134,11 +134,15 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         public var schwarzschildP: [Double]
         public var thresholdSeconds: Double
 
+        /// Whether the Stock fails at all. A Curve Set that records no failure has
+        /// nothing for an exposure time to change, and no control to offer.
+        public var isSilent: Bool { thresholdSeconds <= 0 || schwarzschildP.allSatisfy { $0 >= 1 } }
+
         /// The per-channel scale on scene-linear light for an exposure of `seconds`.
         /// One everywhere below the threshold, and one in every channel whose
         /// exponent is 1 — a Stock the Curve Set records no failure for.
         public func gain(seconds: Double) -> [Double] {
-            guard seconds > thresholdSeconds, thresholdSeconds > 0 else { return [1, 1, 1] }
+            guard seconds > thresholdSeconds, !isSilent else { return [1, 1, 1] }
             return schwarzschildP.map { pow(seconds / thresholdSeconds, $0 - 1) }
         }
     }

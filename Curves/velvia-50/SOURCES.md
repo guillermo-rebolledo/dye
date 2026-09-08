@@ -82,7 +82,7 @@ Source SHA-256 checksums are respectively
 
 These colourimetric tables are not Velvia measurements. D65 stands in both for
 the manufacturer's unspecified daylight capture spectrum and for the D50 viewer
-the sheet specifies; because the reversal projection normalises the Curve Set's
+the sheet specifies; because the reversal viewing transform normalises the Curve Set's
 own reference neutral to Working Space mid-grey in every channel, the viewing
 white cancels and only the dyes' shape survives.
 

@@ -211,9 +211,9 @@ struct SpectralModel {
         if reversal {
             // The reference neutral lands on Working Space mid-grey in every channel:
             // a standard viewer is a defined white, and the Curve Set's own neutral
-            // exposure is what defines neutral on this Stock. What the projection
-            // then carries is the dyes' saturation and the curve's contrast, not a
-            // white balance the datasheet never published.
+            // exposure is what defines neutral on this Stock. What the viewing
+            // transform then carries is the dyes' saturation and the curve's
+            // contrast, not a white balance the datasheet never published.
             var reference = SIMD3<Double>(repeating: 0)
             for i in grid.indices {
                 reference += observerXYZ[i] * pow(10, -(minimumDensity[i] + simd_reduce_add(dyeContributions[i])))
@@ -271,18 +271,24 @@ struct SpectralModel {
         return result
     }
 
-    /// What comes out of the film: a negative's scan, or the transparency itself.
+    /// What comes out of the film: a negative's scan, or the Transparency itself.
     func output(_ density: SIMD3<Double>) -> SIMD3<Double> {
-        isReversal ? project(density) : scan(density)
+        isReversal ? transparency(density) : scan(density)
     }
 
-    /// A transparency on a standard viewer. No inversion and no auto-balance: the
+    /// How much dye each layer formed, as a multiple of what it formed at the Curve
+    /// Set's reference neutral. Both output stages read the film through this.
+    private func dyeAmounts(_ density: SIMD3<Double>) -> SIMD3<Double> {
+        simd_max(density - base, SIMD3<Double>(repeating: 0)) / grayExcess
+    }
+
+    /// The Transparency on a standard viewer. No inversion and no auto-balance: the
     /// dyes are read by transmission and that is already the picture. Nothing
     /// rolls the highlights off either, which is where reversal's roughly five
     /// stops of Latitude come from — above the reference neutral the film runs out
-    /// of density to lose, and everything brighter clips to clear film.
-    func project(_ density: SIMD3<Double>) -> SIMD3<Double> {
-        let amounts = simd_max(density - base, SIMD3<Double>(repeating: 0)) / grayExcess
+    /// of density to lose, and everything brighter is clear film.
+    func transparency(_ density: SIMD3<Double>) -> SIMD3<Double> {
+        let amounts = dyeAmounts(density)
         var xyz = SIMD3<Double>(repeating: 0)
         for i in observerXYZ.indices {
             xyz += observerXYZ[i] * pow(10, -(minimumDensity[i] + simd_dot(dyeContributions[i], amounts)))
@@ -296,7 +302,7 @@ struct SpectralModel {
     }
 
     func scan(_ density: SIMD3<Double>) -> SIMD3<Double> {
-        let amounts = simd_max(density - base, SIMD3<Double>(repeating: 0)) / grayExcess
+        let amounts = dyeAmounts(density)
         var transmission = SIMD3<Double>(repeating: 0)
         for i in scanner.indices {
             let spectralDensity = minimumDensity[i] + simd_dot(dyeContributions[i], amounts)

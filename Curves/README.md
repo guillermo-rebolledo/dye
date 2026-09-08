@@ -135,7 +135,7 @@ and carries the manufacturer's isolated, peak-normalised dye curves rather than
 Kodak's aggregate `minimum,midscale` pair, so `spectral.json` drops `dyePeakNM`,
 `dyeWidthNM` and `scanGamma` and adds nothing: the dye amplitudes the normalised
 chart omits are solved from the measured reference neutral instead of authored. And `colour.lutSize` may be 65 as well as 33: a
-slide's curve turns faster than a negative's, and Velvia's turns fast enough to
+reversal curve turns faster than a negative's, and Velvia's turns fast enough to
 need the finer grid to hold the Step Wedge's 0.03 bound honestly. It costs eight
 times the payload and eight times the bake, so it is a per-Stock decision.
 

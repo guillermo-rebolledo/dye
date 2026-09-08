@@ -340,7 +340,12 @@ public actor Renderer {
                 blend = Float((offset - lowerVariant!.pushStops) / (upperVariant!.pushStops - lowerVariant!.pushStops))
             }
         } else { offset = 0 }
-        let gain = Float(pow(2, settings.exposureStops - offset))
+        // Metering is at True Speed, not Box Speed: a Stock that behaves slower than
+        // the box says is given the light a meter set to what it actually is would
+        // have given it. Cinestill 800T and Velvia 50 are the two the Catalogue
+        // records a difference for; for every other Stock this term is zero.
+        let rating = log2(metadata.nominalISO / metadata.trueISO)
+        let gain = Float(pow(2, settings.exposureStops - offset + rating))
         let failure = metadata.reciprocity.gain(seconds: settings.exposureSeconds)
         let reciprocity = failure.contains { $0 != 1 }
             ? SIMD4(Float(failure[0]), Float(failure[1]), Float(failure[2]), 0) : nil
@@ -350,7 +355,12 @@ public actor Renderer {
         if let s = metadata.colour.inputShaper {
             shaper = SIMD4(1, Float(s.minimumLogExposure), Float(1 / (s.maximumLogExposure - s.minimumLogExposure)), Float(s.middleGrayLogExposure))
         }
-        let stage = settings.outputStage ?? metadata.colour.outputStage
+        // A Stock with no Output Stage has none whatever the settings ask for: there
+        // is nothing after a reversal Stock's film to choose between, and a forced
+        // scan would invert an image that is already the Transparency. The override
+        // is how a negative is read in Density Space, not a way to add a stage.
+        let stage = metadata.colour.outputStage == OutputStage.none
+            ? OutputStage.none : (settings.outputStage ?? metadata.colour.outputStage)
         guard stage != .print else { throw FilmError.invalid("The Print Output Stage is not implemented yet") }
         // Spectral cubes already contain the Baker's scan; a Density Space cube is scanned here.
         let scan = stage == .scan && metadata.colour.cubeOutput != .displayLinearRec2020

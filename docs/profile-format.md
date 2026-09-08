@@ -34,7 +34,8 @@ wavelengths scatter furthest through the base. See [the Halation Pass](halation.
 for what the renderer does with them.
 
 `reciprocity.schwarzschildP` carries exactly three exponents, one per layer, each
-in 0…1, and `reciprocity.thresholdSeconds` is nonnegative. Below the threshold the
+greater than zero and at most one, and `reciprocity.thresholdSeconds` is
+nonnegative. Below the threshold the
 Stock obeys reciprocity exactly; above it each layer keeps
 `(seconds / thresholdSeconds)^(p − 1)` of the light it is given. Three exponents
 rather than one because the layers lose speed at different rates, which is why a

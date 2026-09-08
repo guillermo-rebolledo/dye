@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Reproduce the Fujichrome/CIE CSV digitisation for PROVIA 100F and Velvia 50.
 Requires PyMuPDF 1.28.2 and NumPy.
-Usage: digitize-fujichrome.py provia-100f|velvia-50 <datasheet.pdf> <provia-datasheet.pdf> CIE_xyz_1931_2deg.csv CIE_std_illum_D65.csv output-directory
+Usage: digitize-fujichrome.py provia-100f <datasheet.pdf> CIE_xyz_1931_2deg.csv CIE_std_illum_D65.csv output-directory
+       digitize-fujichrome.py velvia-50 <datasheet.pdf> <provia-datasheet.pdf> CIE_xyz_1931_2deg.csv CIE_std_illum_D65.csv output-directory
 
 Unlike the Kodak datasheets, Fujifilm draws most of these charts as 1-bit raster
 plates rather than vector paths, so the curves are recovered from ink pixels.
@@ -25,12 +26,15 @@ STOCKS = {
         'reference': 'Fujifilm AF3-036E, page 5',
         'page': 5,
         'rms': 0.008,
+        'plates': {'characteristic': 50, 'mtf': 54, 'dyeBlack': 55, 'green': 51, 'red': 52, 'blue': 53,
+                   'yellow': 56, 'magenta': 57, 'cyan': 58},
     },
     'velvia-50': {
         'sha256': '668844e4cf81d5d234645c90d0b3217ed81c3be925a063b4752f7a71c3954d4c',
         'reference': 'Fujifilm AF3-0221E2, page 8',
         'page': 7,
         'rms': 0.009,
+        'plates': {'characteristic': 41, 'sensitivity': 42, 'mtf': 39},
     },
 }
 
@@ -232,18 +236,19 @@ def falling(points):
     return out
 
 
-def characteristic(document, page, stock):
+def characteristic(document, stock):
     """Density against log exposure, per layer. Reversal curves fall as exposure
     rises, and the three layers are printed on top of one another wherever the
     stock develops neutrally, so a layer is only drawn where it departs from the
     one covering it."""
     if stock == 'provia-100f':
         # One separation plate per curve, so no two curves are ever confused.
-        black = ink(document, 50)
+        black = ink(document, STOCKS[stock]['plates']['characteristic'])
         x = calibrate(centres(rules(black, 1)), [-3.5 + 0.5 * i for i in range(10)])
         y = calibrate(centres(rules(black, 0, 0.35)), [4.0 - 0.5 * i for i in range(9)])
         curves = {}
-        for name, xref in (('red', 52), ('green', 51), ('blue', 53)):
+        for name in ('red', 'green', 'blue'):
+            xref = STOCKS[stock]['plates'][name]
             plate = ink(document, xref)
             points = []
             for column in range(plate.shape[1]):
@@ -269,7 +274,7 @@ def characteristic(document, page, stock):
                        for h in np.arange(end, 0.801, 0.005) if h > end]
             result[name] = falling(resample(joined, grid, 0.025))
         return result
-    black = ink(document, 41)
+    black = ink(document, STOCKS[stock]['plates']['characteristic'])
     x = calibrate(centres(rules(black, 1)), [-3.0 + 0.5 * i for i in range(10)])
     y = calibrate(centres(rules(black, 0, 0.35)), [4.0 - 0.5 * i for i in range(9)])
     cleared, skip = plot(black, 0.35)
@@ -310,7 +315,7 @@ def sensitivity(document, page, stock):
                 row.append(0.0 if value is None else 10 ** value)
             rows.append(row)
         return rows
-    black = ink(document, 42)
+    black = ink(document, STOCKS[stock]['plates']['sensitivity'])
     x = calibrate(centres(rules(black, 1))[1:-1], [400, 500, 600, 700])
     y = calibrate(centres(rules(black, 0)), [2.0, 1.0, 0.0, -1.0])
     cleared, skip = plot(black)
@@ -336,12 +341,12 @@ def dye_density(document):
     Velvia's is one black plate of three curves that cross one another, and no
     separation of it is reliable enough to call a measurement. Velvia therefore
     borrows this one, which its Curve Set records as an approximation."""
-    black = ink(document, 55)
+    black = ink(document, STOCKS['provia-100f']['plates']['dyeBlack'])
     x = calibrate(centres(rules(black, 1))[1:-1], [400, 500, 600, 700])
     y = calibrate(centres(rules(black, 0))[1:], [1.0, 0.5, 0.0])
     curves = {}
-    for name, xref in (('cyan', 58), ('magenta', 57), ('yellow', 56)):
-        plate = ink(document, xref)
+    for name in ('cyan', 'magenta', 'yellow'):
+        plate = ink(document, STOCKS['provia-100f']['plates'][name])
         points = [(x(column + 0.5), y(centre))
                   for column in range(plate.shape[1]) for centre in runs(plate[:, column])[:1]]
         curves[name] = np.array(points)
@@ -354,12 +359,12 @@ def dye_density(document):
     return [[row[0]] + [row[i + 1] / peaks[i] for i in range(3)] for row in rows]
 
 
-def mtf(document, page, stock):
+def mtf(document, stock):
     """One published modulation transfer curve, on logarithmic axes. Fujifilm
     prints a single curve rather than one per layer; the same values fill the
     red, green and blue columns, which is a documented reduction rather than a
     claim of three measurements."""
-    black = ink(document, 54 if stock == 'provia-100f' else 39)
+    black = ink(document, STOCKS[stock]['plates']['mtf'])
     x = calibrate(centres(rules(black, 1)), MTF_FREQUENCY_LABELS, log=True)
     y = calibrate(centres(rules(black, 0)), MTF_RESPONSE_LABELS, log=True)
     cleared, skip = plot(black)
@@ -376,12 +381,18 @@ def open_pinned(stock, path):
 
 
 def main():
-    stock, pdf, provia_pdf, xyz_path, d65_path, output = sys.argv[1:]
+    stock, arguments = sys.argv[1], sys.argv[2:]
     if stock not in STOCKS:
         raise SystemExit('Expected provia-100f or velvia-50')
+    # Velvia borrows Provia's dye plates, so it needs that sheet too; Provia is its
+    # own dye source and does not take a second one. See Curves/velvia-50/SOURCES.md.
+    borrows = stock != 'provia-100f'
+    if len(arguments) != (5 if borrows else 4):
+        raise SystemExit(__doc__)
+    pdf, xyz_path, d65_path, output = arguments[0], *arguments[-3:]
     spec = STOCKS[stock]
     document = open_pinned(stock, pdf)
-    provia = document if stock == 'provia-100f' else open_pinned('provia-100f', provia_pdf)
+    provia = open_pinned('provia-100f', arguments[1]) if borrows else document
     page = document[spec['page']]
     out = pathlib.Path(output)
     out.mkdir(parents=True, exist_ok=True)
@@ -394,13 +405,13 @@ def main():
             writer.writerow(header)
             writer.writerows([[('%.6f' % v) if isinstance(v, float) else v for v in row] for row in rows])
 
-    for name, rows in characteristic(document, page, stock).items():
+    for name, rows in characteristic(document, stock).items():
         write('neutral.%s.csv' % name, 'Characteristic Curves', ['logExposure', 'density'], rows)
     write('sensitivity.csv', 'Spectral Sensitivity Curves', ['wavelengthNM', 'red', 'green', 'blue'],
           sensitivity(document, page, stock))
     write('dye-density.csv', 'Spectral Dye Density Curves', ['wavelengthNM', 'cyan', 'magenta', 'yellow'],
           dye_density(provia), reference=STOCKS['provia-100f']['reference'])
-    write('mtf.csv', 'MTF Curve', ['cyclesPerMM', 'red', 'green', 'blue'], mtf(document, page, stock))
+    write('mtf.csv', 'MTF Curve', ['cyclesPerMM', 'red', 'green', 'blue'], mtf(document, stock))
     # Fujifilm publishes one diffuse RMS granularity value, read through the
     # standard 48 µm aperture at 1.0 above minimum density. Unlike Kodak's Print
     # Grain Index this is the measurement the Grain Pass wants.

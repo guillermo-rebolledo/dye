@@ -260,10 +260,16 @@ struct EditorView: View {
 
     private var developmentHint: String {
         let offset = model.settings.developmentOffset
-        let rating = model.profile.metadata.trueISO * pow(2, offset)
-        if abs(offset) < 0.05 { return "Rated at EI \(Int(rating.rounded())) and developed normally." }
+        let metadata = model.profile.metadata
+        let rating = metadata.trueISO * pow(2, offset)
+        // The render meters at True Speed, so a Stock the box overstates is given
+        // the light it actually wants; saying so is the only way that is visible.
+        let box = metadata.trueISO == metadata.nominalISO ? ""
+            : " The box says \(Int(metadata.nominalISO.rounded())); this stock behaves nearer \(Int(metadata.trueISO.rounded())), and it is metered that way."
+        if abs(offset) < 0.05 { return "Rated at EI \(Int(rating.rounded())) and developed normally." + box }
         let change = offset > 0 ? "raises contrast and collapses shadow separation" : "lowers contrast and opens shadows"
-        return String(format: "Rated at EI %d, developed %+.1f stops. Blends the nearest baked variants; %@.", Int(rating.rounded()), offset, change)
+        return String(format: "Rated at EI %d, developed %+.1f stops. Blends the nearest baked variants; %@.",
+                      Int(rating.rounded()), offset, change) + box
     }
 
     /// Bloom is the lens rather than the film, which is the distinction the hint has
@@ -308,11 +314,10 @@ struct EditorView: View {
 
     private var outputSubtitle: String {
         if model.isIdentity { return "Display P3" }
-        guard model.hasOutputStage else { return "Reversal · Display P3" }
         switch model.profile.metadata.colour.outputStage {
         case .scan: return "Scan · Display P3"
         case .print: return "Print · Display P3"
-        case .none: return "Display P3"
+        case .none: return "Reversal · Display P3"
         }
     }
 
@@ -320,14 +325,11 @@ struct EditorView: View {
     /// the card says why there is nothing to choose and moves on to the geometry.
     private var outputDescription: String {
         if model.isIdentity { return "Nothing happens after the identity response; the image is converted for the display." }
-        guard model.hasOutputStage else {
-            return "Reversal film is the final image: what the camera exposed is what you look at. There is nothing to scan or print, "
-                + "so there is no choice to make here — and only about five stops fit on the film, so highlights end at clear film rather than rolling off."
-        }
         switch model.profile.metadata.colour.outputStage {
         case .scan: return "The negative is scanned: densities are inverted and auto-balanced so mid-grey comes back neutral, the way most people picture this stock."
         case .print: return "Optical print emulation is not available yet."
-        case .none: return ""
+        case .none: return "Reversal film is the final image: what the camera exposed is what you look at. There is nothing to scan or print, "
+            + "so there is no choice to make here — and only about five stops fit on the film, so highlights end at clear film rather than rolling off."
         }
     }
 }
