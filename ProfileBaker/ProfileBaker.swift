@@ -34,7 +34,7 @@ struct ProfileBaker {
             let rows = try await stepWedge(curves: curves, profile: profile)
             try writeStepWedge(rows, prefix: URL(fileURLWithPath: arguments[3]))
             guard let maximumError = rows.map(\.error).max(), maximumError.isFinite,
-                  rows.allSatisfy({ $0.error.isFinite && $0.error <= tolerance }) else {
+                  rows.allSatisfy({ $0.error.isFinite && $0.error <= $0.stage.tolerance(default: tolerance) }) else {
                 throw FilmError.invalid("Step Wedge exceeds tolerance \(tolerance); inspect the CSV/SVG report")
             }
             print("Step Wedge passed: \(rows.count) samples, max absolute error \(maximumError), tolerance \(tolerance)")

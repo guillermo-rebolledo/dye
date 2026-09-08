@@ -63,6 +63,10 @@ public struct RenderSettings: Codable, Sendable, Equatable, Hashable {
     /// Push or pull in stops. Pushing by one stop rates the Stock one stop faster
     /// (a −1 EV exposure offset) and develops with the +1 Colour Cube.
     public var developmentOffset: Double
+    /// Coloured glass on the lens, multiplying the scene spectrally before the
+    /// Monochrome Collapse. Black & white only: a colour Stock has no collapse for
+    /// it to act on, and asking for one there is an error rather than a no-op.
+    public var contrastFilter: ContrastFilter
     /// Halation scaled relative to the Profile's own strength: 1 is the Profile
     /// value, 0 disables the Pass, 2 is the top of the user's 0–200% control.
     public var halationIntensity: Double
@@ -104,7 +108,8 @@ public struct RenderSettings: Codable, Sendable, Equatable, Hashable {
 
     public init(output: Output = .displayP3, temperatureKelvin: Double = RenderSettings.defaultTemperatureKelvin, tint: Double = 0,
                 exposureStops: Double = 0, exposureSeconds: Double = RenderSettings.defaultExposureSeconds,
-                developmentOffset: Double = 0, halationIntensity: Double = 1,
+                developmentOffset: Double = 0, contrastFilter: ContrastFilter = .none,
+                halationIntensity: Double = 1,
                 bloomIntensity: Double = 1, grainIntensity: Double = 1, vignette: Double = 0, gateWeave: Double = 0, frameBorder: Double = 0,
                 seed: UInt32 = 0, outputStage: OutputStage? = nil) {
         self.output = output
@@ -113,6 +118,7 @@ public struct RenderSettings: Codable, Sendable, Equatable, Hashable {
         self.exposureStops = exposureStops
         self.exposureSeconds = exposureSeconds
         self.developmentOffset = developmentOffset
+        self.contrastFilter = contrastFilter
         self.halationIntensity = halationIntensity
         self.bloomIntensity = bloomIntensity
         self.grainIntensity = grainIntensity
@@ -123,9 +129,10 @@ public struct RenderSettings: Codable, Sendable, Equatable, Hashable {
         self.outputStage = outputStage
     }
 
-    /// Every key but the exposure time is required. That one arrived after Presets
-    /// were already being written, and a saved Preset that predates the Reciprocity
-    /// Pass means a frame nobody recorded a shutter speed for, not a broken Preset.
+    /// Every key but the exposure time and the Contrast Filter is required. Both
+    /// arrived after Presets were already being written, and a saved Preset that
+    /// predates them means a frame nobody recorded a shutter speed for and no glass
+    /// on the lens, not a broken Preset.
     public init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         output = try values.decode(Output.self, forKey: .output)
@@ -134,6 +141,7 @@ public struct RenderSettings: Codable, Sendable, Equatable, Hashable {
         exposureStops = try values.decode(Double.self, forKey: .exposureStops)
         exposureSeconds = try values.decodeIfPresent(Double.self, forKey: .exposureSeconds) ?? Self.defaultExposureSeconds
         developmentOffset = try values.decode(Double.self, forKey: .developmentOffset)
+        contrastFilter = try values.decodeIfPresent(ContrastFilter.self, forKey: .contrastFilter) ?? .none
         halationIntensity = try values.decode(Double.self, forKey: .halationIntensity)
         bloomIntensity = try values.decode(Double.self, forKey: .bloomIntensity)
         grainIntensity = try values.decode(Double.self, forKey: .grainIntensity)

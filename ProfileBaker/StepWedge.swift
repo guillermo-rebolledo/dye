@@ -7,12 +7,27 @@ enum StepWedgeStage: String {
     case scanOutput = "scan-output"
     case reversalOutput = "reversal-output"
     case chromaticOutput = "chromatic-output"
+    case filterFactor = "filter-factor"
 
     var units: String {
         switch self {
         case .density, .measuredDensity: "optical density"
         case .scanOutput, .reversalOutput, .chromaticOutput: "display-linear channel value"
+        case .filterFactor: "stops of exposure"
         }
+    }
+
+    /// How far this stage may miss its reference by. Every stage but one is a density
+    /// or a channel value and answers to the CLI's own tolerance. Contrast Filter
+    /// factors are exposure ratios published rounded to 1.5, 2, 2.5, 6 and 8 — a third
+    /// of a stop of quantisation before the model is even wrong — and are compared
+    /// against an artistic transmittance rather than a digitised measurement, so they
+    /// carry their own bound. It is loose enough to pass and tight enough to catch a
+    /// Contrast Filter applied as a tint, dropped, or read off the wrong Stock.
+    static let filterFactorStops = 0.7
+
+    func tolerance(default value: Double) -> Double {
+        self == .filterFactor ? Self.filterFactorStops : value
     }
 }
 
@@ -48,7 +63,9 @@ func stepWedge(curves: CurveSet, profile: Profile) async throws -> [StepWedgeRow
         throw FilmError.invalid("Profile metadata does not match the reference Curve Set")
     }
     if curves.metadata.colour.inputShaper != nil {
-        return try await spectralStepWedge(curves: curves, profile: profile)
+        return curves.metadata.process.isMonochrome
+            ? try await monochromeStepWedge(curves: curves, profile: profile)
+            : try await spectralStepWedge(curves: curves, profile: profile)
     }
     let variants: [(Double, String)] = curves.metadata.monochrome.map { [(0, $0.densityCurve)] }
         ?? curves.metadata.colour.lutVariants.map { ($0.pushStops, $0.lut) }
@@ -63,9 +80,10 @@ func stepWedge(curves: CurveSet, profile: Profile) async throws -> [StepWedgeRow
                 samples.append(((a.logExposure + b.logExposure) / 2, (a.density + b.density) / 2))
             }
             samples.sort { $0.0 < $1.0 }
-            let weightSum = curves.metadata.monochrome?.spectralWeight.reduce(0, +) ?? 1
+            // The collapse's weights are normalised, so a neutral of this linear value
+            // reaches the Density Curve at exactly this log exposure.
             let pixels = samples.flatMap { x, _ -> [Float16] in
-                let exposure = Float16(pow(10, x) / weightSum)
+                let exposure = Float16(pow(10, x))
                 return [exposure, exposure, exposure, 1]
             }
             let image = try LinearImage(width: samples.count, height: 1, rgba: pixels)

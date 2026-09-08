@@ -23,7 +23,8 @@ float16 pixels, a Profile and RenderSettings. ImageIO/Core Graphics honour the
 input colour profile; CIRAWFilter handles RAW's camera colour matrix. Core Image
 is confined to RAW decode. The ordered twelve-pass Metal graph uses RGBA16Float
 textures throughout. White Balance, Exposure, Bloom, Halation, MTF, Film Response
-(tetrahedral Colour Cube sampling), Grain, the Scan Output Stage, Geometry and the
+(tetrahedral Colour Cube sampling for colour, a Monochrome Collapse and Density
+Curve for black & white), Grain, the Scan Output Stage, Geometry and the
 Display P3 output transform alter pixels; Reciprocity does too, for a Stock and an
 exposure time that call for it, and is a pass-through everywhere else.
 The canvas displays the tagged P3 result with Metal.
@@ -118,6 +119,23 @@ granularity and a long-exposure compensation table, so Grain amplitude and the
 per-layer Schwarzschild exponents are measured rather than assumed; Velvia's True
 Speed of 40 against its Box Speed of 50 is not. See
 [the reversal branch](docs/reversal.md).
+
+Tri-X 400 and T-Max 100 add the **black & white branch**, which bypasses Colour
+Cube sampling entirely: a Monochrome Collapse into one grey channel, then a
+1024-entry Density Curve. Each Stock's **Spectral Weight** is integrated from its
+digitised Kodak spectral sensitivity against the CIE colour matching functions
+rather than assumed from a luminance weighting, so the two Stocks genuinely see
+colour differently — Tri-X the bluer, T-Max the greener, by about 5 % of scan
+value on a blue or a green subject at matched luminance. Both Stocks' rms
+granularity is measured rather than artistic. **Contrast Filters** — yellow,
+orange, red, green and blue — are a spectral multiply applied *before* the
+collapse, so a red filter darkens blue sky and lightens brick instead of tinting
+the frame, and each carries its published filter factor so the glass costs
+separation and not exposure. They are offered for black & white Stocks alone.
+Derived filter factors are checked against Kodak's published per-film tables in
+CI. See [the black & white branch](docs/monochrome.md), and
+[the Contrast Filters' sources](Curves/contrast-filters/SOURCES.md) for the two
+filters whose residuals are large and why.
 
 Vision3 500T is digitised from Kodak H-1-5219t, and Cinestill 800T is
 [derived from it](Curves/cinestill-800t/SOURCES.md) rather than modelled

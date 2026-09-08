@@ -6,7 +6,9 @@ in kelvin. `nominalISO` is Box Speed and `trueISO` is True Speed.
 
 The five `process` values are `c41`, `e6`, `bw-silver`, `bw-chromogenic`, and `ecn2`.
 Only B&W Profiles have `monochrome`; they reference a 1024-entry float16 Density
-Curve and have no Colour Cubes. Colour Profiles have a nonempty, sparse
+Curve and have no Colour Cubes. See [the black & white branch](monochrome.md) for
+what `monochrome.spectralWeight` and `monochrome.contrastFilters` are and how the
+Baker derives them. Colour Profiles have a nonempty, sparse
 `colour.lutVariants` array of `{pushStops, lut}`. Offsets are unique finite values;
 the array is not constrained to a fixed set of offsets. E-6 has Output Stage `none`.
 
@@ -41,6 +43,16 @@ Stock obeys reciprocity exactly; above it each layer keeps
 rather than one because the layers lose speed at different rates, which is why a
 manufacturer's published long-exposure compensation is a colour-correction filter
 as well as an extra stop. An exponent of 1 is a layer with no measured failure.
+
+`monochrome.spectralWeight` is a nonnegative three-vector with a positive sum, and
+`monochrome.contrastFilters` carries exactly one entry per Contrast Filter other
+than `none` — yellow, orange, red, green and blue — each a finite three-vector with
+a positive sum. A filter's components may individually be negative; only the
+unfiltered weight may not. Both fields are **derived by the Baker**, so like
+`colour.sourceFingerprint` they are absent from `stock.json` and required in
+anything carrying a fingerprint. A foundation study B&W Profile authors its weight
+and has no Contrast Filters at all. `contrastFilters` requires an input shaper, and
+a colour Profile may carry neither.
 
 `grain.densityResponse` carries exactly 32 entries and `grain.channelRadiusScale`
 exactly three, `grain.channelCorrelation` is 0…1, and `grain.rmsGranularity` is a
@@ -103,10 +115,11 @@ The app picker lists the bundled Profiles by Process and renders the selection.
 
 Optional `colour.inputShaper` contains `minimumLogExposure`, `maximumLogExposure`,
 and `middleGrayLogExposure` in log10 lux-seconds. They are finite, ordered and
-bounded to −10…10. With this shaper, `colour.cubeOutput` must be
-`displayLinearRec2020`, the Profile must be colour, and Output Stage must be
-`scan` — or `none` for E-6, whose cube carries the transparency itself rather than
-a scan of a negative. A display-linear cube without a shaper is rejected. Absent extensions
+bounded to −10…10. With this shaper, Output Stage must be `scan` — or `none` for
+E-6, whose cube carries the transparency itself rather than a scan of a negative.
+`colour.cubeOutput` must be `displayLinearRec2020` for a colour Profile and absent
+for a B&W one, which has no cube whose output to describe. A display-linear cube
+without a shaper is rejected. Absent extensions
 retain the existing linear [0, 1] input / Density Space output contract.
 
 The Baker adds `colour.sourceFingerprint`, a lowercase 64-character SHA-256

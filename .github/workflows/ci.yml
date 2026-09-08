@@ -25,7 +25,7 @@ jobs:
           mkdir -p .build/step-wedges
           baker="$(swift build --show-bin-path)/ProfileBaker"
           for stock in Curves/*; do
-            [ -d "$stock" ] || continue
+            [ -f "$stock/stock.json" ] || continue
             id="$(basename "$stock")"
             "$baker" validate "$stock" "Sources/FilmEngine/Catalogue/$id.filmprofile" ".build/step-wedges/$id" 0.03
           done

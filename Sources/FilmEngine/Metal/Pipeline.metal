@@ -264,14 +264,28 @@ kernel void filmResponse(texture2d<half, access::read> input [[texture(0)]],
     output.write(half4(half3(value), pixel.a), p);
 }
 
+// Pass 8 for a black & white Stock: the Monochrome Collapse, then the Density Curve.
+// No Colour Cube is sampled and none is bound — a spectral sensitivity collapsing to
+// one channel is both cheaper and closer to what the film does than a 3D lookup.
+//
+// `spectralWeight.xyz` is the Stock's own weighting for whichever Contrast Filter is
+// fitted, already normalised so the glass costs tonal separation and not exposure.
+// The filter itself is a spectral multiply the Baker applied before the collapse; by
+// the time it reaches here it has become the collapse's weights, which is the same
+// operation and one dot product instead of a pass. `shaper` matches `filmResponse`.
 kernel void monochromeResponse(texture2d<half, access::read> input [[texture(0)]],
                                texture2d<half, access::write> output [[texture(1)]],
                                texture1d<half, access::read> densityCurve [[texture(2)]],
                                constant float4 &spectralWeight [[buffer(1)]],
+                               constant float4 &shaper [[buffer(4)]],
                                uint2 p [[thread_position_in_grid]]) {
     if (p.x >= output.get_width() || p.y >= output.get_height()) return;
     half4 pixel = input.read(p);
     float gray = dot(float3(pixel.rgb), spectralWeight.xyz);
+    if (shaper.x != 0) {
+        float logH = log10(max(gray, 1e-6f) / 0.18f) + shaper.w;
+        gray = (logH - shaper.y) * shaper.z;
+    }
     float position = clamp(gray, 0.0f, 1.0f) * 1023.0f;
     uint low = min(uint(floor(position)), 1022u);
     float a = float(densityCurve.read(low).r);

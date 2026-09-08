@@ -23,6 +23,36 @@ public enum FilmFormat: String, Codable, Sendable {
 }
 
 public enum Provenance: String, Codable, Sendable { case measured, artistic }
+
+/// A Contrast Filter: coloured glass on the lens, modelled as a spectral multiply
+/// applied before the Monochrome Collapse. Black & white only, and never a tint —
+/// each case names a Profile's own Spectral Weight for light seen through that glass.
+public enum ContrastFilter: String, Codable, Sendable, CaseIterable, Identifiable {
+    case none, yellow, orange, red, green, blue
+    public var id: String { rawValue }
+    /// The glass, named by the Wratten number the transmittance model describes.
+    public var displayName: String {
+        switch self {
+        case .none: "No filter"
+        case .yellow: "Yellow (Wratten 8)"
+        case .orange: "Orange (Wratten 15)"
+        case .red: "Red (Wratten 25)"
+        case .green: "Green (Wratten 58)"
+        case .blue: "Blue (Wratten 47)"
+        }
+    }
+    /// What the glass is for, in the terms a photographer chooses it in.
+    public var effect: String {
+        switch self {
+        case .none: "The stock's own rendering of colour."
+        case .yellow: "Darkens blue sky a little and separates cloud from it. The everyday filter."
+        case .orange: "Darkens sky further and cuts haze; skin and brick lighten."
+        case .red: "Sky goes nearly black, foliage darkens, and haze all but disappears."
+        case .green: "Lightens foliage and darkens sky and skin; the landscape filter for greens."
+        case .blue: "Lightens sky and haze and darkens everything warm. Rarely wanted, and deliberately so."
+        }
+    }
+}
 public enum OutputStage: String, Codable, Sendable { case scan, print, none }
 public enum GrainModel: String, Codable, Sendable { case stochastic, procedural, dyeCloud = "dye-cloud" }
 
@@ -72,9 +102,49 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         public var lut: String
         public init(pushStops: Double, lut: String) { self.pushStops = pushStops; self.lut = lut }
     }
+    /// The black & white branch. `spectralWeight` collapses linear RGB to one grey
+    /// channel and `densityCurve` names the 1024-entry Density Curve that grey reads.
+    /// Both it and `contrastFilters` are derived by the Baker from a Stock's measured
+    /// spectral sensitivity, so like `colour.sourceFingerprint` they are absent from
+    /// authoring metadata and required in a baked Profile.
     public struct Monochrome: Codable, Equatable, Sendable {
-        public var spectralWeight: [Double]
+        public var spectralWeight: [Double]?
         public var densityCurve: String
+        /// One Spectral Weight per Contrast Filter, in the Stock's own sensitivity
+        /// units, so the ratio of their sums is the glass's filter factor.
+        public var contrastFilters: [FilterWeight]?
+
+        public struct FilterWeight: Codable, Equatable, Sendable {
+            public var filter: ContrastFilter
+            public var spectralWeight: [Double]
+            public init(filter: ContrastFilter, spectralWeight: [Double]) {
+                self.filter = filter; self.spectralWeight = spectralWeight
+            }
+        }
+
+        public init(spectralWeight: [Double]? = nil, densityCurve: String, contrastFilters: [FilterWeight]? = nil) {
+            self.spectralWeight = spectralWeight; self.densityCurve = densityCurve; self.contrastFilters = contrastFilters
+        }
+
+        /// The Spectral Weight this Stock collapses with through `filter`, normalised
+        /// so a neutral keeps its exposure. Normalising *is* the filter factor: a
+        /// photographer meters without the glass and opens up by what it costs, so
+        /// what the Contrast Filter changes is tonal separation and not brightness.
+        /// Nil when the Profile carries no weight for that glass.
+        public func weight(for filter: ContrastFilter) -> [Double]? {
+            let raw = filter == .none ? spectralWeight : contrastFilters?.first { $0.filter == filter }?.spectralWeight
+            guard let raw, case let total = raw.reduce(0, +), total > 0 else { return nil }
+            return raw.map { $0 / total }
+        }
+
+        /// What `filter` costs in stops, relative to this Stock unfiltered. Positive:
+        /// every Contrast Filter subtracts light. Nil when either weight is missing.
+        public func filterFactorStops(_ filter: ContrastFilter) -> Double? {
+            guard let base = spectralWeight?.reduce(0, +), base > 0,
+                  let filtered = (filter == .none ? spectralWeight : contrastFilters?.first { $0.filter == filter }?.spectralWeight)?.reduce(0, +),
+                  filtered > 0 else { return nil }
+            return log2(base / filtered)
+        }
     }
     public struct Grain: Codable, Equatable, Sendable {
         public var model: GrainModel
@@ -164,8 +234,29 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
                     colour.lutVariants.allSatisfy { $0.pushStops.isFinite && !$0.lut.isEmpty }, "invalid sparse Development Offsets")
         try require(process != .e6 || colour.outputStage == .none, "reversal has no Output Stage")
         if let monochrome {
-            try require(nonnegative(monochrome.spectralWeight, count: 3) && monochrome.spectralWeight.reduce(0, +) > 0 &&
-                        !monochrome.densityCurve.isEmpty, "invalid Monochrome Collapse")
+            try require(!monochrome.densityCurve.isEmpty, "invalid Monochrome Collapse")
+            if let weight = monochrome.spectralWeight {
+                try require(nonnegative(weight, count: 3) && weight.reduce(0, +) > 0, "invalid Spectral Weight")
+            }
+            if let filters = monochrome.contrastFilters {
+                // A Contrast Filter's weight may carry a small negative component: it is
+                // the film's response to filtered light resolved onto the Working Space
+                // primaries, and glass that blocks one primary can push it below zero.
+                // Only the collapse of a neutral has to stay positive.
+                try require(Set(filters.map(\.filter)) == Set(ContrastFilter.allCases).subtracting([ContrastFilter.none]) &&
+                            filters.count == 5 && filters.allSatisfy { entry in
+                                entry.spectralWeight.count == 3 && entry.spectralWeight.allSatisfy(\.isFinite) &&
+                                entry.spectralWeight.reduce(0, +) > 0
+                            }, "invalid Contrast Filter Spectral Weights")
+                try require(colour.inputShaper != nil, "Contrast Filters are derived from a spectral Curve Set")
+            }
+            // Derived by the Baker, exactly like the source fingerprint: absent while
+            // authoring, and both present in anything that ships.
+            try require(colour.sourceFingerprint == nil ||
+                        (monochrome.spectralWeight != nil && monochrome.contrastFilters != nil),
+                        "a baked B&W Profile carries a derived Spectral Weight and Contrast Filters")
+            try require(colour.inputShaper != nil || (monochrome.spectralWeight != nil && monochrome.contrastFilters == nil),
+                        "a foundation study Profile authors its Spectral Weight and has no Contrast Filters")
         }
         try require(nonnegative([grain.rmsGranularity, grain.grainRadiusMicrons], count: 2) &&
                     nonnegative(grain.densityResponse, count: 32) && nonnegative(grain.channelRadiusScale, count: 3) &&
@@ -196,16 +287,22 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
                         "invalid log-exposure shaper")
             // A negative's spectral cube carries the Baker's scan; a reversal cube
             // carries the transparency itself, which is why it has no Output Stage.
-            try require(!process.isMonochrome && colour.cubeOutput == .displayLinearRec2020 &&
-                        colour.outputStage == (process == .e6 ? OutputStage.none : .scan),
+            // A B&W Profile has no cube at all, so it has no cube output to describe,
+            // and its Density Curve is scanned by the runtime like any negative's.
+            try require(colour.outputStage == (process == .e6 ? OutputStage.none : .scan),
                         "spectral Colour Cubes require the scan or the reversal output contract")
+            try require(process.isMonochrome ? colour.cubeOutput == nil : colour.cubeOutput == .displayLinearRec2020,
+                        "spectral Colour Cubes require the scan output contract; a Density Curve has no cube output")
         } else {
             try require(colour.cubeOutput != .displayLinearRec2020, "display-linear Colour Cube requires an input shaper")
         }
         var parameters = Self.parameterPaths
         if colour.inputShaper != nil { parameters += ["colour.inputShaper"] }
         if colour.cubeOutput != nil { parameters += ["colour.cubeOutput"] }
-        if monochrome != nil { parameters += ["monochrome.spectralWeight", "monochrome.densityCurve"] }
+        if monochrome != nil {
+            parameters += ["monochrome.spectralWeight", "monochrome.densityCurve"]
+            if colour.inputShaper != nil { parameters += ["monochrome.contrastFilters"] }
+        }
         try require(parameters.allSatisfy { provenance[$0] != nil }, "missing per-parameter Provenance")
     }
 

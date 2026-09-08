@@ -3,6 +3,12 @@ import FilmEngine
 
 func bake(_ curves: CurveSet) throws -> Profile {
     var payloads: [String: Data] = [:]
+    if curves.metadata.colour.inputShaper != nil, curves.metadata.process.isMonochrome {
+        // The Spectral Weight and the Contrast Filters are integrated here rather than
+        // authored, so a B&W Profile cannot ship a guessed channel mix.
+        let model = try MonochromeSpectralModel(curves: curves)
+        return try Profile(metadata: try curves.bakedMetadata, payloads: [model.densityCurveName: model.densityCurve])
+    }
     if curves.metadata.colour.inputShaper != nil {
         let model = try SpectralModel(curves: curves)
         for variant in curves.metadata.colour.lutVariants {
