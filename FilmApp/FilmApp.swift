@@ -1,10 +1,11 @@
 import SwiftUI
 import PhotosUI
+import SwiftData
 import FilmEngine
 
 @main
 struct FilmApp: App {
-    var body: some Scene { WindowGroup { EditorView() } }
+    var body: some Scene { WindowGroup { EditorView() }.modelContainer(for: Preset.self) }
 }
 
 /// Controls are laid out in pipeline order: what happened to the light before the
@@ -13,6 +14,10 @@ struct EditorView: View {
     @State private var model = EditorModel()
     @State private var selection: PhotosPickerItem?
     @State private var isExporting = false
+    @State private var showsPresets = false
+    @State private var showsContactSheet = false
+    @GestureState private var holdingBefore = false
+    @State private var accessibleBefore = false
 
     var body: some View {
         NavigationStack {
@@ -38,6 +43,12 @@ struct EditorView: View {
             }
             .navigationTitle("Dye")
             .toolbar {
+                ToolbarItem(placement: .secondaryAction) {
+                    Button("Presets") { showsPresets = true }
+                }
+                ToolbarItem(placement: .secondaryAction) {
+                    Button("Contact Sheet") { showsContactSheet = true }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     PhotosPicker(selection: $selection, matching: .images, preferredItemEncoding: .current) {
                         Label("Choose photo", systemImage: "photo")
@@ -48,6 +59,9 @@ struct EditorView: View {
                         .disabled(!model.canExport && !model.isExporting)
                 }
             }
+            .sheet(isPresented: $showsPresets) { PresetSheet(model: model) }
+            .sheet(isPresented: $showsContactSheet) { ContactSheetView() }
+            .onChange(of: selection) { accessibleBefore = false }
             .sheet(isPresented: $isExporting) { ExportSheet(model: model) }
             .task { model.loadCatalogue() }
             .task { await model.watchThermalState() }
@@ -60,7 +74,18 @@ struct EditorView: View {
 
     @ViewBuilder private var canvas: some View {
         if let pixels = model.pixels {
-            FilmCanvas(image: pixels)
+            FilmCanvas(image: (holdingBefore || accessibleBefore) ? (model.beforePixels ?? pixels) : pixels)
+                .gesture(LongPressGesture(minimumDuration: 0.15).sequenced(before: DragGesture(minimumDistance: 0))
+                    .updating($holdingBefore) { value, state, _ in
+                        if case .second(true, _) = value { state = true }
+                    })
+                .accessibilityAction(named: accessibleBefore ? "Show edited photo" : "Show original photo") {
+                    accessibleBefore.toggle()
+                }
+                .overlay(alignment: .topLeading) {
+                    Text(holdingBefore || accessibleBefore ? "Original" : "Hold to compare")
+                        .font(.caption).padding(6).background(.thinMaterial, in: Capsule()).padding(6)
+                }
                 .aspectRatio(CGFloat(pixels.width) / CGFloat(pixels.height), contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .accessibilityLabel("Rendered photo")
@@ -94,6 +119,26 @@ struct EditorView: View {
 
     private var filmControls: some View {
         VStack(alignment: .leading, spacing: 14) {
+            ScrollView(.horizontal) {
+                HStack(spacing: 12) {
+                    ForEach([Profile.identity] + model.catalogue) { profile in
+                        Button { model.selectedStock = profile.id } label: {
+                            VStack {
+                                if let image = model.thumbnails[profile.id] {
+                                    FilmCanvas(image: image).aspectRatio(CGFloat(image.width) / CGFloat(image.height), contentMode: .fit)
+                                        .frame(width: 100, height: 80).allowsHitTesting(false)
+                                } else {
+                                    Image(systemName: "photo").frame(width: 100, height: 80)
+                                }
+                                Text(profile.metadata.displayName).font(.caption).lineLimit(2)
+                            }.frame(width: 110).padding(4)
+                                .background(model.selectedStock == profile.id ? Color.accentColor.opacity(0.2) : .clear,
+                                            in: RoundedRectangle(cornerRadius: 8))
+                        }.buttonStyle(.plain)
+                            .accessibilityAddTraits(model.selectedStock == profile.id ? .isSelected : [])
+                    }
+                }
+            }
             Picker("Stock", selection: $model.selectedStock) {
                 Text("Identity (no film)").tag("identity")
                 ForEach(FilmProcess.allCases, id: \.self) { process in

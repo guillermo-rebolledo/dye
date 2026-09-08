@@ -10,8 +10,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Swift 6 typecheck and CLI build
         run: swift build
+      # Swift Testing runs tests concurrently. Keep timing assertions away from
+      # the other GPU renders and Baker processes without relaxing their budgets.
       - name: Renderer, codec, and Baker CLI tests
-        run: swift test
+        run: swift test --skip previewRenderAndStockSwitchStayWithinInteractiveBudgets
+      - name: Preview performance budgets (isolated)
+        run: swift test --skip-build --filter previewRenderAndStockSwitchStayWithinInteractiveBudgets
       - name: Bake and verify the committed Catalogue
         run: |
           Scripts/bake-catalogue.sh

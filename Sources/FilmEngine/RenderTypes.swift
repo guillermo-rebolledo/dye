@@ -40,10 +40,10 @@ public enum RenderImage: Sendable {
 /// The user's controls, in pipeline order. White Balance and Exposure act on the
 /// light before the Film Response; the Development Offset selects and blends the
 /// baked Colour Cubes and, as on a pushed roll, rates the Stock faster.
-public struct RenderSettings: Sendable, Equatable, Hashable {
+public struct RenderSettings: Codable, Sendable, Equatable, Hashable {
     /// The encoding the render is delivered in. `workingSpace` is the linear
     /// Rec.2020 signal itself and is a diagnostic rather than a deliverable.
-    public enum Output: UInt32, Sendable, CaseIterable {
+    public enum Output: UInt32, Codable, Sendable, CaseIterable {
         case workingSpace = 0, displayP3 = 1, sRGB = 2
         public var displayName: String {
             switch self { case .workingSpace: "Working space"; case .displayP3: "Display P3"; case .sRGB: "sRGB" }

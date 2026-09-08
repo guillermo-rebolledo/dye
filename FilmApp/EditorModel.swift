@@ -10,6 +10,11 @@ import FilmEngine
     var selectedStock = "identity" { didSet { stockChanged() } }
     var settings = RenderSettings() { didSet { scheduleRender() } }
     private(set) var pixels: RenderedPixels?
+    private(set) var beforePixels: RenderedPixels?
+    private(set) var thumbnails: [String: RenderedPixels] = [:]
+    private var thumbnailInput: LinearImage?
+    private var thumbnailTask: Task<Void, Never>?
+    private var imageGeneration = UUID()
     private(set) var error: String?
     private(set) var isLoading = false
     private(set) var lastRenderMilliseconds: Double?
@@ -81,6 +86,14 @@ import FilmEngine
             }
             let decoded = try await renderer.decode(data, maximumDimension: Self.previewMaximumDimension)
             try Task.checkCancellation()
+            let before = try await renderer.render(image: .linear(decoded), profile: .identity, settings: RenderSettings())
+            let small = try await renderer.decode(data, maximumDimension: 192)
+            try Task.checkCancellation()
+            imageGeneration = UUID()
+            pixels = nil
+            beforePixels = before
+            thumbnails = [:]
+            thumbnailInput = small
             preview = decoded
             original = data
             export = nil
@@ -90,11 +103,7 @@ import FilmEngine
     }
 
     private func stockChanged() {
-        if let range = developmentRange {
-            settings.developmentOffset = min(max(settings.developmentOffset, range.lowerBound), range.upperBound)
-        } else {
-            settings.developmentOffset = 0
-        }
+        settings.developmentOffset = Self.developmentOffset(settings.developmentOffset, for: profile)
         scheduleRender()
     }
 
@@ -200,7 +209,46 @@ import FilmEngine
         return url
     }
 
+    func applyPreset(stockID: String, settings: RenderSettings) throws {
+        guard stockID == "identity" || catalogue.contains(where: { $0.id == stockID }) else {
+            throw FilmError.invalid("This Preset's Stock is no longer available")
+        }
+        try settings.validate()
+        selectedStock = stockID
+        self.settings = settings
+        stockChanged()
+    }
+
+    private static func developmentOffset(_ offset: Double, for profile: Profile) -> Double {
+        let stops = profile.metadata.colour.lutVariants.map(\.pushStops)
+        guard let low = stops.min(), let high = stops.max(), low < high else { return 0 }
+        return min(max(offset, low), high)
+    }
+
+    private func scheduleThumbnails() {
+        thumbnailTask?.cancel()
+        guard let thumbnailInput else { return }
+        let settings = settings
+        let profiles = [Profile.identity] + catalogue
+        thumbnailTask = Task {
+            do {
+                try await Task.sleep(for: .milliseconds(200))
+                let renderer = try Renderer()
+                for profile in profiles {
+                    try Task.checkCancellation()
+                    var adjusted = settings
+                    adjusted.developmentOffset = Self.developmentOffset(settings.developmentOffset, for: profile)
+                    let result = try await renderer.render(image: .linear(thumbnailInput), profile: profile, settings: adjusted)
+                    try Task.checkCancellation()
+                    thumbnails[profile.id] = result
+                }
+            } catch is CancellationError { }
+            catch { self.error = error.localizedDescription }
+        }
+    }
+
     func scheduleRender() {
+        scheduleThumbnails()
         needsRender = true
         guard renderLoop == nil, preview != nil, renderer != nil else { return }
         renderLoop = Task { [weak self] in
@@ -208,9 +256,11 @@ import FilmEngine
             while let self, needsRender {
                 needsRender = false
                 guard let preview, let renderer else { return }
+                let generation = imageGeneration
                 let started = ContinuousClock.now
                 do {
                     let result = try await renderer.render(image: .linear(preview), profile: profile, settings: settings)
+                    guard generation == imageGeneration else { continue }
                     pixels = result
                     error = nil
                     lastRenderMilliseconds = Double((ContinuousClock.now - started).components.attoseconds) / 1e15

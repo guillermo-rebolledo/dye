@@ -6,7 +6,7 @@ struct FilmCanvas: UIViewRepresentable {
     let image: RenderedPixels
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> MTKView {
-        let view = MTKView(frame: .zero, device: MTLCreateSystemDefaultDevice())
+        let view = EDRMetalView(frame: .zero, device: MTLCreateSystemDefaultDevice())
         view.colorPixelFormat = .rgba16Float
         (view.layer as? CAMetalLayer)?.colorspace = CGColorSpace(name: CGColorSpace.extendedDisplayP3)
         view.isPaused = true
@@ -69,5 +69,14 @@ struct FilmCanvas: UIViewRepresentable {
                 command.commit()
             } catch { assertionFailure("Canvas pipeline: \(error)") }
         }
+    }
+}
+
+/// Re-evaluate capability when the canvas moves to another display.
+private final class EDRMetalView: MTKView {
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        (layer as? CAMetalLayer)?.wantsExtendedDynamicRangeContent = (window?.screen.potentialEDRHeadroom ?? 1) > 1
+        setNeedsDisplay()
     }
 }
