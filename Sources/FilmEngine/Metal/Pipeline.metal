@@ -1,6 +1,17 @@
 #include <metal_stdlib>
 using namespace metal;
 
+// `frame` = (tile origin x, tile origin y, frame width, frame height) in pixels.
+// A Preview is one Tile that is the whole frame, so its origin is zero and its
+// size is the texture's own. A tiled Export renders many Tiles of one frame, and
+// the two Passes whose value depends on *where* in the frame a pixel sits — Grain
+// and Geometry — read their position through this rather than from the thread
+// position, which is Tile-local. Everything else in the pipeline is either
+// per-pixel or reaches only as far as the Apron.
+//
+// Passing the whole frame rather than just the origin matters for Geometry: a
+// vignette is a fraction of the frame's diagonal, not of the Tile's.
+
 kernel void passthrough(texture2d<half, access::read> input [[texture(0)]],
                         texture2d<half, access::write> output [[texture(1)]],
                         uint2 p [[thread_position_in_grid]]) {
@@ -110,6 +121,12 @@ kernel void scatterScale(texture2d<half, access::read> input [[texture(0)]],
 
 // Accumulate coarse to fine. Doubling once per level keeps the interpolation local,
 // which is what stops a 32× magnification of the smallest level from banding.
+//
+// The coarse coordinate is an exact halving of this level's, not a ratio of the two
+// textures' sizes. Those sizes round, so a ratio drifts by a texel across a level
+// whose dimensions are not a clean power of two — invisible in a Preview, but in a
+// tiled Export it means two neighbouring Tiles magnify the same halo by fractionally
+// different amounts and their boundary shows it.
 kernel void scatterUpsample(texture2d<half, access::sample> coarse [[texture(0)]],
                              texture2d<half, access::read> level [[texture(1)]],
                              texture2d<half, access::write> output [[texture(2)]],
@@ -117,7 +134,7 @@ kernel void scatterUpsample(texture2d<half, access::sample> coarse [[texture(0)]
                              uint2 p [[thread_position_in_grid]]) {
     if (p.x >= output.get_width() || p.y >= output.get_height()) return;
     constexpr sampler linearSampler(filter::linear, address::clamp_to_edge, coord::normalized);
-    float2 uv = (float2(p) + 0.5f) / float2(output.get_width(), output.get_height());
+    float2 uv = (float2(p) + 0.5f) * 0.5f / float2(coarse.get_width(), coarse.get_height());
     float3 sum = float3(coarse.sample(linearSampler, uv).rgb) + float3(level.read(p).rgb) * weight.xyz;
     output.write(half4(half3(sum), 1.0h), p);
 }
@@ -306,10 +323,14 @@ kernel void grain(texture2d<half, access::read> input [[texture(0)]],
                   texture2d<half, access::write> output [[texture(1)]],
                   constant GrainUniforms &grain [[buffer(11)]],
                   constant float *densityResponse [[buffer(12)]],
+                  constant float4 &frame [[buffer(17)]],
                   uint2 p [[thread_position_in_grid]]) {
     if (p.x >= output.get_width() || p.y >= output.get_height()) return;
     half4 pixel = input.read(p);
-    float2 position = float2(p) + 0.5f;
+    // Image-global, not Tile-local: the lattice below is addressed by this, so a
+    // Tile-local position would restart the field at every Tile origin and repeat
+    // the same grain at the Tile pitch.
+    float2 position = float2(p) + frame.xy + 0.5f;
     float3 value = float3(pixel.rgb);
     float shared = grainNoise(position, grain.mix.z, 3u, grain.seed.x);
     float3 result;
@@ -353,21 +374,25 @@ kernel void scanOutput(texture2d<half, access::read> input [[texture(0)]],
 kernel void geometry(texture2d<half, access::sample> input [[texture(0)]],
                      texture2d<half, access::write> output [[texture(1)]],
                      constant float4 &geometry [[buffer(16)]],
+                     constant float4 &frame [[buffer(17)]],
                      uint2 p [[thread_position_in_grid]]) {
     if (p.x >= output.get_width() || p.y >= output.get_height()) return;
-    float2 size = float2(output.get_width(), output.get_height());
+    // The falloff and the rebate belong to the frame; the gate's displacement is a
+    // read from this Tile's own texture, and the Apron is what it reads into.
+    float2 size = frame.zw;
+    float2 global = float2(p) + frame.xy + 0.5f;
     constexpr sampler frameSampler(filter::linear, address::clamp_to_edge, coord::normalized);
-    float2 uv = (float2(p) + 0.5f + geometry.yz) / size;
+    float2 uv = (float2(p) + 0.5f + geometry.yz) / float2(output.get_width(), output.get_height());
     half4 pixel = input.sample(frameSampler, uv);
     // Radius from the frame centre, one at the corners in either orientation, so
     // the falloff is a circle on the film rather than an ellipse in pixels.
-    float2 offset = (float2(p) + 0.5f - size * 0.5f) / (0.5f * length(size));
+    float2 offset = (global - size * 0.5f) / (0.5f * length(size));
     float r2 = dot(offset, offset);
     // cos^4 of the angle off axis: a lens's own falloff, two stops in the corners
     // at full strength.
     float falloff = mix(1.0f, 1.0f / ((1.0f + r2) * (1.0f + r2)), geometry.x);
     // The rebate outside the exposed frame carries no image at all.
-    float2 edge = min(float2(p) + 0.5f, size - float2(p) - 0.5f);
+    float2 edge = min(global, size - global);
     float border = geometry.w <= 0.0f ? 1.0f
         : smoothstep(geometry.w - 0.5f, geometry.w + 0.5f, min(edge.x, edge.y));
     output.write(half4(half3(float3(pixel.rgb) * falloff * border), pixel.a), p);
@@ -378,16 +403,26 @@ float transfer(float x) {
     return copysign(a <= 0.0031308f ? 12.92f * a : 1.055f * pow(a, 1.0f / 2.4f) - 0.055f, x);
 }
 
+// Pass 12. `output` is `RenderSettings.Output`: 0 leaves the Working Space alone,
+// 1 encodes Display P3 and 2 sRGB. Both share the sRGB transfer function and
+// differ only in primaries, and both keep values outside 0...1 rather than
+// clamping, so EDR headroom survives to the display. A file writer is where
+// clipping to the format's range belongs.
 kernel void outputTransform(texture2d<half, access::read> input [[texture(0)]],
                             texture2d<half, access::write> output [[texture(1)]],
-                            constant uint &displayP3 [[buffer(0)]],
+                            constant uint &encoding [[buffer(0)]],
                             uint2 p [[thread_position_in_grid]]) {
     if (p.x >= output.get_width() || p.y >= output.get_height()) return;
     half4 pixel = input.read(p);
-    if (displayP3 == 0) { output.write(pixel, p); return; }
+    if (encoding == 0) { output.write(pixel, p); return; }
     float3 x = float3(pixel.rgb);
-    float3 p3 = float3(dot(x, float3(1.3435783f, -0.2821797f, -0.0613986f)),
-                      dot(x, float3(-0.0652975f, 1.0757879f, -0.0104904f)),
-                      dot(x, float3(0.0028218f, -0.0195985f, 1.0167767f)));
-    output.write(half4(transfer(p3.r), transfer(p3.g), transfer(p3.b), pixel.a), p);
+    float3x3 primaries = encoding == 1
+        ? float3x3(float3(1.3435783f, -0.0652975f, 0.0028218f),
+                   float3(-0.2821797f, 1.0757879f, -0.0195985f),
+                   float3(-0.0613986f, -0.0104904f, 1.0167767f))
+        : float3x3(float3(1.6604910f, -0.1245505f, -0.0181508f),
+                   float3(-0.5876411f, 1.1328999f, -0.1005789f),
+                   float3(-0.0728499f, -0.0083494f, 1.1187297f));
+    float3 encoded = primaries * x;
+    output.write(half4(transfer(encoded.r), transfer(encoded.g), transfer(encoded.b), pixel.a), p);
 }

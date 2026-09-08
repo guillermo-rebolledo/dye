@@ -41,7 +41,14 @@ public enum RenderImage: Sendable {
 /// light before the Film Response; the Development Offset selects and blends the
 /// baked Colour Cubes and, as on a pushed roll, rates the Stock faster.
 public struct RenderSettings: Sendable, Equatable, Hashable {
-    public enum Output: UInt32, Sendable { case workingSpace = 0, displayP3 = 1 }
+    /// The encoding the render is delivered in. `workingSpace` is the linear
+    /// Rec.2020 signal itself and is a diagnostic rather than a deliverable.
+    public enum Output: UInt32, Sendable, CaseIterable {
+        case workingSpace = 0, displayP3 = 1, sRGB = 2
+        public var displayName: String {
+            switch self { case .workingSpace: "Working space"; case .displayP3: "Display P3"; case .sRGB: "sRGB" }
+        }
+    }
     public var output: Output
     /// Scene Illuminant correlated colour temperature in kelvin, 1667...25000.
     public var temperatureKelvin: Double
