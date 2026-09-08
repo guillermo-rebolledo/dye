@@ -30,7 +30,25 @@
         "pushStops": 2
       }
     ],
-    "outputStage": "scan"
+    "outputStage": "scan",
+    "printVariants": [
+      {
+        "lut": "print.pull1.lut3d",
+        "pushStops": -1
+      },
+      {
+        "lut": "print.neutral.lut3d",
+        "pushStops": 0
+      },
+      {
+        "lut": "print.push1.lut3d",
+        "pushStops": 1
+      },
+      {
+        "lut": "print.push2.lut3d",
+        "pushStops": 2
+      }
+    ]
   },
   "displayName": "Kodak Vision3 500T",
   "format": "135",
@@ -131,6 +149,7 @@
     "colour.lutSize": "artistic",
     "colour.lutVariants": "artistic",
     "colour.outputStage": "artistic",
+    "colour.printVariants": "artistic",
     "format": "artistic",
     "grain.channelCorrelation": "artistic",
     "grain.channelRadiusScale": "artistic",
@@ -154,7 +173,9 @@
     "spectral.dyePeakNM": "artistic",
     "spectral.dyeSeparation": "artistic",
     "spectral.dyeWidthNM": "artistic",
+    "spectral.enlarger": "artistic",
     "spectral.observer": "measured",
+    "spectral.paper": "measured",
     "spectral.reconstruction": "artistic",
     "spectral.scan": "artistic",
     "spectral.scanGamma": "artistic",

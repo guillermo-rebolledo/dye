@@ -235,6 +235,17 @@ struct EditorView: View {
     /// after the negative alongside the scan.
     private var outputControls: some View {
         VStack(alignment: .leading, spacing: 14) {
+            // A negative is scanned or printed, and the two are different pictures
+            // rather than different settings, so the choice leads the card instead
+            // of sitting under the sliders that only trim it.
+            if !model.outputStages.isEmpty {
+                Picker("Read the negative by", selection: $model.outputStage) {
+                    ForEach(model.outputStages, id: \.self) { stage in
+                        Text(stage.displayName).tag(stage)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
             Text(outputDescription).font(.footnote).foregroundStyle(.secondary)
             LabeledSlider(title: "Vignette", value: $model.settings.vignette, range: RenderSettings.vignetteRange, step: 0.05,
                           format: { $0 == 0 ? "none" : String(format: "%.0f%%", $0 * 100) })
@@ -337,7 +348,7 @@ struct EditorView: View {
 
     private var outputSubtitle: String {
         if model.isIdentity { return "Display P3" }
-        switch model.profile.metadata.colour.outputStage {
+        switch model.outputStage {
         case .scan: return "Scan · Display P3"
         case .print: return "Print · Display P3"
         case .none: return "Reversal · Display P3"
@@ -348,9 +359,12 @@ struct EditorView: View {
     /// the card says why there is nothing to choose and moves on to the geometry.
     private var outputDescription: String {
         if model.isIdentity { return "Nothing happens after the identity response; the image is converted for the display." }
-        switch model.profile.metadata.colour.outputStage {
+        switch model.outputStage {
         case .scan: return "The negative is scanned: densities are inverted and auto-balanced so mid-grey comes back neutral, the way most people picture this stock."
-        case .print: return "Optical print emulation is not available yet."
+            + (model.outputStages.isEmpty ? "" : " A print of the same negative is a different picture, not a filter over this one.")
+        case .print: return "The negative is enlarged onto RA-4 colour paper. The enlarger's filter pack is set so mid-grey prints neutral, "
+            + "and the paper's own curve is far steeper than a scanner's, so contrast rises, shadows close and the highlights end at paper white "
+            + "instead of rolling off. It is not a corrected scan; it is what the negative looks like printed."
         case .none: return "Reversal film is the final image: what the camera exposed is what you look at. There is nothing to scan or print, "
             + "so there is no choice to make here — and only about five stops fit on the film, so highlights end at clear film rather than rolling off."
         }

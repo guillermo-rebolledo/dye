@@ -15,7 +15,7 @@ public struct Profile: Sendable, Identifiable {
     public init(metadata: FilmProfile, payloads: [String: Data]) throws {
         try metadata.validate()
         self.init(metadata: metadata, source: .memory(payloads))
-        let expected = Set(metadata.colour.lutVariants.map(\.lut) + (metadata.monochrome.map { [$0.densityCurve] } ?? []))
+        let expected = metadata.payloadNames
         guard Set(payloads.keys) == expected else { throw FilmError.invalid("Profile payload references do not match") }
         for (name, bytes) in payloads {
             if name == metadata.monochrome?.densityCurve {
@@ -50,8 +50,7 @@ public struct Profile: Sendable, Identifiable {
     }
 
     func readPayloads() throws -> [String: Data] {
-        let names = Set(metadata.colour.lutVariants.map(\.lut) + (metadata.monochrome.map { [$0.densityCurve] } ?? []))
-        return try Dictionary(uniqueKeysWithValues: names.map { ($0, try readPayload($0)) })
+        try Dictionary(uniqueKeysWithValues: metadata.payloadNames.map { ($0, try readPayload($0)) })
     }
 
     private static let identityMetadata: FilmProfile = {

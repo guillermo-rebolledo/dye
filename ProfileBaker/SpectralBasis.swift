@@ -18,6 +18,10 @@ struct SpectralBasis {
     let lobes: [SIMD3<Double>]
     /// Linear Rec.2020 to basis coefficients.
     let rgbToBasis: simd_double3x3
+    /// Per band, the CIE colour matching functions under the observer's own
+    /// illuminant, already carrying that band's quadrature weight. What a
+    /// Transparency is read by, and what a Print is read by.
+    let observerXYZ: [SIMD3<Double>]
 
     /// The Working Space primaries. Rec.2020 to CIE XYZ under D65, column-major.
     static let rgbToXYZ = simd_double3x3(columns: (SIMD3(0.636958, 0.262700, 0),
@@ -42,6 +46,9 @@ struct SpectralBasis {
         }
         self.grid = grid
         self.lobes = lobes
+        observerXYZ = grid.indices.map { i in
+            SIMD3(observer[i][1], observer[i][2], observer[i][3]) * observer[i][4] * quadrature(i)
+        }
         // CIE integration gives this smooth spectral basis a colourimetric Rec.2020 input.
         // Normalize the truncated observer white to D65; saturated out-of-spectral-gamut
         // inputs are projected to nonnegative spectra after solving the basis coefficients.

@@ -90,6 +90,22 @@ import FilmEngine
         profile.metadata.monochrome?.filterFactorStops(settings.contrastFilter)
     }
 
+    /// The Output Stages this Stock can be read by, empty when there is nothing to
+    /// choose. Reversal film is the final image and has none; a negative always has
+    /// the scan, and has the Print as well when its Profile carries the cubes for
+    /// one. A choice of one is not a choice, so the control does not appear for it.
+    var outputStages: [OutputStage] {
+        guard profile.metadata.colour.outputStage == .scan, profile.metadata.colour.printVariants != nil else { return [] }
+        return [.scan, .print]
+    }
+
+    /// The Output Stage on screen. Nil in the settings follows the Profile, which for
+    /// a negative is the scan, so the control reads as scan until it is moved.
+    var outputStage: OutputStage {
+        get { settings.outputStage ?? profile.metadata.colour.outputStage }
+        set { settings.outputStage = newValue }
+    }
+
     /// Baked Development Offsets, or nil when the Stock has a single variant.
     var developmentRange: ClosedRange<Double>? {
         let stops = profile.metadata.colour.lutVariants.map(\.pushStops)
@@ -132,6 +148,7 @@ import FilmEngine
     private func stockChanged() {
         settings.developmentOffset = Self.developmentOffset(settings.developmentOffset, for: profile)
         settings.contrastFilter = Self.contrastFilter(settings.contrastFilter, for: profile)
+        settings.outputStage = Self.outputStage(settings.outputStage, for: profile)
         scheduleRender()
     }
 
@@ -256,6 +273,14 @@ import FilmEngine
         profile.metadata.monochrome?.weight(for: filter) == nil ? .none : filter
     }
 
+    /// Nor does a Print carry across a change of Stock. A Stock with no Print refuses
+    /// the render rather than falling back to its scan, so this is what keeps the
+    /// choice from breaking the moment the picker moves — including in the thumbnail
+    /// strip, which renders the whole Catalogue at the settings on screen.
+    private static func outputStage(_ stage: OutputStage?, for profile: Profile) -> OutputStage? {
+        stage == .print && profile.metadata.colour.printVariants == nil ? nil : stage
+    }
+
     private static func developmentOffset(_ offset: Double, for profile: Profile) -> Double {
         let stops = profile.metadata.colour.lutVariants.map(\.pushStops)
         guard let low = stops.min(), let high = stops.max(), low < high else { return 0 }
@@ -276,6 +301,7 @@ import FilmEngine
                     var adjusted = settings
                     adjusted.developmentOffset = Self.developmentOffset(settings.developmentOffset, for: profile)
                     adjusted.contrastFilter = Self.contrastFilter(settings.contrastFilter, for: profile)
+                    adjusted.outputStage = Self.outputStage(settings.outputStage, for: profile)
                     let result = try await renderer.render(image: .linear(thumbnailInput), profile: profile, settings: adjusted)
                     try Task.checkCancellation()
                     thumbnails[profile.id] = result

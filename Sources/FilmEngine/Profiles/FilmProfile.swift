@@ -53,7 +53,21 @@ public enum ContrastFilter: String, Codable, Sendable, CaseIterable, Identifiabl
         }
     }
 }
-public enum OutputStage: String, Codable, Sendable { case scan, print, none }
+/// What happens to a negative after the film. Reversal Stocks use `none`, because
+/// the film is already the final image.
+public enum OutputStage: String, Codable, Sendable, CaseIterable {
+    case scan, print, none
+    /// How the choice reads in the editor. `none` never appears in a picker — it is
+    /// the absence of a choice rather than a third option — but it names itself for
+    /// the card that explains why there is nothing to choose.
+    public var displayName: String {
+        switch self {
+        case .scan: "Scan"
+        case .print: "Print"
+        case .none: "The film itself"
+        }
+    }
+}
 public enum GrainModel: String, Codable, Sendable { case stochastic, procedural, dyeCloud = "dye-cloud" }
 
 /// The JSON metadata schema; payload references are stable names inside the container.
@@ -81,6 +95,13 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
 
     public struct Colour: Codable, Equatable, Sendable {
         public var lutVariants: [Variant]
+        /// One Colour Cube per Development Offset for the Print Output Stage, when
+        /// the Stock has one: the same negative read by an enlarger and RA-4 paper
+        /// instead of by a scanner. Nil is a Stock with no Print, which the renderer
+        /// refuses rather than approximating with the scan. Like the scan cubes of a
+        /// spectral negative these are `displayLinearRec2020`, because the print is
+        /// the final image the way a Transparency is.
+        public var printVariants: [Variant]?
         public var lutSize: Int
         public var outputStage: OutputStage
         /// Nil retains the foundation profiles' linear [0, 1] input and Density Space output.
@@ -217,6 +238,14 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         }
     }
 
+    /// Every payload this Profile's container has to carry: a Colour Cube per
+    /// Development Offset for each Output Stage it can reach, or the one Density
+    /// Curve of a black & white Stock.
+    public var payloadNames: Set<String> {
+        Set(colour.lutVariants.map(\.lut) + (colour.printVariants ?? []).map(\.lut)
+            + (monochrome.map { [$0.densityCurve] } ?? []))
+    }
+
     public func validate() throws {
         func require(_ condition: Bool, _ message: String) throws {
             if !condition { throw FilmError.invalid("Profile \(id): \(message)") }
@@ -233,6 +262,19 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         try require(Set(colour.lutVariants.map(\.pushStops)).count == colour.lutVariants.count &&
                     colour.lutVariants.allSatisfy { $0.pushStops.isFinite && !$0.lut.isEmpty }, "invalid sparse Development Offsets")
         try require(process != .e6 || colour.outputStage == .none, "reversal has no Output Stage")
+        if let printVariants = colour.printVariants {
+            // The Print reads the same negative the scan does, so it is offered for
+            // exactly the Development Offsets the scan is, and only where there is a
+            // negative and a spectral model to read it with.
+            try require(colour.outputStage == .scan && colour.inputShaper != nil && !process.isMonochrome,
+                        "a Print Output Stage needs a spectral negative")
+            try require(Set(printVariants.map(\.pushStops)) == Set(colour.lutVariants.map(\.pushStops)) &&
+                        printVariants.count == colour.lutVariants.count &&
+                        printVariants.allSatisfy { !$0.lut.isEmpty },
+                        "Print Colour Cubes must cover the same Development Offsets as the scan's")
+            try require(Set(printVariants.map(\.lut)).isDisjoint(with: Set(colour.lutVariants.map(\.lut))),
+                        "Print Colour Cubes need payloads of their own")
+        }
         if let monochrome {
             try require(!monochrome.densityCurve.isEmpty, "invalid Monochrome Collapse")
             if let weight = monochrome.spectralWeight {
@@ -299,6 +341,7 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         var parameters = Self.parameterPaths
         if colour.inputShaper != nil { parameters += ["colour.inputShaper"] }
         if colour.cubeOutput != nil { parameters += ["colour.cubeOutput"] }
+        if colour.printVariants != nil { parameters += ["colour.printVariants"] }
         if monochrome != nil {
             parameters += ["monochrome.spectralWeight", "monochrome.densityCurve"]
             if colour.inputShaper != nil { parameters += ["monochrome.contrastFilters"] }

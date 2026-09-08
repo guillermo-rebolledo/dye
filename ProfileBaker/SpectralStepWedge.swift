@@ -29,13 +29,14 @@ func spectralStepWedge(curves: CurveSet, profile: Profile) async throws -> [Step
     // not independent evidence of the tuned colour or push/pull model's accuracy.
     var coordinates = (0...64).map { SIMD3<Double>(repeating: Double($0) / 64) }
     coordinates += [SIMD3(0.31, 0.53, 0.72), SIMD3(0.8, 0.2, 0.4), SIMD3(0.45, 0.7, 0.2), SIMD3(0.72, 0.59, 0.46)]
+    // Coordinates are already shaped, so undo the runtime shaper by feeding
+    // scene-linear light.
+    let scene = coordinates.flatMap { c in
+        (0..<3).map { Float16(model.exposure(at: c[$0]) / pow(10, model.shaper.middleGrayLogExposure) * 0.18) } + [1]
+    }
+    let light = try LinearImage(width: coordinates.count, height: 1, rgba: scene)
     for variant in curves.metadata.colour.lutVariants {
-        // Coordinates are already shaped, so undo the runtime shaper by feeding
-        // scene-linear light.
-        let scene = coordinates.flatMap { c in
-            (0..<3).map { Float16(model.exposure(at: c[$0]) / pow(10, model.shaper.middleGrayLogExposure) * 0.18) } + [1]
-        }
-        let rendered = try await renderer.render(image: .linear(try LinearImage(width: coordinates.count, height: 1, rgba: scene)), profile: profile,
+        let rendered = try await renderer.render(image: .linear(light), profile: profile,
             settings: wedgeSettings(balancedFor: profile, offset: variant.pushStops))
         for (index, coordinate) in coordinates.enumerated() {
             let h = SIMD3(model.exposure(at: coordinate.x), model.exposure(at: coordinate.y), model.exposure(at: coordinate.z))
@@ -43,6 +44,26 @@ func spectralStepWedge(curves: CurveSet, profile: Profile) async throws -> [Step
             for channel in 0..<3 {
                 rows.append(StepWedgeRow(stage: index < 65 ? (model.isReversal ? .reversalOutput : .scanOutput) : .chromaticOutput, developmentOffset: variant.pushStops, channel: channel,
                     logExposure: log10(h[channel]), reference: reference[channel], rendered: Double(rendered.rgba[index * 4 + channel])))
+            }
+        }
+    }
+    // The Print Output Stage's own cubes, probed through the same renderer entry
+    // point with the same light. Its enlarger is filtered and exposed per
+    // Development Offset, so each variant's reference is solved the way its cube
+    // was baked; a Profile whose print cubes were baked against a different paper
+    // fails here rather than quietly rendering someone else's darkroom.
+    for variant in curves.metadata.colour.printVariants ?? [] {
+        var paper = try PrintModel(directory: curves.printPaperDirectory, basis: model.basis)
+        try paper.balance(against: model, offset: variant.pushStops)
+        let rendered = try await renderer.render(image: .linear(light), profile: profile,
+            settings: wedgeSettings(balancedFor: profile, offset: variant.pushStops, outputStage: .print))
+        for (index, coordinate) in coordinates.enumerated() {
+            let h = SIMD3(model.exposure(at: coordinate.x), model.exposure(at: coordinate.y), model.exposure(at: coordinate.z))
+            let reference = paper.print(model.density(h, offset: variant.pushStops), negative: model)
+            for channel in 0..<3 {
+                rows.append(StepWedgeRow(stage: index < 65 ? .printOutput : .chromaticOutput, developmentOffset: variant.pushStops,
+                    channel: channel, logExposure: log10(h[channel]), reference: reference[channel],
+                    rendered: Double(rendered.rgba[index * 4 + channel])))
             }
         }
     }

@@ -325,9 +325,23 @@ public actor Renderer {
         let metadata = profile.metadata
         let width = frame.width, height = frame.height
         let whiteBalance = WhiteBalance.matrix(sceneKelvin: settings.temperatureKelvin, tint: settings.tint, stockBalanceKelvin: metadata.balance)
+        // A Stock with no Output Stage has none whatever the settings ask for: there
+        // is nothing after a reversal Stock's film to choose between, and a forced
+        // scan would invert an image that is already the Transparency. The override
+        // is how a negative is read in Density Space, not a way to add a stage.
+        let stage = metadata.colour.outputStage == OutputStage.none
+            ? OutputStage.none : (settings.outputStage ?? metadata.colour.outputStage)
+        // The Print is a second set of baked Colour Cubes rather than a Pass: what
+        // the enlarger and the paper do to a negative is a spectral integral, so it
+        // is resolved where the scan's is. A Stock with no Print is told so rather
+        // than given the scan's cubes under the print's name.
+        guard stage != .print || metadata.colour.printVariants != nil else {
+            throw FilmError.invalid("Profile \(metadata.id): no Print Output Stage")
+        }
         // Development Offsets are clamped to the baked range for both the Colour Cube
         // choice and the rating that goes with it. Between variants both blend linearly.
-        let variants = metadata.colour.lutVariants.sorted { $0.pushStops < $1.pushStops }
+        let variants = (stage == .print ? metadata.colour.printVariants! : metadata.colour.lutVariants)
+            .sorted { $0.pushStops < $1.pushStops }
         var offset = settings.developmentOffset
         var lowerVariant: FilmProfile.Variant?
         var upperVariant: FilmProfile.Variant?
@@ -370,14 +384,8 @@ public actor Renderer {
         if let s = metadata.colour.inputShaper {
             shaper = SIMD4(1, Float(s.minimumLogExposure), Float(1 / (s.maximumLogExposure - s.minimumLogExposure)), Float(s.middleGrayLogExposure))
         }
-        // A Stock with no Output Stage has none whatever the settings ask for: there
-        // is nothing after a reversal Stock's film to choose between, and a forced
-        // scan would invert an image that is already the Transparency. The override
-        // is how a negative is read in Density Space, not a way to add a stage.
-        let stage = metadata.colour.outputStage == OutputStage.none
-            ? OutputStage.none : (settings.outputStage ?? metadata.colour.outputStage)
-        guard stage != .print else { throw FilmError.invalid("The Print Output Stage is not implemented yet") }
-        // Spectral cubes already contain the Baker's scan; a Density Space cube is scanned here.
+        // Spectral cubes already contain the Baker's scan or print; a Density Space
+        // cube is scanned here.
         let scan = stage == .scan && metadata.colour.cubeOutput != .displayLinearRec2020
         func blended(_ value: (ResponseEntry) -> SIMD3<Double>) -> SIMD3<Double> {
             value(lower) + (upper.map { (value($0) - value(lower)) * Double(blend) } ?? SIMD3(repeating: 0))

@@ -6,19 +6,24 @@ struct CharacteristicCurve {
     struct Point { let logExposure: Double; let density: Double }
     let points: [Point]
 
-    init(url: URL, exposureRange: ClosedRange<Double> = log10(Double(Float16.leastNonzeroMagnitude))...0) throws {
+    /// One curve from a CSV. A Stock writes `logExposure,density` and one file per
+    /// channel; the RA-4 paper's three layers are measured together and arrive as
+    /// `logExposure,red,green,blue`, which `columns` names and `column` selects.
+    init(url: URL, columns: [String] = ["density"], column: Int = 1,
+         exposureRange: ClosedRange<Double> = log10(Double(Float16.leastNonzeroMagnitude))...0) throws {
+        let header = (["logExposure"] + columns).joined(separator: ",")
         let text = try String(contentsOf: url, encoding: .utf8)
         let lines = text.components(separatedBy: .newlines).enumerated().filter {
             let line = $0.element.trimmingCharacters(in: .whitespaces)
             return !line.isEmpty && !line.hasPrefix("#")
         }
-        guard lines.first?.element.trimmingCharacters(in: .whitespaces) == "logExposure,density" else {
-            throw FilmError.invalid("\(url.lastPathComponent): expected logExposure,density header")
+        guard lines.first?.element.trimmingCharacters(in: .whitespaces) == header else {
+            throw FilmError.invalid("\(url.lastPathComponent): expected \(header) header")
         }
         var points: [Point] = []
         for (line, text) in lines.dropFirst() {
             let fields = text.split(separator: ",", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
-            guard fields.count == 2, let x = Double(fields[0]), let y = Double(fields[1]),
+            guard fields.count == columns.count + 1, let x = Double(fields[0]), let y = Double(fields[column]),
                   x.isFinite, y.isFinite, exposureRange.contains(x),
                   y >= 0, y <= Double(Float16.greatestFiniteMagnitude),
                   points.last.map({ x > $0.logExposure }) ?? true else {
@@ -53,6 +58,11 @@ struct CurveSet {
     /// the lens rather than of any Stock, so every monochrome Curve Set reads one
     /// copy of it from a sibling directory rather than restating it.
     var contrastFilterDirectory: URL { directory.deletingLastPathComponent().appendingPathComponent("contrast-filters") }
+
+    /// The RA-4 paper the Print Output Stage prints onto. The paper belongs to the
+    /// darkroom rather than to any Stock, so every Curve Set that prints reads one
+    /// copy of it from a sibling directory, exactly as the Contrast Filters work.
+    var printPaperDirectory: URL { directory.deletingLastPathComponent().appendingPathComponent("ra4-paper") }
 
     /// The Stock's published daylight filter factors, which the validator compares the
     /// derived Contrast Filter Spectral Weights against.
@@ -137,6 +147,11 @@ struct CurveSet {
                     .map(directory.appendingPathComponent)
             sources += ["stock.json", "sensitivity.csv", "observer.csv", "mtf.csv", "rms-granularity.csv"]
                 .map(directory.appendingPathComponent)
+            // The paper is an authoring input like any other: a Profile baked
+            // against one RA-4 paper must not validate against another.
+            if metadata.colour.printVariants != nil {
+                sources += ["density.csv", "sensitivity.csv", "dye-density.csv"].map(printPaperDirectory.appendingPathComponent)
+            }
             for url in sources.sorted(by: { $0.path < $1.path }) {
                 hash.update(data: Data((url.lastPathComponent + "\0").utf8))
                 hash.update(data: Data(SHA256.hash(data: try Data(contentsOf: url))))

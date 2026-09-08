@@ -44,7 +44,12 @@ what that changes and why their cubes are 65³.
    auto-balance the reference gray. An artistic scan gamma and rational shoulder
    map the positive to display-linear values. Calibrate broad scanner channels
    back to Rec.2020 and clamp to the display interval. This is a generic scan,
-   not a calibrated commercial scanner. There is no RA-4 print branch here.
+   not a calibrated commercial scanner.
+6. A Stock that also prints repeats step 5 through an enlarger and a sheet of
+   RA-4 paper instead of a scanner, and bakes a second Colour Cube per
+   Development Offset from it. That branch lives in `PrintModel` rather than
+   here, because the paper belongs to the darkroom rather than to any Stock; see
+   [the Print Output Stage](print.md).
 
 ## Colour Cube contract
 
@@ -52,7 +57,10 @@ Each spectral Stock's RGBA float16 payloads are one per baked Development Offset
 33³, or 65³ for a Stock whose curve turns too fast for that, with
 red changing fastest. RGB payload values are **display-linear Rec.2020**; alpha
 is 1. `colour.cubeOutput = displayLinearRec2020` distinguishes them from the
-foundation studies' Density Space cubes. Do not invert a scan cube again.
+foundation studies' Density Space cubes. Do not invert a scan cube again. A
+Profile's `colour.printVariants` payloads carry the same contract and the same
+size: the print is the final image, so it is display-linear and nothing inverts
+it either.
 
 `colour.inputShaper` defines the normalized input coordinate:
 
@@ -78,6 +86,9 @@ faster by the same number of stops; the validation harness passes an equal
   their midpoints. A diagnostic density cube runs through the public renderer
   and must match measured Status M density to 0.03. This gate is deliberately
   before scan inversion, because positive display RGB is not optical density.
+- `print-output`, for a Stock that prints: the same probes through the print
+  cubes at `outputStage: .print`, against an enlarger filtered and exposed for
+  each Development Offset the way that offset's cube was baked.
 - `scan-output`, or `reversal-output` for an E-6 Stock: all offsets, off-grid neutral and chromatic probes of the actual
   supplied Profile, fed as scene-linear light so the runtime shaper is exercised.
   Both stages render with the Scene Illuminant set to the balance of the Profile

@@ -269,6 +269,19 @@ _Avoid_: Frontier, Noritsu, digitisation
 Optical enlargement emulation — RA-4 paper density curve plus enlarger filtration.
 _Avoid_: darkroom, paper, optical
 
+**Paper**:
+The RA-4 colour paper a Print is made on. It belongs to the darkroom rather than
+to any Stock, so the Catalogue holds one shared Curve Set for it the way it holds
+one shared Contrast Filter transmittance table.
+_Avoid_: stock (means a film), print (means the result), substrate
+
+**Filter Pack**:
+The three subtractive dichroic densities in the enlarger head, solved so a Stock's
+own reference neutral prints neutral. Its common part is neutral density, which is
+an exposure time rather than a colour, so the pack's three components sum to zero
+and the rest of it lives in the Print's exposure.
+_Avoid_: filtration (unqualified), colour head, filters (collides with Contrast Filter)
+
 **Transparency**:
 The developed reversal image itself, read by transmission under a viewing light
 rather than scanned or printed. A reversal Stock's Colour Cube carries one, which

@@ -12,6 +12,15 @@ Baker derives them. Colour Profiles have a nonempty, sparse
 `colour.lutVariants` array of `{pushStops, lut}`. Offsets are unique finite values;
 the array is not constrained to a fixed set of offsets. E-6 has Output Stage `none`.
 
+Optional `colour.printVariants` carries a second Colour Cube per Development
+Offset, the same negative read by an enlarger and RA-4 paper instead of by a
+scanner. It requires Output Stage `scan`, an input shaper and a colour Process; it
+covers exactly the Development Offsets `colour.lutVariants` does, and its payload
+names are disjoint from theirs. Its cubes are `displayLinearRec2020` for the same
+reason a spectral scan's are — the print is the final image. A Profile without it
+has no Print, and the renderer says so rather than substituting the scan. See
+[the Print Output Stage](print.md).
+
 Every physical parameter has a `provenance` marker (`measured` or `artistic`) keyed
 by dotted JSON path. A vector or curve is one parameter. Paths include all fields
 of colour, grain, halation, MTF and reciprocity, plus nominalISO, trueISO, balance,
@@ -132,3 +141,14 @@ The binary payload layout is unchanged. The renderer applies the shaper at rende
 time and treats `displayLinearRec2020` cubes as already scanned, so the Scan
 Output Stage passes them through. Density Space cubes with `outputStage: scan`
 are inverted and auto-balanced by the renderer instead.
+
+## The Print Output Stage (MEM-249)
+
+A Profile that prints requires three further Provenance paths:
+`colour.printVariants` for the choice of Development Offsets, and `spectral.paper`
+and `spectral.enlarger` for the RA-4 paper's measured charts and the modelled
+darkroom around them. The paper's three
+CSVs join that Profile's source fingerprint, so a Profile baked against one paper
+does not validate against another. Payload byte lengths and the container layout
+are unchanged; a printing Profile simply carries twice as many Colour Cubes, and
+the container loads them lazily like any other.

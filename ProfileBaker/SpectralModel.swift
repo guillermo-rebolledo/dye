@@ -49,7 +49,8 @@ struct SpectralModel {
     let parameters: Parameters
     let shaper: FilmProfile.LogExposureShaper
     let channels: [CharacteristicCurve]
-    let basis: [SIMD3<Double>]
+    /// Per band, how much each Working Space primary's reconstruction contributes.
+    let lobes: [SIMD3<Double>]
     let sensitivity: [SIMD3<Double>]
     let sensitivityNormalization: SIMD3<Double>
     let rgbToBasis: simd_double3x3
@@ -68,6 +69,13 @@ struct SpectralModel {
     /// last for a reversal Stock, whose curve falls as exposure rises.
     let base: SIMD3<Double>
     let grayExcess: SIMD3<Double>
+    /// The colourimetric reconstruction this Stock was built on, which the Print
+    /// Output Stage integrates the paper against too.
+    let basis: SpectralBasis
+    /// The scene-linear neutral the Curve Set calls its reference. The layer
+    /// exposures a neutral produces are that neutral's own value, because the
+    /// sensitivity integral is normalised to make it so.
+    var referenceExposure: SIMD3<Double> { SIMD3(repeating: pow(10, shaper.middleGrayLogExposure)) }
 
     init(curves: CurveSet) throws {
         guard let shaper = curves.metadata.colour.inputShaper else { throw FilmError.invalid("Missing spectral input shaper") }
@@ -91,6 +99,9 @@ struct SpectralModel {
             "spectral.reconstruction", "spectral.dirCouplers", "spectral.development"]
             + (reversal ? ["spectral.viewing"]
                         : ["spectral.dyeSeparation", "spectral.scan", "spectral.dyePeakNM", "spectral.dyeWidthNM", "spectral.scanGamma"])
+            // The paper's three charts are measured; the enlarger's lamp, the
+            // dichroic filters' shapes and the aim density are not.
+            + (curves.metadata.colour.printVariants == nil ? [] : ["spectral.paper", "spectral.enlarger"])
         guard requiredProvenance.allSatisfy({ curves.metadata.provenance[$0] != nil }) else {
             throw FilmError.invalid("Missing spectral per-parameter Provenance")
         }
@@ -138,12 +149,13 @@ struct SpectralModel {
             SIMD3(gaussian(row[0], 650, 30), gaussian(row[0], 550, 30), gaussian(row[0], 450, 30)) * row[4] * colourimetry.quadrature(i)
         }
         self.rgbToBasis = colourimetry.rgbToBasis
-        self.basis = basis
+        self.basis = colourimetry
+        self.lobes = basis
         self.scanner = scanner
         sensitivity = sensitivities.enumerated().map { i, row in
             SIMD3(row[1], row[2], row[3]) * colourimetry.quadrature(i)
         }
-        sensitivityNormalization = zip(sensitivity, basis).reduce(SIMD3<Double>(repeating: 0)) { $0 + $1.0 * ($1.1.x + $1.1.y + $1.1.z) }
+        sensitivityNormalization = zip(sensitivity, lobes).reduce(SIMD3<Double>(repeating: 0)) { $0 + $1.0 * ($1.1.x + $1.1.y + $1.1.z) }
         guard sensitivityNormalization.x > 0 && sensitivityNormalization.y > 0 && sensitivityNormalization.z > 0 else { throw FilmError.invalid("Empty film sensitivity channel") }
         if reversal {
             // No Orange Mask: a transparency's base is the film support and the
@@ -181,11 +193,10 @@ struct SpectralModel {
                 return lobes / (lobes.x + lobes.y + lobes.z) * (row[2] - row[1])
             }
         }
-        // A transparency is looked at rather than scanned, so the viewing light and
-        // the CIE observer replace the scanner's three broad channels outright.
-        observerXYZ = grid.indices.map { i in
-            SIMD3(observer[i][1], observer[i][2], observer[i][3]) * observer[i][4] * ((i == 0 || i == grid.count - 1) ? 0.5 : 1)
-        }
+        // A transparency is looked at rather than scanned, and so is a print, so the
+        // viewing light and the CIE observer replace the scanner's three broad
+        // channels outright. Both read the same one off the shared basis.
+        observerXYZ = colourimetry.observerXYZ
         xyzToRGB = SpectralBasis.rgbToXYZ.inverse
         if reversal {
             // The reference neutral lands on Working Space mid-grey in every channel:
@@ -213,7 +224,7 @@ struct SpectralModel {
         var basisToScanner = simd_double3x3(0)
         let scannerWhite = scanner.reduce(SIMD3<Double>(repeating: 0), +)
         for i in grid.indices {
-            for c in 0..<3 { basisToScanner[c] += scanner[i] * (basis[i][c] / observer[i][4]) / scannerWhite }
+            for c in 0..<3 { basisToScanner[c] += scanner[i] * (lobes[i][c] / observer[i][4]) / scannerWhite }
         }
         let rgbToScanner = basisToScanner * self.rgbToBasis
         guard abs(simd_determinant(rgbToScanner)) > 1e-8 else { throw FilmError.invalid("Singular scanner calibration") }
@@ -227,7 +238,7 @@ struct SpectralModel {
     func density(_ rgbExposure: SIMD3<Double>, offset: Double) -> SIMD3<Double> {
         let coefficients = rgbToBasis * rgbExposure
         var exposure = SIMD3<Double>(repeating: 0)
-        for i in basis.indices { exposure += sensitivity[i] * max(0, simd_dot(basis[i], coefficients)) }
+        for i in lobes.indices { exposure += sensitivity[i] * max(0, simd_dot(lobes[i], coefficients)) }
         exposure /= sensitivityNormalization
         let development = parameters.development.first { $0.offset == offset }!
         func developed(_ channel: Int, _ logH: Double) -> Double {
@@ -250,14 +261,17 @@ struct SpectralModel {
         return result
     }
 
-    /// What comes out of the film: a negative's scan, or the Transparency itself.
+    /// What comes out of the film when nothing else is asked for: a negative's
+    /// scan, or the Transparency itself. The Print Output Stage is the one thing
+    /// the film alone does not decide, because it needs a paper and an enlarger,
+    /// so `PrintModel` supplies it rather than this.
     func output(_ density: SIMD3<Double>) -> SIMD3<Double> {
         isReversal ? transparency(density) : scan(density)
     }
 
     /// How much dye each layer formed, as a multiple of what it formed at the Curve
-    /// Set's reference neutral. Both output stages read the film through this.
-    private func dyeAmounts(_ density: SIMD3<Double>) -> SIMD3<Double> {
+    /// Set's reference neutral. Every output stage reads the film through this.
+    func dyeAmounts(_ density: SIMD3<Double>) -> SIMD3<Double> {
         simd_max(density - base, SIMD3<Double>(repeating: 0)) / grayExcess
     }
 
@@ -302,7 +316,7 @@ struct SpectralModel {
     /// A Stock whose Characteristic Curve bends more sharply than the cube's node
     /// spacing can follow needs more nodes, not a wider tolerance; `size` is the
     /// Curve Set's own `colour.lutSize`.
-    func cube(offset: Double, size: Int, densityOnly: Bool = false) throws -> ColourCube {
+    func cube(offset: Double, size: Int, densityOnly: Bool = false, paper: PrintModel? = nil) throws -> ColourCube {
         let last = Double(size - 1)
         var rgba = [Float16](repeating: 1, count: size * size * size * 4)
         // A 65³ cube is a quarter of a million spectral integrations and every
@@ -315,7 +329,7 @@ struct SpectralModel {
                     for r in 0..<size {
                         let d = density(SIMD3(exposure(at: Double(r) / last), exposure(at: Double(g) / last),
                                               exposure(at: Double(b) / last)), offset: offset)
-                        let value = densityOnly ? d : output(d)
+                        let value = densityOnly ? d : (paper.map { $0.print(d, negative: self) } ?? output(d))
                         let texel = ((b * size + g) * size + r) * 4
                         texels[texel] = Float16(value.x)
                         texels[texel + 1] = Float16(value.y)
