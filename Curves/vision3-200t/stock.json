@@ -1,0 +1,194 @@
+{
+  "balance": 3200,
+  "bloom": {
+    "radiusMicrons": 900.0,
+    "strength": 0.02
+  },
+  "colour": {
+    "cubeOutput": "displayLinearRec2020",
+    "inputShaper": {
+      "maximumLogExposure": 1.166,
+      "middleGrayLogExposure": -1.14,
+      "minimumLogExposure": -3.734
+    },
+    "lutSize": 33,
+    "lutVariants": [
+      {
+        "lut": "pull1.lut3d",
+        "pushStops": -1
+      },
+      {
+        "lut": "neutral.lut3d",
+        "pushStops": 0
+      },
+      {
+        "lut": "push1.lut3d",
+        "pushStops": 1
+      },
+      {
+        "lut": "push2.lut3d",
+        "pushStops": 2
+      }
+    ],
+    "outputStage": "scan",
+    "printVariants": [
+      {
+        "lut": "print.pull1.lut3d",
+        "pushStops": -1
+      },
+      {
+        "lut": "print.neutral.lut3d",
+        "pushStops": 0
+      },
+      {
+        "lut": "print.push1.lut3d",
+        "pushStops": 1
+      },
+      {
+        "lut": "print.push2.lut3d",
+        "pushStops": 2
+      }
+    ]
+  },
+  "displayName": "Kodak Vision3 200T",
+  "format": "135",
+  "grain": {
+    "channelCorrelation": 0.15,
+    "channelRadiusScale": [
+      1,
+      0.85,
+      0.7
+    ],
+    "densityResponse": [
+      0.0,
+      0.12487,
+      0.241415,
+      0.349636,
+      0.449532,
+      0.541103,
+      0.62435,
+      0.699272,
+      0.765869,
+      0.824142,
+      0.874089,
+      0.915713,
+      0.949011,
+      0.973985,
+      0.990635,
+      0.998959,
+      0.998959,
+      0.990635,
+      0.973985,
+      0.949011,
+      0.915713,
+      0.874089,
+      0.824142,
+      0.765869,
+      0.699272,
+      0.62435,
+      0.541103,
+      0.449532,
+      0.349636,
+      0.241415,
+      0.12487,
+      0.0
+    ],
+    "grainRadiusMicrons": 1.3,
+    "model": "dye-cloud",
+    "rmsGranularity": 0.011
+  },
+  "halation": {
+    "radiusMicrons": [
+      180,
+      80,
+      40
+    ],
+    "strength": 0.008,
+    "threshold": 1.6,
+    "tint": [
+      1,
+      0.4,
+      0.22
+    ]
+  },
+  "id": "vision3-200t",
+  "mtf": {
+    "cyclesPerMM": [
+      3.0,
+      5.0,
+      10.0,
+      20.0,
+      30.0,
+      40.0,
+      50.0,
+      60.0,
+      70.0,
+      80.0
+    ],
+    "response": [
+      1.02593,
+      1.034059,
+      1.08425,
+      1.03768,
+      0.871975,
+      0.678429,
+      0.549665,
+      0.468737,
+      0.410417,
+      0.366178
+    ]
+  },
+  "nominalISO": 200,
+  "process": "ecn2",
+  "provenance": {
+    "balance": "measured",
+    "bloom.radiusMicrons": "artistic",
+    "bloom.strength": "artistic",
+    "colour.cubeOutput": "artistic",
+    "colour.inputShaper": "artistic",
+    "colour.lutSize": "artistic",
+    "colour.lutVariants": "artistic",
+    "colour.outputStage": "artistic",
+    "colour.printVariants": "artistic",
+    "format": "artistic",
+    "grain.channelCorrelation": "artistic",
+    "grain.channelRadiusScale": "artistic",
+    "grain.densityResponse": "artistic",
+    "grain.grainRadiusMicrons": "artistic",
+    "grain.model": "artistic",
+    "grain.rmsGranularity": "artistic",
+    "halation.radiusMicrons": "artistic",
+    "halation.strength": "artistic",
+    "halation.threshold": "artistic",
+    "halation.tint": "artistic",
+    "mtf.cyclesPerMM": "measured",
+    "mtf.response": "measured",
+    "nominalISO": "measured",
+    "reciprocity.schwarzschildP": "artistic",
+    "reciprocity.thresholdSeconds": "measured",
+    "spectral.characteristicCurves": "measured",
+    "spectral.development": "artistic",
+    "spectral.dirCouplers": "artistic",
+    "spectral.dyeDensity": "measured",
+    "spectral.dyePeakNM": "artistic",
+    "spectral.dyeSeparation": "artistic",
+    "spectral.dyeWidthNM": "artistic",
+    "spectral.enlarger": "artistic",
+    "spectral.observer": "measured",
+    "spectral.paper": "measured",
+    "spectral.reconstruction": "artistic",
+    "spectral.scan": "artistic",
+    "spectral.scanGamma": "artistic",
+    "spectral.sensitivity": "measured",
+    "trueISO": "measured"
+  },
+  "reciprocity": {
+    "schwarzschildP": [
+      1,
+      1,
+      1
+    ],
+    "thresholdSeconds": 1
+  },
+  "trueISO": 200
+}

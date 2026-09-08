@@ -46,7 +46,8 @@ private func baker(_ arguments: [String]) throws -> (Int32, String) {
 
 #if os(macOS)
 @Test(arguments: ["study-c41", "study-e6", "study-bw-silver", "study-bw-chromogenic", "study-ecn2", "portra-400",
-                  "vision3-500t", "cinestill-800t", "tri-x-400", "t-max-100"])
+                  "vision3-50d", "vision3-250d", "vision3-200t", "vision3-500t", "cinestill-800t",
+                  "tri-x-400", "t-max-100"])
 func everyCurveSetBakesDeterministicallyAndMatchesReference(stock: String) throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -114,12 +115,24 @@ func everyCurveSetBakesDeterministicallyAndMatchesReference(stock: String) throw
 #endif
 
 #if os(macOS)
+/// Copies a Curve Set together with the RA-4 paper it prints onto, which the Baker
+/// reads from a sibling directory the way a monochrome Curve Set reads the Contrast
+/// Filters' transmittance table.
+private func printingCurveSet(_ stock: String, in directory: URL) throws -> URL {
+    let curves = directory.appendingPathComponent("Curves")
+    try FileManager.default.createDirectory(at: curves, withIntermediateDirectories: true)
+    for name in [stock, "ra4-paper"] {
+        try FileManager.default.copyItem(at: repository.appendingPathComponent("Curves/\(name)"),
+                                         to: curves.appendingPathComponent(name))
+    }
+    return curves.appendingPathComponent(stock)
+}
+
 @Test func spectralValidationRejectsAProfileFromDifferentSourceMeasurements() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
-    let curves = directory.appendingPathComponent("curves")
-    try FileManager.default.copyItem(at: repository.appendingPathComponent("Curves/portra-400"), to: curves)
+    let curves = try printingCurveSet("portra-400", in: directory)
     let output = directory.appendingPathComponent("portra.filmprofile")
     let (status, message) = try baker(["bake", curves.path, output.path])
     try #require(status == 0, Comment(rawValue: message))
@@ -169,8 +182,7 @@ func portraChromaticResponseDependsOnSpectralInputs(feature: String) async throw
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
-    let curves = directory.appendingPathComponent("curves")
-    try FileManager.default.copyItem(at: repository.appendingPathComponent("Curves/portra-400"), to: curves)
+    let curves = try printingCurveSet("portra-400", in: directory)
     if feature == "dir" {
         let url = curves.appendingPathComponent("spectral.json")
         var json = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
@@ -208,8 +220,7 @@ func portraChromaticResponseDependsOnSpectralInputs(feature: String) async throw
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
-    let curves = directory.appendingPathComponent("curves")
-    try FileManager.default.copyItem(at: repository.appendingPathComponent("Curves/portra-400"), to: curves)
+    let curves = try printingCurveSet("portra-400", in: directory)
     let sensitivity = curves.appendingPathComponent("sensitivity.csv")
     let valid = try String(contentsOf: sensitivity, encoding: .utf8)
     let destination = directory.appendingPathComponent("invalid.filmprofile")
@@ -234,7 +245,8 @@ func portraChromaticResponseDependsOnSpectralInputs(feature: String) async throw
 private func derivedCurveSets(in directory: URL) throws -> URL {
     let curves = directory.appendingPathComponent("Curves")
     try FileManager.default.createDirectory(at: curves, withIntermediateDirectories: true)
-    for stock in ["vision3-500t", "cinestill-800t"] {
+    // 500T prints, so the paper it prints onto has to come along too.
+    for stock in ["vision3-500t", "cinestill-800t", "ra4-paper"] {
         try FileManager.default.copyItem(at: repository.appendingPathComponent("Curves/\(stock)"),
                                          to: curves.appendingPathComponent(stock))
     }

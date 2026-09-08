@@ -24,7 +24,7 @@ input colour profile; CIRAWFilter handles RAW's camera colour matrix. Core Image
 is confined to RAW decode. The ordered twelve-pass Metal graph uses RGBA16Float
 textures throughout. White Balance, Exposure, Bloom, Halation, MTF, Film Response
 (tetrahedral Colour Cube sampling for colour, a Monochrome Collapse and Density
-Curve for black & white), Grain, the Scan Output Stage, Geometry and the
+Curve for black & white), Grain, the Output Stage, Geometry and the
 Display P3 output transform alter pixels; Reciprocity does too, for a Stock and an
 exposure time that call for it, and is a pass-through everywhere else.
 The canvas displays the tagged P3 result with Metal.
@@ -58,8 +58,10 @@ Stage. See [the MTF and Geometry Passes](docs/mtf-and-geometry.md).
 Spectral Profiles apply their log-exposure shaper at render time; Density Space
 Colour Cubes and Density Curves with a `scan` Output Stage are inverted through
 transmission and auto-balanced so the Stock's mid-grey returns 0.18. Portra's
-scan is baked into its cubes and is not inverted again. `outputStage: .none`
-returns Density Space for diagnostics; Print is not implemented yet. Reversal
+scan is baked into its cubes and is not inverted again, and so is its **Print**:
+a colour negative carries a second Colour Cube per Development Offset for the
+enlarger, and `RenderSettings.outputStage` chooses which set the Film Response
+samples. `outputStage: .none` returns Density Space for diagnostics. Reversal
 Stocks use `none` for real rather than for diagnostics: their cubes carry the
 transparency itself, so nothing inverts them and asking for a scan cannot.
 
@@ -137,16 +139,38 @@ CI. See [the black & white branch](docs/monochrome.md), and
 [the Contrast Filters' sources](Curves/contrast-filters/SOURCES.md) for the two
 filters whose residuals are large and why.
 
-Vision3 500T is digitised from Kodak H-1-5219t, and Cinestill 800T is
-[derived from it](Curves/cinestill-800t/SOURCES.md) rather than modelled
-separately: the same Emulsion without its Remjet backing, so the two Profiles ship
-byte-identical Colour Cubes and differ in Halation, Box Speed and Process. Both are
-tungsten Stocks, so a daylight scene records blue and the renderer does not correct
-it. Portra 400, Vision3 500T and Cinestill 800T render in the app with exposure,
-white balance, development, bloom, halation and grain controls, plus the vignette,
-gate weave and frame border of the Geometry Pass. Bloom is the taking lens rather
-than the film, so every Stock carries the same modelled one and both its parameters
-are artistic.
+The four Kodak **Vision3** motion picture stocks are the **ECN-2 branch**: 50D and
+250D daylight-balanced at 5500 K, 200T and 500T tungsten at 3200 K, each digitised
+from Kodak's own datasheet. A 5500 K scene through a tungsten Stock is heavily
+blue, and the renderer leaves it that way — the film was made for another light,
+and White Balance is where a photographer fixes it. All four are Remjet-backed, so
+their modelled Halation is suppressed against a still colour negative's: 0.008 and
+180/80/40 µm against Portra 400's 0.03 and 220/90/45. Cinestill 800T is
+[derived from 500T](Curves/cinestill-800t/SOURCES.md) rather than modelled
+separately — the same Emulsion without that backing, shipping byte-identical Colour
+Cubes and differing in Halation, Box Speed and Process, at strength 0.55.
+Kodak's current 250D sheet draws its charts as raster plates rather than vector
+paths, and [says so](Curves/vision3-250d/SOURCES.md) about the two it could not
+separate.
+
+Every colour negative now offers a **Print Output Stage** beside the Scan: an
+optical enlargement onto RA-4 paper, digitised from Kodak E-4070, in place of the
+scanner's inversion and auto-balance. What an enlarger and a sheet of paper do to
+a negative is a spectral integral, so it is baked where the scan is — a second
+Colour Cube per Development Offset — and the Metal graph is unchanged. The
+enlarger's dichroic filter pack and exposure are *solved* per offset so the Curve
+Set's own reference neutral prints neutral, the way a lab prints each roll. The
+result is a genuinely different picture rather than a filter over the scan:
+steeper through the midtones, several stops less shadow latitude, and highlights
+that end at paper white instead of rolling off. **Scan stays the default**,
+because most people's mental image of a Stock is a scan and a correct print reads
+as wrong the first time. See [the ECN-2 branch and the Print](docs/print.md).
+
+Portra 400, Cinestill 800T and the four Vision3 Stocks render in the app with
+exposure, white balance, development, bloom, halation and grain controls, the
+scan-or-print choice, and the vignette, gate weave and frame border of the
+Geometry Pass. Bloom is the taking lens rather than the film, so every Stock
+carries the same modelled one and both its parameters are artistic.
 
 The editor saves Stock/settings **Presets** in SwiftData, offers hold-to-compare
 and live photo thumbnails, and enables EDR on capable displays. Open **Contact

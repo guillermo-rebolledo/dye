@@ -11,8 +11,17 @@ func bake(_ curves: CurveSet) throws -> Profile {
     }
     if curves.metadata.colour.inputShaper != nil {
         let model = try SpectralModel(curves: curves)
+        let size = curves.metadata.colour.lutSize
         for variant in curves.metadata.colour.lutVariants {
-            payloads[variant.lut] = try model.cube(offset: variant.pushStops, size: curves.metadata.colour.lutSize).payload
+            payloads[variant.lut] = try model.cube(offset: variant.pushStops, size: size).payload
+        }
+        // The enlarger is filtered and its exposure set per Development Offset, the
+        // way a lab prints each roll to its own neutral, and the way the runtime
+        // scan auto-balances against each variant's own mid-grey density.
+        for variant in curves.metadata.colour.printVariants ?? [] {
+            var paper = try PrintModel(directory: curves.printPaperDirectory, basis: model.basis)
+            try paper.balance(against: model, offset: variant.pushStops)
+            payloads[variant.lut] = try model.cube(offset: variant.pushStops, size: size, paper: paper).payload
         }
         return try Profile(metadata: curves.bakedMetadata, payloads: payloads)
     }

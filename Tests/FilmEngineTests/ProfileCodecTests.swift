@@ -73,7 +73,9 @@ func profileCodecRoundTripsEveryProcess(_ process: FilmProcess) throws {
     let decoded = try ProfileContainer.decode(ProfileContainer.encode(original))
     #expect(decoded.metadata.colour == original.metadata.colour)
     let cube = ColourCube.identity.payload
-    let payloads = Dictionary(uniqueKeysWithValues: original.metadata.colour.lutVariants.map { ($0.lut, cube) })
+    // Every payload the Profile references, so each rejection below is the schema
+    // violation it names rather than a payload set that no longer matches.
+    let payloads = Dictionary(uniqueKeysWithValues: original.metadata.payloadNames.map { ($0, cube) })
     var invalid = original.metadata
     invalid.colour.inputShaper?.minimumLogExposure = 1
     #expect(throws: (any Error).self) { try Profile(metadata: invalid, payloads: payloads) }
@@ -89,4 +91,32 @@ func profileCodecRoundTripsEveryProcess(_ process: FilmProcess) throws {
     invalid = original.metadata
     invalid.provenance.removeValue(forKey: "colour.inputShaper")
     #expect(throws: (any Error).self) { try Profile(metadata: invalid, payloads: payloads) }
+}
+
+@Test func printVariantsMustCoverTheSameNegativeTheScanDoes() throws {
+    let original = try #require(ProfileCatalogue.bundled().profiles.first { $0.id == "vision3-250d" })
+    let decoded = try ProfileContainer.decode(ProfileContainer.encode(original))
+    #expect(decoded.metadata.colour.printVariants == original.metadata.colour.printVariants)
+    let cube = ColourCube.identity.payload
+    func payloads(_ metadata: FilmProfile) -> [String: Data] {
+        Dictionary(uniqueKeysWithValues: metadata.payloadNames.map { ($0, cube) })
+    }
+    #expect(throws: Never.self) { try Profile(metadata: original.metadata, payloads: payloads(original.metadata)) }
+    // A Print that covers different Development Offsets from the scan, one that
+    // borrows the scan's own payload, and a Print on a Stock with no spectral model
+    // to print from are each rejected rather than approximated.
+    var invalid = original.metadata
+    invalid.colour.printVariants?.removeLast()
+    #expect(throws: (any Error).self) { try Profile(metadata: invalid, payloads: payloads(invalid)) }
+    invalid = original.metadata
+    invalid.colour.printVariants?[0].lut = try #require(invalid.colour.lutVariants.first).lut
+    #expect(throws: (any Error).self) { try Profile(metadata: invalid, payloads: payloads(invalid)) }
+    invalid = original.metadata
+    invalid.provenance.removeValue(forKey: "colour.printVariants")
+    #expect(throws: (any Error).self) { try Profile(metadata: invalid, payloads: payloads(invalid)) }
+    // A reversal Stock has no negative for an enlarger to shine through.
+    var reversal = try #require(ProfileCatalogue.bundled().profiles.first { $0.id == "provia-100f" }).metadata
+    reversal.colour.printVariants = original.metadata.colour.printVariants
+    reversal.provenance["colour.printVariants"] = .artistic
+    #expect(throws: (any Error).self) { try Profile(metadata: reversal, payloads: payloads(reversal)) }
 }

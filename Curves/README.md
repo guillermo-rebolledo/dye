@@ -12,10 +12,13 @@ They exercise every Process and the entire authoring/loading/rendering path.
 for its measured inputs and explicitly artistic assumptions. `provia-100f` and
 `velvia-50` are the first reversal ones; see [the reversal branch](../docs/reversal.md).
 `tri-x-400` and `t-max-100` are the first measured black & white ones; see
-[the black & white branch](../docs/monochrome.md).
+[the black & white branch](../docs/monochrome.md). `vision3-50d`, `vision3-250d`,
+`vision3-200t` and `vision3-500t` are the ECN-2 ones, two daylight-balanced and
+two tungsten; see [the ECN-2 branch and the Print](../docs/print.md).
 
-`contrast-filters` holds no `stock.json` and is not a Stock: it is the shared
-Contrast Filter transmittance table every monochrome Curve Set reads. The bake
+`contrast-filters` and `ra4-paper` hold no `stock.json` and are not Stocks: they
+are the shared Contrast Filter transmittance table every monochrome Curve Set
+reads, and the shared RA-4 colour paper every printing Curve Set reads. The bake
 and validate loops skip directories without a `stock.json` for that reason.
 
 ## Files
@@ -36,6 +39,9 @@ and validate loops skip directories without a `stock.json` for that reason.
   Radii remain microns; Halation values are artistic, not datasheet measurements.
 - A Stock that shares another's Emulsion gets a directory containing `stock.json`
   and `SOURCES.md` only. See [Derived Curve Sets](#derived-curve-sets) below.
+- A colour negative that prints declares `colour.printVariants`, naming one further
+  payload per Development Offset. It adds no CSVs of its own; the paper is shared.
+  See [Printing Curve Sets](#printing-curve-sets).
 
 CSVs are UTF-8, one curve per file, with this exact header:
 
@@ -175,9 +181,29 @@ need the finer grid to hold the Step Wedge's 0.03 bound honestly. It costs eight
 times the payload and eight times the bake, so it is a per-Stock decision.
 
 The Baker records a SHA-256 source fingerprint in the final Profile. It covers
-the model version and all consumed authoring files, including metadata. Validation
+the model version and all consumed authoring files, including metadata and, for a
+Curve Set that prints, the RA-4 paper's three CSVs. Validation
 rejects a Profile from a different source revision before comparing measurements.
 Do not author a fingerprint in `stock.json`; it is derived during baking.
+
+## Printing Curve Sets
+
+A colour negative can also be read by an enlarger and a sheet of RA-4 paper rather
+than by a scanner. Add `colour.printVariants` to `stock.json` — one `{pushStops,
+lut}` per Development Offset, covering exactly the offsets `colour.lutVariants`
+does and naming payloads of its own — and the Provenance paths
+`colour.printVariants`, `spectral.paper` and `spectral.enlarger`.
+
+Nothing else is authored. The paper belongs to the darkroom rather than to any
+Stock, so the Baker reads `density.csv` (`logExposure,red,green,blue`),
+`sensitivity.csv` and `dye-density.csv` (`wavelengthNM,cyan,magenta,yellow`,
+peak-normalised) from the shared `ra4-paper` directory, on the same band grid the
+Stock's own tables use. It then solves the enlarger's filter pack and exposure
+against that Stock's reference neutral, once per Development Offset, and emits a
+second Colour Cube for each. Validation reports them as a `print-output` stage in
+the same CSV and SVG as the scan, and the paper's three CSVs join the Profile's
+source fingerprint. See [the Print Output Stage](../docs/print.md) and
+[the paper's sources](ra4-paper/SOURCES.md).
 
 The spectral validation report distinguishes measured optical density (normal
 development only) from numerical scan-output error (all variants). The default
