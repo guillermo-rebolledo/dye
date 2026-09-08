@@ -92,6 +92,7 @@ import FilmEngine
             imageGeneration = UUID()
             pixels = nil
             beforePixels = before
+            thumbnails = [:]
             thumbnailInput = small
             preview = decoded
             original = data
@@ -102,11 +103,7 @@ import FilmEngine
     }
 
     private func stockChanged() {
-        if let range = developmentRange {
-            settings.developmentOffset = min(max(settings.developmentOffset, range.lowerBound), range.upperBound)
-        } else {
-            settings.developmentOffset = 0
-        }
+        settings.developmentOffset = Self.developmentOffset(settings.developmentOffset, for: profile)
         scheduleRender()
     }
 
@@ -222,12 +219,17 @@ import FilmEngine
         stockChanged()
     }
 
+    private static func developmentOffset(_ offset: Double, for profile: Profile) -> Double {
+        let stops = profile.metadata.colour.lutVariants.map(\.pushStops)
+        guard let low = stops.min(), let high = stops.max(), low < high else { return 0 }
+        return min(max(offset, low), high)
+    }
+
     private func scheduleThumbnails() {
         thumbnailTask?.cancel()
         guard let thumbnailInput else { return }
         let settings = settings
         let profiles = [Profile.identity] + catalogue
-        thumbnails = [:]
         thumbnailTask = Task {
             do {
                 try await Task.sleep(for: .milliseconds(200))
@@ -235,8 +237,7 @@ import FilmEngine
                 for profile in profiles {
                     try Task.checkCancellation()
                     var adjusted = settings
-                    let stops = profile.metadata.colour.lutVariants.map(\.pushStops)
-                    adjusted.developmentOffset = min(max(settings.developmentOffset, stops.min() ?? 0), stops.max() ?? 0)
+                    adjusted.developmentOffset = Self.developmentOffset(settings.developmentOffset, for: profile)
                     let result = try await renderer.render(image: .linear(thumbnailInput), profile: profile, settings: adjusted)
                     try Task.checkCancellation()
                     thumbnails[profile.id] = result
