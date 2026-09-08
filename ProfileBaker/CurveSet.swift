@@ -49,6 +49,35 @@ struct CurveSet {
     /// The authored override document, for a Stock derived from another Profile.
     private let derivation: Data?
 
+    /// The Contrast Filters' shared transmittance table. The glass is a property of
+    /// the lens rather than of any Stock, so every monochrome Curve Set reads one
+    /// copy of it from a sibling directory rather than restating it.
+    var contrastFilterDirectory: URL { directory.deletingLastPathComponent().appendingPathComponent("contrast-filters") }
+
+    /// The Stock's published daylight filter factors, which the validator compares the
+    /// derived Contrast Filter Spectral Weights against.
+    func publishedFilterFactors() throws -> [ContrastFilter: Double] {
+        let lines = try String(contentsOf: directory.appendingPathComponent("filter-factors.csv"), encoding: .utf8)
+            .components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+        guard lines.first == "filter,daylightFactor" else {
+            throw FilmError.invalid("filter-factors.csv: expected filter,daylightFactor")
+        }
+        var result: [ContrastFilter: Double] = [:]
+        for line in lines.dropFirst() {
+            let fields = line.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+            guard fields.count == 2, let filter = ContrastFilter(rawValue: fields[0]), filter != .none,
+                  let factor = Double(fields[1]), factor.isFinite, factor >= 1, result[filter] == nil else {
+                throw FilmError.invalid("filter-factors.csv: expected one finite factor of at least 1 per Contrast Filter")
+            }
+            result[filter] = factor
+        }
+        guard Set(result.keys) == Set(MonochromeSpectralModel.contrastFilters) else {
+            throw FilmError.invalid("filter-factors.csv: expected every Contrast Filter")
+        }
+        return result
+    }
+
     /// Remjet removal changes what light does inside the film and what the box says.
     /// Everything the Colour Cubes are baked from stays with the parent Curve Set.
     static let derivableKeys: Set<String> = ["derivedFrom", "id", "displayName", "process",
@@ -98,11 +127,19 @@ struct CurveSet {
             guard metadata.colour.inputShaper != nil else { return metadata }
             var hash = SHA256()
             hash.update(data: Data("dye-spectral-v1\0".utf8))
-            let names = ["stock.json", "spectral.json", "neutral.red.csv", "neutral.green.csv", "neutral.blue.csv",
-                         "sensitivity.csv", "dye-density.csv", "observer.csv", "mtf.csv", "rms-granularity.csv"]
-            for name in names.sorted() {
-                hash.update(data: Data((name + "\0").utf8))
-                hash.update(data: Data(SHA256.hash(data: try Data(contentsOf: directory.appendingPathComponent(name)))))
+            // The two spectral branches consume different sources, so each hashes its
+            // own list. A Stock cannot change branch without changing its fingerprint.
+            var sources = metadata.process.isMonochrome
+                ? [directory.appendingPathComponent("density.csv"),
+                   contrastFilterDirectory.appendingPathComponent("transmittance.csv"),
+                   directory.appendingPathComponent("filter-factors.csv")]
+                : ["spectral.json", "neutral.red.csv", "neutral.green.csv", "neutral.blue.csv", "dye-density.csv"]
+                    .map(directory.appendingPathComponent)
+            sources += ["stock.json", "sensitivity.csv", "observer.csv", "mtf.csv", "rms-granularity.csv"]
+                .map(directory.appendingPathComponent)
+            for url in sources.sorted(by: { $0.path < $1.path }) {
+                hash.update(data: Data((url.lastPathComponent + "\0").utf8))
+                hash.update(data: Data(SHA256.hash(data: try Data(contentsOf: url))))
             }
             // The parent's stock.json is already hashed above; this covers the overrides.
             if let derivation {
@@ -111,6 +148,10 @@ struct CurveSet {
             }
             var result = metadata
             result.colour.sourceFingerprint = hash.finalize().map { String(format: "%02x", $0) }.joined()
+            // A B&W Profile's Spectral Weight and Contrast Filters are integrated from
+            // the Curve Set rather than authored, so they belong to the baked metadata
+            // in the same way the fingerprint does.
+            if metadata.process.isMonochrome { result.monochrome = try MonochromeSpectralModel(curves: self).monochrome }
             return result
         }
     }
@@ -120,7 +161,10 @@ struct CurveSet {
         guard !payload.isEmpty, !payload.contains("/"), !payload.contains("\\"), payload != ".", payload != ".." else {
             throw FilmError.invalid("Payload names must be plain filenames")
         }
-        let stem = metadata.colour.inputShaper == nil ? (payload as NSString).deletingPathExtension : "neutral"
+        // A B&W Curve Set names its one CSV after its payload; a colour one always
+        // measures its Colour Cubes from the same neutral development.
+        let stem = metadata.process.isMonochrome || metadata.colour.inputShaper == nil
+            ? (payload as NSString).deletingPathExtension : "neutral"
         let names = metadata.process.isMonochrome ? [stem + ".csv"] : ["red", "green", "blue"].map { stem + "." + $0 + ".csv" }
         return try names.map { try CharacteristicCurve(url: directory.appendingPathComponent($0), exposureRange: metadata.colour.inputShaper == nil ? log10(Double(Float16.leastNonzeroMagnitude))...0 : -10...10) }
     }

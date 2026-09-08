@@ -159,8 +159,7 @@ public actor Renderer {
             encoder.setTexture((plan.upper ?? plan.lower).texture, index: 3)
             var output = settings.output.rawValue
             encoder.setBytes(&output, length: MemoryLayout<UInt32>.size, index: 0)
-            let spectralWeight = profile.metadata.monochrome?.spectralWeight ?? [0, 0, 0]
-            var weights = SIMD4<Float>(Float(spectralWeight[0]), Float(spectralWeight[1]), Float(spectralWeight[2]), 0)
+            var weights = plan.spectralWeight
             encoder.setBytes(&weights, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
             var matrix = plan.whiteBalance ?? matrix_identity_float3x3
             encoder.setBytes(&matrix, length: MemoryLayout<simd_float3x3>.size, index: 2)
@@ -193,6 +192,9 @@ public actor Renderer {
         /// Per-channel Reciprocity Failure, or nil when the frame was short enough
         /// that the Stock obeys reciprocity and the Pass has nothing to do.
         let reciprocity: SIMD4<Float>?
+        /// The Monochrome Collapse's weights, already normalised so the Contrast
+        /// Filter costs tonal separation rather than exposure. Zero for a colour Stock.
+        let spectralWeight: SIMD4<Float>
         let lower: ResponseEntry
         let upper: ResponseEntry?
         let blend: Float
@@ -349,6 +351,19 @@ public actor Renderer {
         let failure = metadata.reciprocity.gain(seconds: settings.exposureSeconds)
         let reciprocity = failure.contains { $0 != 1 }
             ? SIMD4(Float(failure[0]), Float(failure[1]), Float(failure[2]), 0) : nil
+        // The Contrast Filter selects which Spectral Weight the collapse uses. It is
+        // black & white only, and a Profile baked before Contrast Filters existed has
+        // none to select — neither is a silent fallback to the unfiltered weight.
+        guard settings.contrastFilter == .none || metadata.monochrome != nil else {
+            throw FilmError.invalid("Profile \(metadata.id): a Contrast Filter needs a Monochrome Collapse to act on")
+        }
+        var spectralWeight = SIMD4<Float>(repeating: 0)
+        if let monochrome = metadata.monochrome {
+            guard let weight = monochrome.weight(for: settings.contrastFilter) else {
+                throw FilmError.invalid("Profile \(metadata.id): no Spectral Weight for the \(settings.contrastFilter.rawValue) Contrast Filter")
+            }
+            spectralWeight = SIMD4(Float(weight[0]), Float(weight[1]), Float(weight[2]), 0)
+        }
         let lower = try responseEntry(for: profile, name: metadata.monochrome?.densityCurve ?? lowerVariant?.lut)
         let upper = try upperVariant.map { try responseEntry(for: profile, name: $0.lut) }
         var shaper = SIMD4<Float>(repeating: 0)
@@ -371,7 +386,8 @@ public actor Renderer {
         if scan, (0..<3).contains(where: { gray[$0] - base[$0] < 0.001 }) {
             throw FilmError.invalid("Profile \(metadata.id): mid-grey density is not above base density; the scan cannot auto-balance")
         }
-        return Plan(whiteBalance: whiteBalance, gain: gain, reciprocity: reciprocity, lower: lower, upper: upper, blend: blend, shaper: shaper, scan: scan,
+        return Plan(whiteBalance: whiteBalance, gain: gain, reciprocity: reciprocity, spectralWeight: spectralWeight,
+                    lower: lower, upper: upper, blend: blend, shaper: shaper, scan: scan,
                     grayDensity: SIMD4(Float(gray.x), Float(gray.y), Float(gray.z), scan ? 1 : 0),
                     baseDensity: SIMD4(Float(base.x), Float(base.y), Float(base.z), 0),
                     bloom: spatial ? bloom(profile: profile, settings: settings, frame: frame, tile: tile) : nil,
@@ -772,7 +788,7 @@ public actor Renderer {
         }
         let payload = try profile.readPayload(name)
         let entry: ResponseEntry
-        if let monochrome = profile.metadata.monochrome {
+        if profile.metadata.monochrome != nil {
             let values = try decodeHalfValues(payload)
             guard values.count == 1024 else { throw FilmError.invalid("Density Curve must contain 1024 entries") }
             let descriptor = MTLTextureDescriptor()
@@ -785,11 +801,16 @@ public actor Renderer {
             values.withUnsafeBytes {
                 curve.replace(region: MTLRegionMake1D(0, 1024), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 2048)
             }
-            let position = min(max(0.18 * monochrome.spectralWeight.reduce(0, +), 0), 1) * 1023
+            // The collapse's weights sum to one, so mid-grey light collapses to mid-grey
+            // whichever Contrast Filter is on, and the scan's reference is the same
+            // point of the Density Curve for all of them.
+            let position = Self.responseCoordinate(0.18, shaper: profile.metadata.colour.inputShaper) * 1023
             let low = min(Int(position), 1022)
             let gray = Double(values[low]) + (position - Double(low)) * (Double(values[low + 1]) - Double(values[low]))
+            let blackPoint = Self.responseCoordinate(0, shaper: profile.metadata.colour.inputShaper) * 1023
+            let base = Double(values[min(Int(blackPoint), 1023)])
             entry = ResponseEntry(id: profile.cacheID, name: name, texture: curve, grayDensity: SIMD3(repeating: gray),
-                                  baseDensity: SIMD3(repeating: Double(values[0])))
+                                  baseDensity: SIMD3(repeating: base))
         } else {
             let cube = try ColourCube(size: profile.metadata.colour.lutSize, payload: payload)
             entry = ResponseEntry(id: profile.cacheID, name: name, texture: try makeColourCube(cube),
@@ -798,6 +819,15 @@ public actor Renderer {
         responseCache.append(entry)
         if responseCache.count > textureCacheCapacity { responseCache.removeFirst() }
         return entry
+    }
+
+    /// Where scene-linear grey lands in a Density Curve, in [0, 1]. A Curve Set with
+    /// no shaper addresses the curve by linear light, as the foundation studies do; a
+    /// measured one addresses it in physical log exposure, exactly as the shader does.
+    static func responseCoordinate(_ light: Double, shaper: FilmProfile.LogExposureShaper?) -> Double {
+        guard let shaper else { return min(max(light, 0), 1) }
+        let logH = log10(max(light, 1e-6) / 0.18) + shaper.middleGrayLogExposure
+        return min(max((logH - shaper.minimumLogExposure) / (shaper.maximumLogExposure - shaper.minimumLogExposure), 0), 1)
     }
 
     private func makeColourCube(_ cube: ColourCube) throws -> any MTLTexture {

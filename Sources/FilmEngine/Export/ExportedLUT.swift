@@ -70,6 +70,9 @@ extension Renderer {
     /// because a `.cube` in a folder of `.cube`s has nothing else to identify it by.
     private func title(profile: Profile, settings: RenderSettings) -> String {
         var parts = [profile.metadata.displayName]
+        // A Contrast Filter is part of the colour half of the look and does travel in
+        // a cube, unlike the five spatial Passes the header warns about.
+        if settings.contrastFilter != .none { parts.append(settings.contrastFilter.displayName) }
         if abs(settings.developmentOffset) >= 0.05 {
             parts.append(String(format: "%@ %+.1f", settings.developmentOffset > 0 ? "push" : "pull", settings.developmentOffset))
         }

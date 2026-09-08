@@ -1,5 +1,9 @@
 # Offline spectral model and the Portra gate
 
+This describes the **colour** branch. The black & white branch shares this file's
+CIE reconstruction basis and its input shaper and nothing else — no Colour Cube,
+no dye separation, no DIR, no scanner. See [the black & white branch](monochrome.md).
+
 MEM-243 adds a 31-band, 400–700 nm model to the macOS Baker. Authoring supports
 31–81 uniformly spaced bands if all three spectral CSVs share the same grid.
 The five foundation studies retain their explicit independent-channel fixture

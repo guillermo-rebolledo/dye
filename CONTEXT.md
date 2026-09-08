@@ -201,13 +201,22 @@ _Avoid_: desaturation, greyscale conversion, luminance
 **Spectral Weight**:
 The per-Stock three-vector derived by integrating published spectral sensitivity
 against CIE colour matching functions. Never a generic luminance weighting — that
-substitution discards the entire point of the black & white branch.
+substitution discards the entire point of the black & white branch. Derived by the
+Baker rather than authored, like the source fingerprint.
 _Avoid_: luma weights, channel mix, grey coefficients
 
 **Contrast Filter**:
 A spectral multiply applied before the Monochrome Collapse, modelling coloured glass
-on the lens. Black & white only, and not a colour tint.
+on the lens. Black & white only, and not a colour tint. Because the multiply is
+inside the same integral the Spectral Weight comes from, it resolves at bake time to
+one further Spectral Weight per filter rather than to a Pass of its own.
 _Avoid_: filter (unqualified), tint, colour filter
+
+**Filter Factor**:
+What a Contrast Filter costs in light, published per Stock by the manufacturer and
+recovered from the ratio of two Spectral Weights' sums. The renderer pays it, as a
+photographer does, so fitting glass changes tonal separation and not exposure.
+_Avoid_: exposure compensation, filter stops
 
 **Density Space**:
 The signal after the Film Response and before the Output Stage. Grain is applied

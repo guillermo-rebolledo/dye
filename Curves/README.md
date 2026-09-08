@@ -7,10 +7,16 @@ together so reviewers can inspect changed numbers and CI can verify reproducibil
 The five `study-*` directories are **synthetic fixtures**, not manufacturer data or
 accurate emulations. Their Display Names say so and all Provenance is artistic.
 They exercise every Process and the entire authoring/loading/rendering path.
-`portra-400` is the first measured Curve Set, using the spectral Baker path.
-See [its sources](portra-400/SOURCES.md) and the [model contract](../docs/spectral-model.md)
+`portra-400` is the first measured Curve Set, using the spectral Baker path; see
+[its sources](portra-400/SOURCES.md) and the [model contract](../docs/spectral-model.md)
 for its measured inputs and explicitly artistic assumptions. `provia-100f` and
 `velvia-50` are the first reversal ones; see [the reversal branch](../docs/reversal.md).
+`tri-x-400` and `t-max-100` are the first measured black & white ones; see
+[the black & white branch](../docs/monochrome.md).
+
+`contrast-filters` holds no `stock.json` and is not a Stock: it is the shared
+Contrast Filter transmittance table every monochrome Curve Set reads. The bake
+and validate loops skip directories without a `stock.json` for that reason.
 
 ## Files
 
@@ -20,8 +26,11 @@ for its measured inputs and explicitly artistic assumptions. `provia-100f` and
   `neutral.lut3d`, use `neutral.red.csv`, `neutral.green.csv`, `neutral.blue.csv`.
   For `push2.lut3d`, use `push2.red.csv`, etc. CSV names follow the **payload name**,
   never the Display Name. Each variant uses its own Curve Set; it is not a gain.
-- B&W: for `density.curve1d`, use `density.csv`. `spectralWeight` lives in metadata.
-  There are no colour-channel CSVs or Colour Cubes in this branch.
+- B&W: for `density.curve1d`, use `density.csv`. There are no colour-channel CSVs
+  and no Colour Cubes in this branch. A measured B&W Curve Set adds
+  `sensitivity.csv`, `observer.csv`, `mtf.csv`, `rms-granularity.csv` and
+  `filter-factors.csv`, and its `spectralWeight` is **derived by the Baker** from
+  them rather than authored; see [Monochrome Curve Sets](#monochrome-curve-sets).
 - For measured data, add `SOURCES.md` citing the manufacturer, datasheet edition,
   page/figure and digitisation method. Mark only supported parameters `measured`.
   Radii remain microns; Halation values are artistic, not datasheet measurements.
@@ -45,8 +54,10 @@ logExposure,density
 strictly increasing with no duplicates. At least two samples are required. Density
 is nonnegative optical density, not a display code value. Both columns must be
 finite numbers. Extra columns, quotes, missing values, NaN and infinity are errors.
-The current trivial model supports positive exposure representable as float16 up
-to 1 (`logExposure <= 0`); a production spectral model will define a wider shaper.
+The foundation study model supports positive exposure representable as float16 up
+to 1 (`logExposure <= 0`). A Curve Set with a `colour.inputShaper` — every measured
+one, colour or black & white — writes physical log10 lux-seconds inside the shaper's
+own range instead, and the drawn curve must fit within it.
 
 ## Bake and validate
 
@@ -73,8 +84,9 @@ swift test
 
 This writes into `Sources/FilmEngine/Catalogue`. The package bundles that directory,
 so new Profiles appear in the app picker on the next build with no source changes
-and render with the exposure, white balance, development and halation controls.
-Grain and MTF are not yet applied. The CLI is a separate macOS executable product
+and render with every user control the Stock offers — including the Contrast Filter
+picker, which appears only for a black & white Stock whose Profile carries the
+weights. The CLI is a separate macOS executable product
 and is not a dependency of FilmApp or the FilmEngine library.
 
 Step Wedges render with `halationIntensity: 0` and the Scene Illuminant set to the
@@ -119,6 +131,29 @@ CI runs the process-level CLI tests, checks deterministic catalogue bytes and
 validates every Curve Set, uploading the reports. Renderer tests require Metal;
 a missing Metal device is a failure, not a silent test skip. For a custom SwiftPM
 build directory set `PROFILE_BAKER_EXECUTABLE` to its absolute CLI path.
+
+## Monochrome Curve Sets
+
+A measured black & white Stock uses the spectral Baker path with no `spectral.json`
+and no Colour Cube. Alongside `density.csv` it supplies `sensitivity.csv`
+(`wavelengthNM,sensitivity` — one curve, not three), `observer.csv`, `mtf.csv`
+(`cyclesPerMM,response`), `rms-granularity.csv` and `filter-factors.csv`
+(`filter,daylightFactor`, one row per Contrast Filter, transcribed from the
+datasheet's daylight column). The three spectral tables must share the observer's
+uniform 400…700 nm grid, and `Curves/contrast-filters/transmittance.csv` must too.
+
+`stock.json` carries `monochrome.densityCurve` and an `inputShaper`, and must
+**not** author `monochrome.spectralWeight` or `monochrome.contrastFilters`: the
+Baker integrates both from the sensitivity curve and writes them into the Profile,
+exactly as it does the source fingerprint. Authoring either is an error. Declare
+Provenance for `spectral.characteristicCurve`, `spectral.sensitivity`,
+`spectral.observer`, `spectral.reconstruction` and `spectral.contrastFilters`
+alongside the schema paths.
+
+Validation reports `measured-density` against the digitised curve at the CLI's own
+tolerance, and `filter-factor` against the datasheet's published daylight factors
+in stops at a fixed 0.7-stop bound. See [the black & white branch](../docs/monochrome.md)
+and [the Contrast Filters' sources](contrast-filters/SOURCES.md).
 
 ## Spectral Curve Sets
 

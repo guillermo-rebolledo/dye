@@ -109,14 +109,13 @@ struct SpectralModel {
         let dyes = try SpectralTable(curves.directory, "dye-density.csv",
                                      header: reversal ? "wavelengthNM,cyan,magenta,yellow" : "wavelengthNM,minimum,midscale").rows
         let observer = try SpectralTable(curves.directory, "observer.csv", header: "wavelengthNM,x,y,z,illuminant").rows
-        let grid = sensitivities.map { $0[0] }
-        guard (31...81).contains(grid.count), grid.first == 400, grid.last == 700,
-              dyes.map({ $0[0] }) == grid, observer.map({ $0[0] }) == grid,
-              zip(grid, grid.dropFirst()).allSatisfy({ abs(($1 - $0) - 300 / Double(grid.count - 1)) < 0.00001 }),
+        // The band grid and the observer's own validity belong to the shared basis.
+        let colourimetry = try SpectralBasis(observer: observer)
+        let grid = colourimetry.grid
+        guard sensitivities.map({ $0[0] }) == grid, dyes.map({ $0[0] }) == grid,
               reversal || dyes.allSatisfy({ $0[2] > $0[1] }),
               !reversal || (dyes.allSatisfy { $0.dropFirst().allSatisfy { (0...1).contains($0) } }
-                              && (1...3).allSatisfy { column in dyes.contains { abs($0[column] - 1) < 1e-9 } }),
-              observer.allSatisfy({ $0[4] > 0 }) else {
+                              && (1...3).allSatisfy { column in dyes.contains { abs($0[column] - 1) < 1e-9 } }) else {
             throw FilmError.invalid("Spectral tables require a common uniform 31–81 band grid from 400 to 700 nm")
         }
         let mtf = try SpectralTable(curves.directory, "mtf.csv", header: "cyclesPerMM,red,green,blue").rows
@@ -134,35 +133,15 @@ struct SpectralModel {
         grayExcess = SIMD3(channels[0].density(atLinearExposure: grayH), channels[1].density(atLinearExposure: grayH), channels[2].density(atLinearExposure: grayH)) - base
         guard grayExcess.x > 0 && grayExcess.y > 0 && grayExcess.z > 0 else { throw FilmError.invalid("Middle gray must be above base density") }
         func gaussian(_ nm: Double, _ peak: Double, _ width: Double) -> Double { exp(-0.5 * pow((nm - peak) / width, 2)) }
-        var basis: [SIMD3<Double>] = []
-        var scanner: [SIMD3<Double>] = []
-        for row in observer {
-            let nm = row[0]
-            let lobes = SIMD3(gaussian(nm, 650, 45), gaussian(nm, 540, 35), gaussian(nm, 450, 30))
-            basis.append(lobes / (lobes.x + lobes.y + lobes.z) * row[4])
-            let weight = (nm == 400 || nm == 700) ? 0.5 : 1.0
-            scanner.append(SIMD3(gaussian(nm, 650, 30), gaussian(nm, 550, 30), gaussian(nm, 450, 30)) * row[4] * weight)
+        let basis = colourimetry.lobes
+        let scanner = observer.enumerated().map { i, row in
+            SIMD3(gaussian(row[0], 650, 30), gaussian(row[0], 550, 30), gaussian(row[0], 450, 30)) * row[4] * colourimetry.quadrature(i)
         }
-        // CIE integration gives this smooth spectral basis a colourimetric Rec.2020 input.
-        // Normalize the truncated observer white to D65; saturated out-of-spectral-gamut
-        // inputs are projected to nonnegative spectra after solving the basis coefficients.
-        let rgbToXYZ = simd_double3x3(columns: (SIMD3(0.636958, 0.262700, 0), SIMD3(0.144617, 0.677998, 0.028073), SIMD3(0.168881, 0.059302, 1.060985)))
-        var basisToXYZ = simd_double3x3(0)
-        for i in grid.indices {
-            let row = observer[i]
-            let xyz = SIMD3(row[1], row[2], row[3]) * ((i == 0 || i == grid.count - 1) ? 0.5 : 1.0)
-            for c in 0..<3 { basisToXYZ[c] += xyz * basis[i][c] }
-        }
-        let white = basisToXYZ * SIMD3<Double>(repeating: 1)
-        guard (0..<3).allSatisfy({ white[$0] > 0 }) else { throw FilmError.invalid("Observer has no white response") }
-        let whiteScale = (rgbToXYZ * SIMD3<Double>(repeating: 1)) / white
-        for c in 0..<3 { basisToXYZ[c] *= whiteScale }
-        guard abs(simd_determinant(basisToXYZ)) > 1e-8 else { throw FilmError.invalid("Singular observer basis") }
-        self.rgbToBasis = basisToXYZ.inverse * rgbToXYZ
+        self.rgbToBasis = colourimetry.rgbToBasis
         self.basis = basis
         self.scanner = scanner
         sensitivity = sensitivities.enumerated().map { i, row in
-            SIMD3(row[1], row[2], row[3]) * ((i == 0 || i == grid.count - 1) ? 0.5 : 1.0)
+            SIMD3(row[1], row[2], row[3]) * colourimetry.quadrature(i)
         }
         sensitivityNormalization = zip(sensitivity, basis).reduce(SIMD3<Double>(repeating: 0)) { $0 + $1.0 * ($1.1.x + $1.1.y + $1.1.z) }
         guard sensitivityNormalization.x > 0 && sensitivityNormalization.y > 0 && sensitivityNormalization.z > 0 else { throw FilmError.invalid("Empty film sensitivity channel") }
@@ -207,7 +186,7 @@ struct SpectralModel {
         observerXYZ = grid.indices.map { i in
             SIMD3(observer[i][1], observer[i][2], observer[i][3]) * observer[i][4] * ((i == 0 || i == grid.count - 1) ? 0.5 : 1)
         }
-        xyzToRGB = rgbToXYZ.inverse
+        xyzToRGB = SpectralBasis.rgbToXYZ.inverse
         if reversal {
             // The reference neutral lands on Working Space mid-grey in every channel:
             // a standard viewer is a defined white, and the Curve Set's own neutral

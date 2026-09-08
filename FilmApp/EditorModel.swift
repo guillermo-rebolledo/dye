@@ -77,6 +77,19 @@ import FilmEngine
         return profile.metadata.format.frameWidthMM * 1000 / Double(max(preview.width, preview.height))
     }
 
+    /// The Contrast Filters this Stock can be shot through, empty when it has none.
+    /// Only a black & white Stock has a Monochrome Collapse for glass to act before,
+    /// and only one baked from a measured spectral sensitivity knows what each piece
+    /// of glass does to it, so the control appears for those Stocks and no others.
+    var contrastFilters: [ContrastFilter] {
+        profile.metadata.monochrome?.contrastFilters == nil ? [] : ContrastFilter.allCases
+    }
+
+    /// What the fitted glass costs in stops, which the render has already paid.
+    var contrastFilterStops: Double? {
+        profile.metadata.monochrome?.filterFactorStops(settings.contrastFilter)
+    }
+
     /// Baked Development Offsets, or nil when the Stock has a single variant.
     var developmentRange: ClosedRange<Double>? {
         let stops = profile.metadata.colour.lutVariants.map(\.pushStops)
@@ -118,6 +131,7 @@ import FilmEngine
 
     private func stockChanged() {
         settings.developmentOffset = Self.developmentOffset(settings.developmentOffset, for: profile)
+        settings.contrastFilter = Self.contrastFilter(settings.contrastFilter, for: profile)
         scheduleRender()
     }
 
@@ -233,6 +247,15 @@ import FilmEngine
         stockChanged()
     }
 
+    /// Glass does not carry across a change of Stock. A colour Stock has no
+    /// Monochrome Collapse for a Contrast Filter to act before and refuses the render
+    /// outright rather than ignoring it, so this is what keeps a filtered look from
+    /// breaking the moment the picker moves — including in the thumbnail strip, which
+    /// renders the whole Catalogue at the settings on screen.
+    private static func contrastFilter(_ filter: ContrastFilter, for profile: Profile) -> ContrastFilter {
+        profile.metadata.monochrome?.weight(for: filter) == nil ? .none : filter
+    }
+
     private static func developmentOffset(_ offset: Double, for profile: Profile) -> Double {
         let stops = profile.metadata.colour.lutVariants.map(\.pushStops)
         guard let low = stops.min(), let high = stops.max(), low < high else { return 0 }
@@ -252,6 +275,7 @@ import FilmEngine
                     try Task.checkCancellation()
                     var adjusted = settings
                     adjusted.developmentOffset = Self.developmentOffset(settings.developmentOffset, for: profile)
+                    adjusted.contrastFilter = Self.contrastFilter(settings.contrastFilter, for: profile)
                     let result = try await renderer.render(image: .linear(thumbnailInput), profile: profile, settings: adjusted)
                     try Task.checkCancellation()
                     thumbnails[profile.id] = result

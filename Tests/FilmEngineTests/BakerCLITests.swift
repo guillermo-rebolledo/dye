@@ -46,7 +46,7 @@ private func baker(_ arguments: [String]) throws -> (Int32, String) {
 
 #if os(macOS)
 @Test(arguments: ["study-c41", "study-e6", "study-bw-silver", "study-bw-chromogenic", "study-ecn2", "portra-400",
-                  "vision3-500t", "cinestill-800t"])
+                  "vision3-500t", "cinestill-800t", "tri-x-400", "t-max-100"])
 func everyCurveSetBakesDeterministicallyAndMatchesReference(stock: String) throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -275,5 +275,133 @@ private func derivedCurveSets(in directory: URL) throws -> URL {
     let (status, _) = try baker(["validate", curves.appendingPathComponent("cinestill-800t").path, output.path,
                                  directory.appendingPathComponent("wedge").path, "0.03"])
     #expect(status != 0)
+}
+#endif
+
+#if os(macOS)
+/// Copies a monochrome Curve Set together with the Contrast Filter transmittance
+/// table it reads from a sibling directory.
+private func monochromeCurveSets(_ stock: String, in directory: URL) throws -> URL {
+    let curves = directory.appendingPathComponent("Curves")
+    try FileManager.default.createDirectory(at: curves, withIntermediateDirectories: true)
+    for name in [stock, "contrast-filters"] {
+        try FileManager.default.copyItem(at: repository.appendingPathComponent("Curves/\(name)"),
+                                         to: curves.appendingPathComponent(name))
+    }
+    return curves
+}
+
+@Test(arguments: ["tri-x-400", "t-max-100"])
+func aMonochromeCurveSetDerivesItsCollapseAndRefusesAnAuthoredOne(stock: String) throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let curves = try monochromeCurveSets(stock, in: directory).appendingPathComponent(stock)
+    let metadata = curves.appendingPathComponent("stock.json")
+    let authored = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: metadata)) as? [String: Any])
+    let output = directory.appendingPathComponent("bw.filmprofile")
+    let (status, message) = try baker(["bake", curves.path, output.path])
+    try #require(status == 0, Comment(rawValue: message))
+    let profile = try ProfileContainer.decode(Data(contentsOf: output))
+    #expect(profile.metadata.colour.lutVariants.isEmpty)
+    #expect(profile.metadata.monochrome?.contrastFilters?.count == 5)
+    // The Density Curve is the entire payload: 1024 float16 entries and no cube.
+    let bytes = try Data(contentsOf: output).count
+    #expect(bytes < 16 + 2048 + 8192)
+    // Neither derived field may be authored, exactly as with the source fingerprint.
+    for key in ["spectralWeight", "contrastFilters"] {
+        var changed = authored
+        var monochrome = try #require(changed["monochrome"] as? [String: Any])
+        monochrome[key] = key == "spectralWeight" ? [0.3, 0.4, 0.3]
+            : [["filter": "yellow", "spectralWeight": [0.3, 0.4, 0.3]]]
+        changed["monochrome"] = monochrome
+        try JSONSerialization.data(withJSONObject: changed).write(to: metadata)
+        let invalid = directory.appendingPathComponent("invalid.filmprofile")
+        let (code, text) = try baker(["bake", curves.path, invalid.path])
+        #expect(code != 0, Comment(rawValue: "authoring monochrome.\(key) was accepted: \(text)"))
+        #expect(!FileManager.default.fileExists(atPath: invalid.path))
+    }
+    try JSONSerialization.data(withJSONObject: authored).write(to: metadata)
+    #expect(try baker(["bake", curves.path, output.path]).0 == 0)
+}
+
+@Test func theMonochromeCollapseFollowsTheDigitisedSensitivityAndTheGlassInFrontOfIt() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = try monochromeCurveSets("tri-x-400", in: directory)
+    let curves = root.appendingPathComponent("tri-x-400")
+    let output = directory.appendingPathComponent("bw.filmprofile")
+    try #require(try baker(["bake", curves.path, output.path]).0 == 0)
+    let original = try #require(try ProfileContainer.decode(Data(contentsOf: output)).metadata.monochrome)
+    // Halve the red end of the sensitivity curve and the collapse must follow it.
+    let sensitivity = curves.appendingPathComponent("sensitivity.csv")
+    let valid = try String(contentsOf: sensitivity, encoding: .utf8)
+    let dimmed = valid.components(separatedBy: .newlines).map { line -> String in
+        let fields = line.components(separatedBy: ",")
+        guard fields.count == 2, let nm = Double(fields[0]), let value = Double(fields[1]) else { return line }
+        return nm >= 600 ? "\(fields[0]),\(value / 2)" : line
+    }.joined(separator: "\n")
+    try dimmed.write(to: sensitivity, atomically: true, encoding: .utf8)
+    let altered = directory.appendingPathComponent("altered.filmprofile")
+    try #require(try baker(["bake", curves.path, altered.path]).0 == 0)
+    let changed = try #require(try ProfileContainer.decode(Data(contentsOf: altered)).metadata.monochrome)
+    let before = try #require(original.weight(for: .none)), after = try #require(changed.weight(for: .none))
+    #expect(after[0] < before[0] - 0.02)
+    // A red Contrast Filter is where a lost red end shows most, so its factor climbs.
+    let beforeRed = try #require(original.filterFactorStops(.red))
+    let afterRed = try #require(changed.filterFactorStops(.red))
+    #expect(afterRed > beforeRed + 0.5)
+    // And the validator notices, because the published factor did not change.
+    let (status, message) = try baker(["validate", curves.path, altered.path,
+                                       directory.appendingPathComponent("wedge").path, "0.03"])
+    #expect(status != 0)
+    #expect(message.contains("exceeds tolerance"))
+    try valid.write(to: sensitivity, atomically: true, encoding: .utf8)
+
+    // The transmittance table is shared authoring input, so changing it invalidates
+    // every monochrome Profile baked against the old one.
+    let glass = root.appendingPathComponent("contrast-filters/transmittance.csv")
+    let opaque = try String(contentsOf: glass, encoding: .utf8).replacingOccurrences(of: "0.900000", with: "0.100000")
+    try opaque.write(to: glass, atomically: true, encoding: .utf8)
+    #expect(try baker(["validate", curves.path, output.path,
+                       directory.appendingPathComponent("stale").path, "0.03"]).0 != 0)
+}
+
+@Test func aMonochromeCurveSetRejectsMalformedSpectralInput() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = try monochromeCurveSets("t-max-100", in: directory)
+    let curves = root.appendingPathComponent("t-max-100")
+    let destination = directory.appendingPathComponent("invalid.filmprofile")
+    let sensitivity = curves.appendingPathComponent("sensitivity.csv")
+    let valid = try String(contentsOf: sensitivity, encoding: .utf8)
+    for malformed in [valid.replacingOccurrences(of: "410,", with: "411,"),
+                      valid.replacingOccurrences(of: "410,", with: "400,"),
+                      "wavelengthNM,sensitivity\n400,nan\n700,1\n",
+                      "wavelengthNM,red,green,blue\n400,1,1,1\n700,1,1,1\n"] {
+        try malformed.write(to: sensitivity, atomically: true, encoding: .utf8)
+        #expect(try baker(["bake", curves.path, destination.path]).0 != 0)
+        #expect(!FileManager.default.fileExists(atPath: destination.path))
+    }
+    try valid.write(to: sensitivity, atomically: true, encoding: .utf8)
+    // Transmittance outside 0...1 is not glass, and a missing filter is not a filter.
+    let glass = root.appendingPathComponent("contrast-filters/transmittance.csv")
+    let table = try String(contentsOf: glass, encoding: .utf8)
+    for malformed in [table.replacingOccurrences(of: "0.900000", with: "1.900000"),
+                      table.replacingOccurrences(of: ",red", with: ",crimson")] {
+        try malformed.write(to: glass, atomically: true, encoding: .utf8)
+        #expect(try baker(["bake", curves.path, destination.path]).0 != 0)
+    }
+    try table.write(to: glass, atomically: true, encoding: .utf8)
+    // A published filter factor the Curve Set does not name is an incomplete table.
+    let factors = curves.appendingPathComponent("filter-factors.csv")
+    let published = try String(contentsOf: factors, encoding: .utf8)
+    try published.replacingOccurrences(of: "green,6.000000\n", with: "")
+        .write(to: factors, atomically: true, encoding: .utf8)
+    try #require(try baker(["bake", curves.path, destination.path]).0 == 0)
+    #expect(try baker(["validate", curves.path, destination.path,
+                       directory.appendingPathComponent("wedge").path, "0.03"]).0 != 0)
 }
 #endif

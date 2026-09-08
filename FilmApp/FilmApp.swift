@@ -196,6 +196,15 @@ struct EditorView: View {
                 Text("The same emulsion as \(parent.metadata.displayName), modelled without its remjet backing.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            if !model.contrastFilters.isEmpty {
+                Picker("Contrast filter", selection: $model.settings.contrastFilter) {
+                    ForEach(model.contrastFilters) { filter in
+                        Text(filter.displayName).tag(filter)
+                    }
+                }
+                .pickerStyle(.menu)
+                Text(contrastFilterHint).font(.caption).foregroundStyle(.secondary)
+            }
             if let range = model.developmentRange {
                 LabeledSlider(title: "Development", value: $model.settings.developmentOffset, range: range, step: 0.1,
                               format: developmentLabel)
@@ -251,6 +260,20 @@ struct EditorView: View {
         if difference == 0 { return "Scene light matches the stock's \(Int(balance)) K balance: neutral on film." }
         let direction = difference < 0 ? "warmer" : "cooler"
         return "Scene light is \(Int(abs(difference))) K \(direction) than the stock's \(Int(balance)) K balance and records that way."
+    }
+
+    /// The glass sits in front of the film, so the hint has to say that it changes
+    /// which colours the emulsion records as light and dark rather than tinting the
+    /// result — and that its cost in light has already been paid for you.
+    private var contrastFilterHint: String {
+        let filter = model.settings.contrastFilter
+        let base = filter.effect + " A contrast filter multiplies the light before the film sees it, so it moves "
+            + "colours apart in grey rather than colouring the picture."
+        guard filter != .none, let stops = model.contrastFilterStops else {
+            return "No glass on the lens. " + base
+        }
+        return String(format: "%@ Kodak's filter factor for this stock costs %.1f stops, already added back, so the "
+                      + "exposure stays where you put it and only the separation changes.", base, stops)
     }
 
     private func developmentLabel(_ offset: Double) -> String {

@@ -130,9 +130,11 @@ An untagged file is read as sRGB, which would silently undo a Display P3 export.
 
 `.cube` export falls out of MEM-239's tier split rather than being modelled
 separately. Everything that is a pure per-pixel colour mapping — White Balance,
-Exposure, the Film Response and its Development Offset blend, the Output Stage and the
-Output Transform — is exactly what a cube can carry, and everything the runtime keeps
-for itself is exactly what it cannot.
+Exposure, the Film Response and its Development Offset blend, the Contrast Filter, the
+Output Stage and the Output Transform — is exactly what a cube can carry, and
+everything the runtime keeps for itself is exactly what it cannot. A Contrast Filter
+qualifies because it resolves to a Monochrome Collapse weight rather than to a Pass;
+the LUT's title names the glass so a folder of cubes stays legible.
 
 So the LUT is *rendered*. The lattice is built as an image, run through the same Plan
 and the same shaders as a photograph with the spatial Passes off, and read back.
