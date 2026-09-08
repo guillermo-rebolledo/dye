@@ -80,7 +80,15 @@ insufficient to model one.
 
 **Reciprocity Failure**:
 Loss of sensitivity at long exposure times, modelled by a Schwarzschild exponent
-above a per-Stock threshold.
+above a per-Stock threshold. One exponent per layer, not one per Stock: the three
+lose speed at different rates, which is why a manufacturer's published
+compensation is a colour-correction filter as well as an extra stop.
+
+**Exposure Time**:
+How long the frame was open, the user's control the Reciprocity Failure model
+reads. It is not a second Exposure control and does nothing below the Stock's
+threshold.
+_Avoid_: shutter speed (the label, not the term), duration
 
 ### Profiles and data
 
@@ -108,8 +116,8 @@ The D-logE curve — density against log exposure — per channel for colour sto
 _Avoid_: curve (unqualified), H&D curve, tone curve, response curve
 
 **Colour Cube**:
-A baked 33³ float16 three-dimensional lookup in the Working Space. One per
-Development Offset.
+A baked float16 three-dimensional lookup in the Working Space, 33³ or, for a Stock
+whose Characteristic Curve turns too fast for that, 65³. One per Development Offset.
 _Avoid_: LUT (unqualified — collides with Exported LUT and Density Curve), 3D LUT, cube
 
 **Density Curve**:
@@ -244,6 +252,12 @@ _Avoid_: Frontier, Noritsu, digitisation
 **Print**:
 Optical enlargement emulation — RA-4 paper density curve plus enlarger filtration.
 _Avoid_: darkroom, paper, optical
+
+**Transparency**:
+The developed reversal image itself, read by transmission under a viewing light
+rather than scanned or printed. A reversal Stock's Colour Cube carries one, which
+is what makes its Output Stage `none` rather than merely unimplemented.
+_Avoid_: slide, chrome, positive, projection
 
 **Geometry**:
 The Pass applying everything whose value depends on where in the frame a pixel

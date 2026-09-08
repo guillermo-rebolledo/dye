@@ -5,12 +5,13 @@ enum StepWedgeStage: String {
     case density
     case measuredDensity = "measured-density"
     case scanOutput = "scan-output"
+    case reversalOutput = "reversal-output"
     case chromaticOutput = "chromatic-output"
 
     var units: String {
         switch self {
         case .density, .measuredDensity: "optical density"
-        case .scanOutput, .chromaticOutput: "display-linear channel value"
+        case .scanOutput, .reversalOutput, .chromaticOutput: "display-linear channel value"
         }
     }
 }

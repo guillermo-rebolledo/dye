@@ -112,9 +112,51 @@ struct EditorView: View {
             Text(balanceHint).font(.caption).foregroundStyle(.secondary)
             LabeledSlider(title: "Tint", value: $model.settings.tint, range: -100...100, step: 1,
                           format: { $0 == 0 ? "neutral" : String(format: "%+.0f %@", $0, $0 > 0 ? "magenta" : "green") })
+            if model.hasReciprocity {
+                // Shutter speeds are a stop apart, so the control moves in stops and
+                // the label says the time. A stock that obeys reciprocity throughout
+                // has no such control at all rather than a control that does nothing.
+                LabeledSlider(title: "Exposure time", value: exposureStopsBinding,
+                              range: log2(RenderSettings.exposureSecondsRange.lowerBound)...log2(RenderSettings.exposureSecondsRange.upperBound),
+                              step: 1 / 3, format: { Self.shutterSpeed(pow(2, $0)) })
+                Text(reciprocityHint).font(.caption).foregroundStyle(.secondary)
+            }
             Text("Exposure and white balance act on the light before it reaches the film, so they place the scene on the characteristic curve rather than brightening the result afterwards.")
                 .font(.caption).foregroundStyle(.secondary)
         }
+    }
+
+    /// The exposure time in stops, which is how a shutter speed dial is spaced.
+    private var exposureStopsBinding: Binding<Double> {
+        Binding(get: { log2(model.settings.exposureSeconds) },
+                set: { model.settings.exposureSeconds = min(max(pow(2, $0), RenderSettings.exposureSecondsRange.lowerBound),
+                                                            RenderSettings.exposureSecondsRange.upperBound) })
+    }
+
+    private static func shutterSpeed(_ seconds: Double) -> String {
+        if seconds >= 1 { return seconds < 60 ? String(format: "%.0f s", seconds) : String(format: "%.0f min", seconds / 60) }
+        return String(format: "1/%.0f s", 1 / seconds)
+    }
+
+    /// Reciprocity failure is a colour shift as much as a loss of speed, which is
+    /// why the published compensation is a filter and not just a wider aperture.
+    private var reciprocityHint: String {
+        let threshold = Self.shutterSpeed(model.reciprocityThresholdSeconds)
+        guard model.settings.exposureSeconds > model.reciprocityThresholdSeconds else {
+            return "Shorter than \(threshold), so the film records exactly what it is given: twice the time is twice the exposure."
+        }
+        let loss = model.reciprocityLossStops
+        let names = ["red", "green", "blue"]
+        let worst = names[loss.firstIndex(of: loss.max()!) ?? 0]
+        let best = names[loss.firstIndex(of: loss.min()!) ?? 0]
+        let spread = loss.max()! - loss.min()!
+        var hint = String(format: "Past %@ the emulsion stops keeping what it is given: about %.1f stops lost here.",
+                          threshold, loss.reduce(0, +) / 3)
+        if spread > 0.05 {
+            hint += String(format: " The %@ layer loses %.1f stops more than the %@ one, so the frame shifts colour as it darkens.",
+                           worst, spread, best)
+        }
+        return hint
     }
 
     private var filmControls: some View {
@@ -266,19 +308,26 @@ struct EditorView: View {
 
     private var outputSubtitle: String {
         if model.isIdentity { return "Display P3" }
+        guard model.hasOutputStage else { return "Reversal · Display P3" }
         switch model.profile.metadata.colour.outputStage {
         case .scan: return "Scan · Display P3"
         case .print: return "Print · Display P3"
-        case .none: return "Reversal · Display P3"
+        case .none: return "Display P3"
         }
     }
 
+    /// A Stock with no Output Stage is not offered a disabled scan-or-print choice;
+    /// the card says why there is nothing to choose and moves on to the geometry.
     private var outputDescription: String {
         if model.isIdentity { return "Nothing happens after the identity response; the image is converted for the display." }
+        guard model.hasOutputStage else {
+            return "Reversal film is the final image: what the camera exposed is what you look at. There is nothing to scan or print, "
+                + "so there is no choice to make here — and only about five stops fit on the film, so highlights end at clear film rather than rolling off."
+        }
         switch model.profile.metadata.colour.outputStage {
         case .scan: return "The negative is scanned: densities are inverted and auto-balanced so mid-grey comes back neutral, the way most people picture this stock."
         case .print: return "Optical print emulation is not available yet."
-        case .none: return "Reversal film is the final image; there is no scan or print stage."
+        case .none: return ""
         }
     }
 }

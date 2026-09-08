@@ -57,6 +57,9 @@ public struct RenderSettings: Codable, Sendable, Equatable, Hashable {
     public var tint: Double
     /// Scalar multiply in linear light, expressed in stops.
     public var exposureStops: Double
+    /// How long the frame was exposed for. Only the Reciprocity Pass reads it, and
+    /// only above the Stock's own threshold: this is not a second exposure control.
+    public var exposureSeconds: Double
     /// Push or pull in stops. Pushing by one stop rates the Stock one stop faster
     /// (a −1 EV exposure offset) and develops with the +1 Colour Cube.
     public var developmentOffset: Double
@@ -87,6 +90,10 @@ public struct RenderSettings: Codable, Sendable, Equatable, Hashable {
     public static let temperatureRange = 1667.0...25000.0
     public static let tintRange = -100.0...100.0
     public static let exposureRange = -6.0...6.0
+    /// A thirtieth of a millisecond to an hour: the range a camera and a cable
+    /// release between them can reach, which is where reciprocity failure lives.
+    public static let exposureSecondsRange = 1.0 / 8000...3600.0
+    public static let defaultExposureSeconds = 1.0 / 125
     public static let developmentRange = -3.0...3.0
     public static let halationRange = 0.0...2.0
     public static let bloomRange = 0.0...2.0
@@ -96,13 +103,15 @@ public struct RenderSettings: Codable, Sendable, Equatable, Hashable {
     public static let frameBorderRange = 0.0...1.0
 
     public init(output: Output = .displayP3, temperatureKelvin: Double = RenderSettings.defaultTemperatureKelvin, tint: Double = 0,
-                exposureStops: Double = 0, developmentOffset: Double = 0, halationIntensity: Double = 1,
+                exposureStops: Double = 0, exposureSeconds: Double = RenderSettings.defaultExposureSeconds,
+                developmentOffset: Double = 0, halationIntensity: Double = 1,
                 bloomIntensity: Double = 1, grainIntensity: Double = 1, vignette: Double = 0, gateWeave: Double = 0, frameBorder: Double = 0,
                 seed: UInt32 = 0, outputStage: OutputStage? = nil) {
         self.output = output
         self.temperatureKelvin = temperatureKelvin
         self.tint = tint
         self.exposureStops = exposureStops
+        self.exposureSeconds = exposureSeconds
         self.developmentOffset = developmentOffset
         self.halationIntensity = halationIntensity
         self.bloomIntensity = bloomIntensity
@@ -114,12 +123,36 @@ public struct RenderSettings: Codable, Sendable, Equatable, Hashable {
         self.outputStage = outputStage
     }
 
+    /// Every key but the exposure time is required. That one arrived after Presets
+    /// were already being written, and a saved Preset that predates the Reciprocity
+    /// Pass means a frame nobody recorded a shutter speed for, not a broken Preset.
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        output = try values.decode(Output.self, forKey: .output)
+        temperatureKelvin = try values.decode(Double.self, forKey: .temperatureKelvin)
+        tint = try values.decode(Double.self, forKey: .tint)
+        exposureStops = try values.decode(Double.self, forKey: .exposureStops)
+        exposureSeconds = try values.decodeIfPresent(Double.self, forKey: .exposureSeconds) ?? Self.defaultExposureSeconds
+        developmentOffset = try values.decode(Double.self, forKey: .developmentOffset)
+        halationIntensity = try values.decode(Double.self, forKey: .halationIntensity)
+        bloomIntensity = try values.decode(Double.self, forKey: .bloomIntensity)
+        grainIntensity = try values.decode(Double.self, forKey: .grainIntensity)
+        vignette = try values.decode(Double.self, forKey: .vignette)
+        gateWeave = try values.decode(Double.self, forKey: .gateWeave)
+        frameBorder = try values.decode(Double.self, forKey: .frameBorder)
+        seed = try values.decode(UInt32.self, forKey: .seed)
+        outputStage = try values.decodeIfPresent(OutputStage.self, forKey: .outputStage)
+    }
+
     public func validate() throws {
         guard temperatureKelvin.isFinite, Self.temperatureRange.contains(temperatureKelvin) else {
             throw FilmError.invalid("Scene Illuminant temperature must be 1667...25000 K")
         }
         guard tint.isFinite, Self.tintRange.contains(tint) else { throw FilmError.invalid("Tint must be within ±100") }
         guard exposureStops.isFinite, Self.exposureRange.contains(exposureStops) else { throw FilmError.invalid("Exposure must be within ±6 stops") }
+        guard exposureSeconds.isFinite, Self.exposureSecondsRange.contains(exposureSeconds) else {
+            throw FilmError.invalid("Exposure time must be 1/8000...3600 seconds")
+        }
         guard developmentOffset.isFinite, Self.developmentRange.contains(developmentOffset) else {
             throw FilmError.invalid("Development Offset must be within ±3 stops")
         }

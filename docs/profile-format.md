@@ -33,6 +33,14 @@ is positive, and `halation.radiusMicrons` must not increase from red to blue: lo
 wavelengths scatter furthest through the base. See [the Halation Pass](halation.md)
 for what the renderer does with them.
 
+`reciprocity.schwarzschildP` carries exactly three exponents, one per layer, each
+in 0…1, and `reciprocity.thresholdSeconds` is nonnegative. Below the threshold the
+Stock obeys reciprocity exactly; above it each layer keeps
+`(seconds / thresholdSeconds)^(p − 1)` of the light it is given. Three exponents
+rather than one because the layers lose speed at different rates, which is why a
+manufacturer's published long-exposure compensation is a colour-correction filter
+as well as an extra stop. An exponent of 1 is a layer with no measured failure.
+
 `grain.densityResponse` carries exactly 32 entries and `grain.channelRadiusScale`
 exactly three, `grain.channelCorrelation` is 0…1, and `grain.rmsGranularity` is a
 density measured through the standard 48 µm aperture. `mtf.cyclesPerMM` is strictly
@@ -70,8 +78,10 @@ Remjet backing, differing in Halation, Box Speed and Process and nothing else.
 | after JSON | Contiguous payload bytes; offsets relative to this point |
 
 A Colour Cube is red-fastest, then green, then blue, RGBA little-endian float16;
-its byte length is `lutSize³ × 8`. The standard baked size is 33. Calibration
-cubes may use sizes 2…65. A Density Curve is 1024 little-endian float16 values,
+its byte length is `lutSize³ × 8`. The Baker emits 33 or 65; 65 is for a Stock
+whose Characteristic Curve turns faster than 33 nodes can follow between them,
+which Velvia 50 does, and it costs eight times the payload. Calibration
+cubes may use any size 2…65. A Density Curve is 1024 little-endian float16 values,
 2048 bytes. Alpha is carried by the input, not taken from the Colour Cube.
 
 The codec emits sorted JSON keys and sorts payloads by name for deterministic
@@ -94,7 +104,8 @@ Optional `colour.inputShaper` contains `minimumLogExposure`, `maximumLogExposure
 and `middleGrayLogExposure` in log10 lux-seconds. They are finite, ordered and
 bounded to −10…10. With this shaper, `colour.cubeOutput` must be
 `displayLinearRec2020`, the Profile must be colour, and Output Stage must be
-`scan`. A display-linear cube without a shaper is rejected. Absent extensions
+`scan` — or `none` for E-6, whose cube carries the transparency itself rather than
+a scan of a negative. A display-linear cube without a shaper is rejected. Absent extensions
 retain the existing linear [0, 1] input / Density Space output contract.
 
 The Baker adds `colour.sourceFingerprint`, a lowercase 64-character SHA-256

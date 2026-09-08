@@ -7,6 +7,9 @@ model. Portra uses `spectral.json`; malformed inputs never fall back to a study.
 Vision3 500T uses the same model over its own digitised sources, and Cinestill
 800T is a derivation of Vision3 500T rather than a second run of the model —
 see [the profile format](profile-format.md) for what a derivation may restate.
+Provia 100F and Velvia 50 run the same model down to step 5, where a reversal
+Stock is viewed rather than scanned; [the reversal branch](reversal.md) covers
+what that changes and why their cubes are 65³.
 
 ## Forward calculation
 
@@ -41,7 +44,8 @@ see [the profile format](profile-format.md) for what a derivation may restate.
 
 ## Colour Cube contract
 
-Each spectral Stock's four 33³ RGBA float16 payloads represent offsets −1, 0, +1, +2, with
+Each spectral Stock's RGBA float16 payloads are one per baked Development Offset,
+33³, or 65³ for a Stock whose curve turns too fast for that, with
 red changing fastest. RGB payload values are **display-linear Rec.2020**; alpha
 is 1. `colour.cubeOutput = displayLinearRec2020` distinguishes them from the
 foundation studies' Density Space cubes. Do not invert a scan cube again.
@@ -70,7 +74,7 @@ faster by the same number of stops; the validation harness passes an equal
   their midpoints. A diagnostic density cube runs through the public renderer
   and must match measured Status M density to 0.03. This gate is deliberately
   before scan inversion, because positive display RGB is not optical density.
-- `scan-output`: all offsets, off-grid neutral and chromatic probes of the actual
+- `scan-output`, or `reversal-output` for an E-6 Stock: all offsets, off-grid neutral and chromatic probes of the actual
   supplied Profile, fed as scene-linear light so the runtime shaper is exercised.
   Both stages render with the Scene Illuminant set to the balance of the Profile
   being rendered — the Stock's own, and the identity balance for the diagnostic cube

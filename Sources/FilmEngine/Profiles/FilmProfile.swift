@@ -125,9 +125,22 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
             self.cyclesPerMM = cyclesPerMM; self.response = response
         }
     }
+    /// Loss of sensitivity at long exposure times. Below `thresholdSeconds` a Stock
+    /// obeys reciprocity exactly; above it, each layer keeps its own Schwarzschild
+    /// exponent, because the three lose speed at different rates and that is what
+    /// makes the published compensation a colour-correction filter and not just an
+    /// extra stop.
     public struct Reciprocity: Codable, Equatable, Sendable {
-        public var schwarzschildP: Double
+        public var schwarzschildP: [Double]
         public var thresholdSeconds: Double
+
+        /// The per-channel scale on scene-linear light for an exposure of `seconds`.
+        /// One everywhere below the threshold, and one in every channel whose
+        /// exponent is 1 — a Stock the Curve Set records no failure for.
+        public func gain(seconds: Double) -> [Double] {
+            guard seconds > thresholdSeconds, thresholdSeconds > 0 else { return [1, 1, 1] }
+            return schwarzschildP.map { pow(seconds / thresholdSeconds, $0 - 1) }
+        }
     }
 
     public func validate() throws {
@@ -166,7 +179,8 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         try require(!mtf.cyclesPerMM.isEmpty && nonnegative(mtf.cyclesPerMM, count: mtf.response.count) &&
                     nonnegative(mtf.response, count: mtf.cyclesPerMM.count) &&
                     zip(mtf.cyclesPerMM, mtf.cyclesPerMM.dropFirst()).allSatisfy { $0 < $1 }, "invalid MTF")
-        try require(reciprocity.schwarzschildP.isFinite && reciprocity.schwarzschildP > 0 &&
+        try require(nonnegative(reciprocity.schwarzschildP, count: 3) &&
+                    reciprocity.schwarzschildP.allSatisfy { $0 > 0 && $0 <= 1 } &&
                     reciprocity.thresholdSeconds.isFinite && reciprocity.thresholdSeconds >= 0, "invalid Reciprocity Failure")
         if let fingerprint = colour.sourceFingerprint {
             try require(colour.inputShaper != nil && fingerprint.count == 64 && fingerprint.allSatisfy { "0123456789abcdef".contains($0) },
@@ -176,8 +190,11 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
             try require([shaper.minimumLogExposure, shaper.maximumLogExposure, shaper.middleGrayLogExposure].allSatisfy { $0.isFinite && (-10...10).contains($0) } &&
                         shaper.minimumLogExposure < shaper.middleGrayLogExposure && shaper.middleGrayLogExposure < shaper.maximumLogExposure,
                         "invalid log-exposure shaper")
-            try require(!process.isMonochrome && colour.cubeOutput == .displayLinearRec2020 && colour.outputStage == .scan,
-                        "spectral Colour Cubes require the scan output contract")
+            // A negative's spectral cube carries the Baker's scan; a reversal cube
+            // carries the transparency itself, which is why it has no Output Stage.
+            try require(!process.isMonochrome && colour.cubeOutput == .displayLinearRec2020 &&
+                        colour.outputStage == (process == .e6 ? OutputStage.none : .scan),
+                        "spectral Colour Cubes require the scan or the reversal output contract")
         } else {
             try require(colour.cubeOutput != .displayLinearRec2020, "display-linear Colour Cube requires an input shaper")
         }

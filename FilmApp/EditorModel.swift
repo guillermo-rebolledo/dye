@@ -38,6 +38,24 @@ import FilmEngine
         return catalogue.first { $0.id == parent }
     }
 
+    /// Whether the Stock loses speed at long exposures at all. A Curve Set that
+    /// records no failure has nothing for the exposure-time control to change, so
+    /// the control is not offered rather than offered and inert.
+    var hasReciprocity: Bool { profile.metadata.reciprocity.schwarzschildP.contains { $0 < 1 } }
+
+    /// Below this the Stock obeys reciprocity exactly, in seconds.
+    var reciprocityThresholdSeconds: Double { profile.metadata.reciprocity.thresholdSeconds }
+
+    /// What reciprocity failure costs at the current exposure time, in stops per
+    /// channel, positive for a loss.
+    var reciprocityLossStops: [Double] {
+        profile.metadata.reciprocity.gain(seconds: settings.exposureSeconds).map { -log2($0) }
+    }
+
+    /// Whether anything happens to this Stock after the film. Reversal answers no,
+    /// so the editor offers it no scan-or-print choice at all.
+    var hasOutputStage: Bool { profile.metadata.colour.outputStage != FilmEngine.OutputStage.none }
+
     /// Whether the Stock scatters at all; a Profile with no Halation has no control.
     var hasHalation: Bool { profile.metadata.halation.strength > 0 }
 

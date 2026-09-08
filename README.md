@@ -24,7 +24,8 @@ input colour profile; CIRAWFilter handles RAW's camera colour matrix. Core Image
 is confined to RAW decode. The ordered twelve-pass Metal graph uses RGBA16Float
 textures throughout. White Balance, Exposure, Bloom, Halation, MTF, Film Response
 (tetrahedral Colour Cube sampling), Grain, the Scan Output Stage, Geometry and the
-Display P3 output transform alter pixels; Reciprocity is an explicit pass-through.
+Display P3 output transform alter pixels; Reciprocity does too, for a Stock and an
+exposure time that call for it, and is a pass-through everywhere else.
 The canvas displays the tagged P3 result with Metal.
 
 RenderSettings carry the user's controls in pipeline order. White Balance names
@@ -54,7 +55,15 @@ Spectral Profiles apply their log-exposure shaper at render time; Density Space
 Colour Cubes and Density Curves with a `scan` Output Stage are inverted through
 transmission and auto-balanced so the Stock's mid-grey returns 0.18. Portra's
 scan is baked into its cubes and is not inverted again. `outputStage: .none`
-returns Density Space for diagnostics; Print is not implemented yet.
+returns Density Space for diagnostics; Print is not implemented yet. Reversal
+Stocks use `none` for real rather than for diagnostics: their cubes carry the
+transparency itself, so nothing inverts them and asking for a scan cannot.
+
+Reciprocity Failure scales each layer separately by its own Schwarzschild
+exponent once the frame is open longer than the Stock's threshold, before the
+scattering Passes and the Film Response. The exposure-time control appears only
+for a Stock whose Curve Set records a failure at all. See
+[the reversal branch](docs/reversal.md), which is where the Pass earns its place.
 
 The app decodes one screen-sized Preview through `Renderer.decode` and re-renders
 it through a coalescing loop on every control change. Its controls are laid out
@@ -95,6 +104,17 @@ baked scan checks run in CI. See [the model and integration contract](docs/spect
 and [measurement sources and assumptions](Curves/portra-400/SOURCES.md).
 Kodak publishes Print Grain Index rather than RMS; RMS and unmeasured model
 parameters are explicitly artistic.
+
+Provia 100F and Velvia 50 are digitised from Fujifilm AF3-036E and AF3-0221E2 and
+are the first reversal Stocks in the Catalogue. Fujifilm draws its charts as raster
+plates rather than vector paths, so `Scripts/digitize-fujichrome.py` reads them from
+ink pixels; Provia's colour charts arrive as one separation plate per curve and
+Velvia's do not, which is why Velvia borrows Provia's isolated dye set and says so
+in [its sources](Curves/velvia-50/SOURCES.md). Both publish a real diffuse RMS
+granularity and a long-exposure compensation table, so Grain amplitude and the
+per-layer Schwarzschild exponents are measured rather than assumed; Velvia's True
+Speed of 40 against its Box Speed of 50 is not. See
+[the reversal branch](docs/reversal.md).
 
 Vision3 500T is digitised from Kodak H-1-5219t, and Cinestill 800T is
 [derived from it](Curves/cinestill-800t/SOURCES.md) rather than modelled
