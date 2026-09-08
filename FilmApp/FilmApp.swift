@@ -12,6 +12,7 @@ struct FilmApp: App {
 struct EditorView: View {
     @State private var model = EditorModel()
     @State private var selection: PhotosPickerItem?
+    @State private var isExporting = false
 
     var body: some View {
         NavigationStack {
@@ -37,11 +38,19 @@ struct EditorView: View {
             }
             .navigationTitle("Dye")
             .toolbar {
-                PhotosPicker(selection: $selection, matching: .images, preferredItemEncoding: .current) {
-                    Label("Choose photo", systemImage: "photo")
+                ToolbarItem(placement: .primaryAction) {
+                    PhotosPicker(selection: $selection, matching: .images, preferredItemEncoding: .current) {
+                        Label("Choose photo", systemImage: "photo")
+                    }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button { isExporting = true } label: { Label("Export", systemImage: "square.and.arrow.up") }
+                        .disabled(!model.canExport && !model.isExporting)
                 }
             }
+            .sheet(isPresented: $isExporting) { ExportSheet(model: model) }
             .task { model.loadCatalogue() }
+            .task { await model.watchThermalState() }
             .task(id: selection) {
                 guard let selection else { return }
                 await model.open(selection)

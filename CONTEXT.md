@@ -173,8 +173,11 @@ a post effect.
 _Avoid_: glow, flare, bloom (a different phenomenon — see below)
 
 **Bloom**:
-Lens diffusion, as distinct from Halation. Currently named as a user control without
-a corresponding Profile parameter or Pass — see Open Questions.
+Lens diffusion, as distinct from Halation: the taking lens spreading a fraction of
+*all* the light across the frame, rather than the film reflecting light back into
+itself. Has its own Profile parameters and its own Pass, both artistic. At 900
+Film-Plane Microns it is the widest blur in the pipeline, so it is what sizes an
+Export's Apron.
 _Avoid_: using interchangeably with Halation
 
 **Film Response**:

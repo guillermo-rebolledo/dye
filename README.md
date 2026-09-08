@@ -65,9 +65,22 @@ including negative and HDR values; decoding and changing colour spaces inherentl
 rounds to float16. Untagged inputs are rejected instead of assuming sRGB. Tests also distinguish tetrahedral from trilinear interpolation
 in all six tetrahedra and check tagged sRGB versus Display P3 input.
 
-Full-resolution tiling, physical film effects and photo export belong to later
-tickets. RAW support uses the system decoder; synthetic DNG fixtures verify scene-linear exposure ratios. Real camera fixtures
-and on-device memory/performance validation are still needed.
+Export renders the frame at full resolution a **Tile** at a time, each carrying an
+**Apron** sized to the furthest any Pass reaches, so a 48MP frame fits in memory
+without a **Tile Seam** where a halo crosses a boundary. Grain is addressed in
+image-global coordinates rather than Tile-local ones, so it does not repeat at the
+Tile pitch. Export and Preview run identical shaders, and a tiled Export of a frame is
+bit-identical to an untiled render of it. It reports progress and cancels per Tile,
+runs on its own command queue, writes HEIF, JPEG or 16-bit TIFF tagged Display P3 or
+sRGB, and gives up the Stock's Grain Model for the procedural one when the device is
+thermally throttling. The colour half of the same look exports as a `.cube`
+**Exported LUT**, rendered through the same shaders with the spatial Passes off and
+labelled — in the file and in the UI — as carrying no grain, halation, bloom,
+micro-contrast or vignette. See [the Export Render Path](docs/export.md).
+
+RAW support uses the system decoder; synthetic DNG fixtures verify scene-linear
+exposure ratios. Real camera fixtures and on-device memory and performance validation
+are still needed: a simulator does not reproduce the memory pressure tiling exists for.
 
 Profiles now ship in the bundle and populate a picker grouped by Process. The
 [container format](docs/profile-format.md) documents schema, Provenance and lazy
