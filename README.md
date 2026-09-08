@@ -106,3 +106,9 @@ white balance, development, bloom, halation and grain controls, plus the vignett
 gate weave and frame border of the Geometry Pass. Bloom is the taking lens rather
 than the film, so every Stock carries the same modelled one and both its parameters
 are artistic.
+
+The editor saves Stock/settings **Presets** in SwiftData, offers hold-to-compare
+and live photo thumbnails, and enables EDR on capable displays. Open **Contact
+Sheet** in the toolbar to review every Profile against a fixed HDR reference.
+Bit-exact renderer **Golden Images** guard the Catalogue; see the
+[review and explicit update workflow](docs/golden-images.md).
