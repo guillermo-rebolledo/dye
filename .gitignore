@@ -3,3 +3,6 @@
 DerivedData/
 *.xcuserstate
 xcuserdata/
+# Xcode's own state for the Package.swift workspace; the shared scheme in
+# FilmApp.xcodeproj is the one checked in.
+.swiftpm/
