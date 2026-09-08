@@ -15,6 +15,15 @@ import FilmEngine
         let url = directory.appendingPathComponent("\(profile.id).rgba16")
         if recording { try bytes.write(to: url, options: .atomic) }
         let expected = try Data(contentsOf: url)
-        #expect(bytes == expected, "Golden Image changed: \(profile.id). Review the Contact Sheet and follow docs/golden-images.md; never update automatically.")
+        // Recorded rather than expected: `#expect` on two 192 KB payloads spends ten
+        // minutes formatting operands it then elides anyway, and a Golden Image that
+        // has moved is exactly when nobody wants to wait. The comparison is the same
+        // bit-exact one; only the reporting is cheap.
+        if bytes != expected {
+            let offset = zip(bytes, expected).enumerated().first { $0.element.0 != $0.element.1 }?.offset
+            let site = offset.map { "first differs at byte \($0) of \(expected.count)" } ?? "lengths differ"
+            let advice = "Review the Contact Sheet and follow docs/golden-images.md; never update automatically."
+            Issue.record("Golden Image changed: \(profile.id), \(site). \(advice)")
+        }
     }
 }

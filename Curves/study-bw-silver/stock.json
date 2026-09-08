@@ -125,7 +125,11 @@
     "trueISO": "artistic"
   },
   "reciprocity": {
-    "schwarzschildP": 1,
+    "schwarzschildP": [
+      1,
+      1,
+      1
+    ],
     "thresholdSeconds": 1
   },
   "trueISO": 100

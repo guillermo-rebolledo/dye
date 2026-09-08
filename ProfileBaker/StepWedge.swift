@@ -5,12 +5,13 @@ enum StepWedgeStage: String {
     case density
     case measuredDensity = "measured-density"
     case scanOutput = "scan-output"
+    case reversalOutput = "reversal-output"
     case chromaticOutput = "chromatic-output"
 
     var units: String {
         switch self {
         case .density, .measuredDensity: "optical density"
-        case .scanOutput, .chromaticOutput: "display-linear channel value"
+        case .scanOutput, .reversalOutput, .chromaticOutput: "display-linear channel value"
         }
     }
 }
@@ -31,11 +32,14 @@ struct StepWedgeRow {
 /// cube — which makes White Balance an exact pass-through even on a tungsten Stock.
 /// Bloom, Halation and Grain are off, because neighbouring wedge samples are
 /// unrelated exposures rather than adjacent points in one scene, and a Step Wedge
-/// measures the curve rather than the fluctuation around it. The push rating is cancelled
-/// by an equal exposure so each variant is probed at the CSV's own log exposure.
+/// measures the curve rather than the fluctuation around it. The push rating and the
+/// True Speed rating are both cancelled by an equal exposure, so each variant is
+/// probed at the CSV's own physical log exposure rather than at the one a meter
+/// would have chosen.
 func wedgeSettings(balancedFor profile: Profile, offset: Double = 0, outputStage: OutputStage? = nil) -> RenderSettings {
-    RenderSettings(output: .workingSpace, temperatureKelvin: profile.metadata.balance, exposureStops: offset,
-                   developmentOffset: offset, halationIntensity: 0, bloomIntensity: 0, grainIntensity: 0, outputStage: outputStage)
+    let rating = log2(profile.metadata.nominalISO / profile.metadata.trueISO)
+    return RenderSettings(output: .workingSpace, temperatureKelvin: profile.metadata.balance, exposureStops: offset - rating,
+                          developmentOffset: offset, halationIntensity: 0, bloomIntensity: 0, grainIntensity: 0, outputStage: outputStage)
 }
 
 /// Composes the Baker/codec and renderer seams; no individual pass is exposed.

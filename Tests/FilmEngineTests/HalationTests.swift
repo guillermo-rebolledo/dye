@@ -276,13 +276,20 @@ private func flattening(_ profile: Profile) throws -> Profile {
     #expect(cinestill.metadata.halation.radiusMicrons[0] > vision3.metadata.halation.radiusMicrons[0])
     #expect(cinestill.metadata.balance == 3200 && vision3.metadata.balance == 3200)
     #expect(cinestill.metadata.mtf == vision3.metadata.mtf && cinestill.metadata.grain == vision3.metadata.grain)
-    // Below both thresholds nothing scatters, so the two Stocks render identically.
+    // Below both thresholds nothing scatters, so the only thing left between the two
+    // Stocks is that one is sold two thirds of a stop faster than the Emulsion
+    // behaves. Metering is at True Speed, so back that rating out and the frames are
+    // identical — which is a sharper statement of "the same film" than rendering them
+    // at the same settings ever was.
+    #expect(cinestill.metadata.trueISO == vision3.metadata.nominalISO)
+    let rating = log2(cinestill.metadata.nominalISO / cinestill.metadata.trueISO)
     let renderer = try Renderer()
     let flat: [Float16] = [0.05, 0.05, 0.05, 1, 0.18, 0.2, 0.16, 1, 0.5, 0.4, 0.45, 1]
     let image = try LinearImage(width: 3, height: 1, rgba: flat)
     let settings = RenderSettings(output: .workingSpace, temperatureKelvin: 3200)
+    let rerated = RenderSettings(output: .workingSpace, temperatureKelvin: 3200, exposureStops: -rating)
     #expect(try await renderer.render(image: .linear(image), profile: vision3, settings: settings).rgba
-            == (try await renderer.render(image: .linear(image), profile: cinestill, settings: settings).rgba))
+            == (try await renderer.render(image: .linear(image), profile: cinestill, settings: rerated).rgba))
     // A tungsten Stock under daylight is correctly blue, and the renderer does not correct it.
     let daylight = try await renderer.render(image: .linear(try LinearImage(width: 1, height: 1, rgba: [0.18, 0.18, 0.18, 1])),
                                              profile: cinestill, settings: .init(output: .workingSpace, temperatureKelvin: 5500))

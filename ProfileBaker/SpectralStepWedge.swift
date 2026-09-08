@@ -7,7 +7,7 @@ import FilmEngine
 func spectralStepWedge(curves: CurveSet, profile: Profile) async throws -> [StepWedgeRow] {
     let model = try SpectralModel(curves: curves)
     let renderer = try Renderer()
-    let diagnostic = Profile(colourCube: try model.cube(offset: 0, densityOnly: true))
+    let diagnostic = Profile(colourCube: try model.cube(offset: 0, size: curves.metadata.colour.lutSize, densityOnly: true))
     var rows: [StepWedgeRow] = []
     for (channel, curve) in model.channels.enumerated() {
         var samples = curve.points.map { ($0.logExposure, $0.density) }
@@ -39,9 +39,9 @@ func spectralStepWedge(curves: CurveSet, profile: Profile) async throws -> [Step
             settings: wedgeSettings(balancedFor: profile, offset: variant.pushStops))
         for (index, coordinate) in coordinates.enumerated() {
             let h = SIMD3(model.exposure(at: coordinate.x), model.exposure(at: coordinate.y), model.exposure(at: coordinate.z))
-            let reference = model.scan(model.density(h, offset: variant.pushStops))
+            let reference = model.output(model.density(h, offset: variant.pushStops))
             for channel in 0..<3 {
-                rows.append(StepWedgeRow(stage: index < 65 ? .scanOutput : .chromaticOutput, developmentOffset: variant.pushStops, channel: channel,
+                rows.append(StepWedgeRow(stage: index < 65 ? (model.isReversal ? .reversalOutput : .scanOutput) : .chromaticOutput, developmentOffset: variant.pushStops, channel: channel,
                     logExposure: log10(h[channel]), reference: reference[channel], rendered: Double(rendered.rgba[index * 4 + channel])))
             }
         }

@@ -84,7 +84,11 @@ struct CurveSet {
         guard metadata.colour.sourceFingerprint == nil else {
             throw FilmError.invalid("Source fingerprints are derived by the Baker, not authored in stock.json")
         }
-        guard metadata.colour.lutSize == 33 else { throw FilmError.invalid("The Baker emits 33³ Colour Cubes") }
+        // 65³ is for a Stock whose curve turns faster than 33 nodes can follow;
+        // it costs eight times the payload, so it is the Curve Set's choice, not a default.
+        guard metadata.colour.lutSize == 33 || metadata.colour.lutSize == 65 else {
+            throw FilmError.invalid("The Baker emits 33³ or 65³ Colour Cubes")
+        }
     }
 
     /// Bind final cubes to source measurements even when a scan's auto-balance

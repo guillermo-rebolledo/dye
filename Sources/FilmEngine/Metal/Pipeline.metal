@@ -38,6 +38,21 @@ kernel void exposure(texture2d<half, access::read> input [[texture(0)]],
     output.write(half4(half3(float3(pixel.rgb) * gain), pixel.a), p);
 }
 
+// Pass 4. Reciprocity Failure: below the Stock's threshold a doubled exposure
+// time is exactly a doubled exposure, and above it the emulsion keeps less and
+// less of what it is given. `gain` is (H_eff / H) per channel, already resolved
+// from the Schwarzschild exponents and the frame's exposure time, so the shader
+// is a per-channel multiply — but not the Exposure Pass's, because the three
+// layers lose speed at different rates and the frame shifts colour as it darkens.
+kernel void reciprocity(texture2d<half, access::read> input [[texture(0)]],
+                        texture2d<half, access::write> output [[texture(1)]],
+                        constant float4 &gain [[buffer(13)]],
+                        uint2 p [[thread_position_in_grid]]) {
+    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
+    half4 pixel = input.read(p);
+    output.write(half4(half3(float3(pixel.rgb) * gain.xyz), pixel.a), p);
+}
+
 // Passes 5 and 6, Bloom and Halation. Both scatter light before the Film Response
 // rather than after it, and both blur in the same pyramid, so they share these
 // kernels and differ only in what they extract and how they composite it back.

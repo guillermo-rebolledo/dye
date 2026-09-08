@@ -46,7 +46,7 @@ public actor Renderer {
         else { options.fastMathEnabled = false }
         let library = try device.makeLibrary(source: String(contentsOf: url, encoding: .utf8), options: options)
         var pipelines: [String: any MTLComputePipelineState] = [:]
-        for name in ["passthrough", "whiteBalance", "exposure", "filmResponse", "monochromeResponse", "scanOutput", "outputTransform",
+        for name in ["passthrough", "whiteBalance", "exposure", "reciprocity", "filmResponse", "monochromeResponse", "scanOutput", "outputTransform",
                      "scatterThreshold", "scatterDownsample", "scatterBlurHorizontal", "scatterBlurVertical",
                      "scatterScale", "scatterUpsample", "scatterComposite",
                      "mtfBlur", "mtfCombine", "grain", "geometry"] {
@@ -174,6 +174,8 @@ public actor Renderer {
             encoder.setBytes(&gray, length: MemoryLayout<SIMD4<Float>>.size, index: 6)
             var base = plan.baseDensity
             encoder.setBytes(&base, length: MemoryLayout<SIMD4<Float>>.size, index: 7)
+            var failure = plan.reciprocity ?? SIMD4(repeating: 1)
+            encoder.setBytes(&failure, length: MemoryLayout<SIMD4<Float>>.size, index: 13)
             encoder.dispatchThreads(MTLSize(width: input.width, height: input.height, depth: 1),
                 threadsPerThreadgroup: MTLSize(width: 16, height: 16, depth: 1))
             encoder.endEncoding()
@@ -188,6 +190,9 @@ public actor Renderer {
     private struct Plan {
         let whiteBalance: simd_float3x3?
         let gain: Float
+        /// Per-channel Reciprocity Failure, or nil when the frame was short enough
+        /// that the Stock obeys reciprocity and the Pass has nothing to do.
+        let reciprocity: SIMD4<Float>?
         let lower: ResponseEntry
         let upper: ResponseEntry?
         let blend: Float
@@ -335,14 +340,27 @@ public actor Renderer {
                 blend = Float((offset - lowerVariant!.pushStops) / (upperVariant!.pushStops - lowerVariant!.pushStops))
             }
         } else { offset = 0 }
-        let gain = Float(pow(2, settings.exposureStops - offset))
+        // Metering is at True Speed, not Box Speed: a Stock that behaves slower than
+        // the box says is given the light a meter set to what it actually is would
+        // have given it. Cinestill 800T and Velvia 50 are the two the Catalogue
+        // records a difference for; for every other Stock this term is zero.
+        let rating = log2(metadata.nominalISO / metadata.trueISO)
+        let gain = Float(pow(2, settings.exposureStops - offset + rating))
+        let failure = metadata.reciprocity.gain(seconds: settings.exposureSeconds)
+        let reciprocity = failure.contains { $0 != 1 }
+            ? SIMD4(Float(failure[0]), Float(failure[1]), Float(failure[2]), 0) : nil
         let lower = try responseEntry(for: profile, name: metadata.monochrome?.densityCurve ?? lowerVariant?.lut)
         let upper = try upperVariant.map { try responseEntry(for: profile, name: $0.lut) }
         var shaper = SIMD4<Float>(repeating: 0)
         if let s = metadata.colour.inputShaper {
             shaper = SIMD4(1, Float(s.minimumLogExposure), Float(1 / (s.maximumLogExposure - s.minimumLogExposure)), Float(s.middleGrayLogExposure))
         }
-        let stage = settings.outputStage ?? metadata.colour.outputStage
+        // A Stock with no Output Stage has none whatever the settings ask for: there
+        // is nothing after a reversal Stock's film to choose between, and a forced
+        // scan would invert an image that is already the Transparency. The override
+        // is how a negative is read in Density Space, not a way to add a stage.
+        let stage = metadata.colour.outputStage == OutputStage.none
+            ? OutputStage.none : (settings.outputStage ?? metadata.colour.outputStage)
         guard stage != .print else { throw FilmError.invalid("The Print Output Stage is not implemented yet") }
         // Spectral cubes already contain the Baker's scan; a Density Space cube is scanned here.
         let scan = stage == .scan && metadata.colour.cubeOutput != .displayLinearRec2020
@@ -353,7 +371,7 @@ public actor Renderer {
         if scan, (0..<3).contains(where: { gray[$0] - base[$0] < 0.001 }) {
             throw FilmError.invalid("Profile \(metadata.id): mid-grey density is not above base density; the scan cannot auto-balance")
         }
-        return Plan(whiteBalance: whiteBalance, gain: gain, lower: lower, upper: upper, blend: blend, shaper: shaper, scan: scan,
+        return Plan(whiteBalance: whiteBalance, gain: gain, reciprocity: reciprocity, lower: lower, upper: upper, blend: blend, shaper: shaper, scan: scan,
                     grayDensity: SIMD4(Float(gray.x), Float(gray.y), Float(gray.z), scan ? 1 : 0),
                     baseDensity: SIMD4(Float(base.x), Float(base.y), Float(base.z), 0),
                     bloom: spatial ? bloom(profile: profile, settings: settings, frame: frame, tile: tile) : nil,
@@ -727,6 +745,7 @@ public actor Renderer {
         switch pass {
         case .whiteBalance: plan.whiteBalance == nil ? "passthrough" : "whiteBalance"
         case .exposure: plan.gain == 1 ? "passthrough" : "exposure"
+        case .reciprocity: plan.reciprocity == nil ? "passthrough" : "reciprocity"
         case .filmResponse: profile.metadata.process.isMonochrome ? "monochromeResponse" : "filmResponse"
         case .outputStage: plan.scan ? "scanOutput" : "passthrough"
         case .outputTransform: "outputTransform"

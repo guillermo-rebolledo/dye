@@ -9,7 +9,8 @@ accurate emulations. Their Display Names say so and all Provenance is artistic.
 They exercise every Process and the entire authoring/loading/rendering path.
 `portra-400` is the first measured Curve Set, using the spectral Baker path.
 See [its sources](portra-400/SOURCES.md) and the [model contract](../docs/spectral-model.md)
-for its measured inputs and explicitly artistic assumptions.
+for its measured inputs and explicitly artistic assumptions. `provia-100f` and
+`velvia-50` are the first reversal ones; see [the reversal branch](../docs/reversal.md).
 
 ## Files
 
@@ -127,6 +128,16 @@ Portra adds `spectral.json`, `sensitivity.csv`, `dye-density.csv`, `observer.csv
 lux-seconds within the metadata shaper range; `neutral.*.csv` supplies measured
 normal development. Other offsets are calculated using the artistic contrast
 and shadow-loss entries in `spectral.json`, not invented measured CSVs.
+
+A reversal Curve Set differs in three places. Its Characteristic Curves **fall**
+as exposure rises. Its `dye-density.csv` is headed `wavelengthNM,cyan,magenta,yellow`
+and carries the manufacturer's isolated, peak-normalised dye curves rather than
+Kodak's aggregate `minimum,midscale` pair, so `spectral.json` drops `dyePeakNM`,
+`dyeWidthNM` and `scanGamma` and adds nothing: the dye amplitudes the normalised
+chart omits are solved from the measured reference neutral instead of authored. And `colour.lutSize` may be 65 as well as 33: a
+reversal curve turns faster than a negative's, and Velvia's turns fast enough to
+need the finer grid to hold the Step Wedge's 0.03 bound honestly. It costs eight
+times the payload and eight times the bake, so it is a per-Stock decision.
 
 The Baker records a SHA-256 source fingerprint in the final Profile. It covers
 the model version and all consumed authoring files, including metadata. Validation

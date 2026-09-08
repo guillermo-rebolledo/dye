@@ -1,0 +1,36 @@
+{
+  "development": [
+    {
+      "offset": -0.5,
+      "contrast": 0.94,
+      "shadowLoss": 0.0
+    },
+    {
+      "offset": 0.0,
+      "contrast": 1.0,
+      "shadowLoss": 0.0
+    },
+    {
+      "offset": 1.0,
+      "contrast": 1.13,
+      "shadowLoss": 0.05
+    }
+  ],
+  "dirCouplers": [
+    [
+      0,
+      0.3,
+      0.2
+    ],
+    [
+      0.26,
+      0,
+      0.26
+    ],
+    [
+      0.16,
+      0.3,
+      0
+    ]
+  ]
+}

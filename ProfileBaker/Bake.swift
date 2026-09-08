@@ -6,7 +6,7 @@ func bake(_ curves: CurveSet) throws -> Profile {
     if curves.metadata.colour.inputShaper != nil {
         let model = try SpectralModel(curves: curves)
         for variant in curves.metadata.colour.lutVariants {
-            payloads[variant.lut] = try model.cube(offset: variant.pushStops).payload
+            payloads[variant.lut] = try model.cube(offset: variant.pushStops, size: curves.metadata.colour.lutSize).payload
         }
         return try Profile(metadata: curves.bakedMetadata, payloads: payloads)
     }

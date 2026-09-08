@@ -1,0 +1,161 @@
+{
+  "balance": 5500,
+  "bloom": {
+    "radiusMicrons": 900.0,
+    "strength": 0.02
+  },
+  "colour": {
+    "cubeOutput": "displayLinearRec2020",
+    "inputShaper": {
+      "maximumLogExposure": 1.1,
+      "middleGrayLogExposure": -0.685,
+      "minimumLogExposure": -2.85
+    },
+    "lutSize": 65,
+    "lutVariants": [
+      {
+        "lut": "pull.lut3d",
+        "pushStops": -0.5
+      },
+      {
+        "lut": "neutral.lut3d",
+        "pushStops": 0
+      },
+      {
+        "lut": "push1.lut3d",
+        "pushStops": 1
+      }
+    ],
+    "outputStage": "none"
+  },
+  "displayName": "Fujifilm Velvia 50",
+  "format": "135",
+  "grain": {
+    "channelCorrelation": 0.15,
+    "channelRadiusScale": [
+      1,
+      0.85,
+      0.7
+    ],
+    "densityResponse": [
+      0.0,
+      0.12487,
+      0.241415,
+      0.349636,
+      0.449532,
+      0.541103,
+      0.62435,
+      0.699272,
+      0.765869,
+      0.824142,
+      0.874089,
+      0.915713,
+      0.949011,
+      0.973985,
+      0.990635,
+      0.998959,
+      0.998959,
+      0.990635,
+      0.973985,
+      0.949011,
+      0.915713,
+      0.874089,
+      0.824142,
+      0.765869,
+      0.699272,
+      0.62435,
+      0.541103,
+      0.449532,
+      0.349636,
+      0.241415,
+      0.12487,
+      0.0
+    ],
+    "grainRadiusMicrons": 1.0,
+    "model": "dye-cloud",
+    "rmsGranularity": 0.009
+  },
+  "halation": {
+    "radiusMicrons": [
+      180,
+      75,
+      40
+    ],
+    "strength": 0.02,
+    "threshold": 1.6,
+    "tint": [
+      1,
+      0.35,
+      0.18
+    ]
+  },
+  "id": "velvia-50",
+  "mtf": {
+    "cyclesPerMM": [
+      3.0,
+      5.0,
+      10.0,
+      20.0,
+      30.0,
+      40.0,
+      50.0,
+      60.0
+    ],
+    "response": [
+      1.115516,
+      1.19065,
+      1.240682,
+      1.06568,
+      0.819838,
+      0.610404,
+      0.45855,
+      0.351644
+    ]
+  },
+  "nominalISO": 50,
+  "process": "e6",
+  "provenance": {
+    "balance": "artistic",
+    "bloom.radiusMicrons": "artistic",
+    "bloom.strength": "artistic",
+    "colour.cubeOutput": "artistic",
+    "colour.inputShaper": "artistic",
+    "colour.lutSize": "artistic",
+    "colour.lutVariants": "artistic",
+    "colour.outputStage": "artistic",
+    "format": "measured",
+    "grain.channelCorrelation": "artistic",
+    "grain.channelRadiusScale": "artistic",
+    "grain.densityResponse": "artistic",
+    "grain.grainRadiusMicrons": "artistic",
+    "grain.model": "artistic",
+    "grain.rmsGranularity": "measured",
+    "halation.radiusMicrons": "artistic",
+    "halation.strength": "artistic",
+    "halation.threshold": "artistic",
+    "halation.tint": "artistic",
+    "mtf.cyclesPerMM": "measured",
+    "mtf.response": "measured",
+    "nominalISO": "measured",
+    "reciprocity.schwarzschildP": "measured",
+    "reciprocity.thresholdSeconds": "measured",
+    "spectral.characteristicCurves": "measured",
+    "spectral.development": "artistic",
+    "spectral.dirCouplers": "artistic",
+    "spectral.dyeDensity": "artistic",
+    "spectral.observer": "measured",
+    "spectral.reconstruction": "artistic",
+    "spectral.sensitivity": "measured",
+    "spectral.viewing": "artistic",
+    "trueISO": "artistic"
+  },
+  "reciprocity": {
+    "schwarzschildP": [
+      0.818,
+      0.901,
+      0.818
+    ],
+    "thresholdSeconds": 1
+  },
+  "trueISO": 40
+}
