@@ -127,8 +127,8 @@ import FilmEngine
     var isThrottled: Bool { thermalState == .serious || thermalState == .critical }
 
     func watchThermalState() async {
-        let notifications = NotificationCenter.default.notifications(named: ProcessInfo.thermalStateDidChangeNotification)
-        for await _ in notifications { thermalState = ProcessInfo.processInfo.thermalState }
+        let observer = ThermalObserver()
+        for await state in observer.states { thermalState = state }
     }
 
     /// Renders the photo at full resolution and writes it as a file to share. The
@@ -220,4 +220,27 @@ import FilmEngine
             }
         }
     }
+}
+
+/// The device's thermal state as an async sequence.
+///
+/// `NotificationCenter.notifications(named:)` would be the obvious way to write this,
+/// but the `Notification` it yields is not `Sendable` on every SDK the project builds
+/// against. The payload is not wanted anyway — the state is read back from
+/// `ProcessInfo` — so the observer yields the state itself and the notification never
+/// crosses an isolation boundary. The token lives as long as the stream does.
+private final class ThermalObserver: @unchecked Sendable {
+    let states: AsyncStream<ProcessInfo.ThermalState>
+    private let token: any NSObjectProtocol
+
+    init() {
+        let (states, continuation) = AsyncStream<ProcessInfo.ThermalState>.makeStream()
+        self.states = states
+        token = NotificationCenter.default.addObserver(forName: ProcessInfo.thermalStateDidChangeNotification,
+                                                       object: nil, queue: .main) { _ in
+            continuation.yield(ProcessInfo.processInfo.thermalState)
+        }
+    }
+
+    deinit { NotificationCenter.default.removeObserver(token) }
 }
