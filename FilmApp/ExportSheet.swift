@@ -6,8 +6,7 @@ import FilmEngine
 /// is not *what* it will render but what each of the two carries — which for the LUT
 /// is only half of it.
 ///
-/// Four states, and the sheet is one of them at a time: idle, rendering, throttled
-/// while rendering, and finished. It stays detented at 500 pt so the photo is still
+/// Shows rendering progress, the Photos save, and the confirmed result. It stays detented at 500 pt so the photo is still
 /// visible above, and the export keeps running if it is dismissed.
 struct ExportSheet: View {
     @Bindable var model: EditorModel
@@ -28,6 +27,9 @@ struct ExportSheet: View {
                         ExportTileGrid(progress: progress)
                         Button("Cancel") { model.cancelExport() }
                             .buttonStyle(SheetActionStyle(kind: .destructive))
+                    case .saving?:
+                        ProgressView("Saving to Photos…")
+                            .foregroundStyle(Tokens.Palette.textSecondary)
                     case .finished(let record)?:
                         ExportFinished(record: record, thumbnail: launchedFrom) { model.dismissExport() }
                     case .failed(let message)?:
@@ -65,10 +67,23 @@ struct ExportSheet: View {
                                selection: $model.exportOutput)
                 Text(photoFooter).typeStyle(.caption).foregroundStyle(Tokens.Palette.textTertiary)
             }
+            VStack(alignment: .leading, spacing: Tokens.Sheet.labelGap) {
+                SheetSectionLabel("Photo date")
+                SheetSegmented(label: "Photo date",
+                               segments: ExportDate.allCases.map { SheetSegment($0, $0.displayName) },
+                               selection: $model.exportDate)
+                Text(dateFooter).typeStyle(.caption).foregroundStyle(Tokens.Palette.textTertiary)
+            }
         }
     }
 
-    /// While the render runs, the two choices collapse to what they were fixed at.
+    private var dateFooter: String {
+        guard model.exportDate == .original else { return "Saves to Photos with today’s date." }
+        guard let date = model.originalDate else { return "No original date found. Today’s date will be used." }
+        return "Saves to Photos dated \(date.formatted(date: .abbreviated, time: .omitted))."
+    }
+
+    /// While the render runs, choices collapse to what they were fixed at.
     /// Changing them now would describe a file the renderer is not writing.
     private var lockedChoices: some View {
         VStack(alignment: .leading, spacing: Tokens.Sheet.labelGap) {
@@ -77,10 +92,12 @@ struct ExportSheet: View {
                 lockedValue(formatName(model.exportFormat))
                 lockedValue(model.exportOutput.displayName)
             }
+            Text("Photo date · \(model.exportDate.displayName)")
+                .typeStyle(.caption).foregroundStyle(Tokens.Palette.textSecondary)
         }
         .opacity(Tokens.Sheet.lockedOpacity)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Format \(formatName(model.exportFormat)), colour \(model.exportOutput.displayName), locked while rendering")
+        .accessibilityLabel("Format \(formatName(model.exportFormat)), colour \(model.exportOutput.displayName), photo date \(model.exportDate.displayName), locked while rendering")
     }
 
     private func lockedValue(_ name: String) -> some View {
@@ -94,7 +111,7 @@ struct ExportSheet: View {
 
     private var actions: some View {
         VStack(alignment: .leading, spacing: Tokens.Metrics.space10) {
-            Button("Export photo") { launchedFrom = model.pixels; model.exportImage() }
+            Button("Save photo to Photos") { launchedFrom = model.pixels; model.exportImage() }
                 .buttonStyle(SheetActionStyle(kind: .primary))
                 .disabled(!model.canExport)
             // A LUT is a mapping rather than a frame, so its record has no thumbnail.
@@ -275,6 +292,10 @@ private struct ExportFinished: View {
             }
             .sheetCard(padding: Tokens.Sheet.cardGap)
             .accessibilityElement(children: .combine)
+            if let date = record.savedDate {
+                Text("Saved to Photos · \(date.formatted(date: .abbreviated, time: .omitted))")
+                    .typeStyle(.caption).foregroundStyle(Tokens.Palette.textSecondary)
+            }
             ShareLink(item: record.url) {
                 Label("Share", systemImage: "square.and.arrow.up")
             }

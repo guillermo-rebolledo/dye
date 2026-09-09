@@ -53,6 +53,8 @@ public struct ExportOptions: Sendable, Equatable {
     /// Nil reads the device's state when the Export starts. Fixing it is what makes
     /// the thermal behaviour testable.
     public var thermalState: ProcessInfo.ThermalState?
+    /// Optional capture date embedded in the exported image.
+    public var creationDate: Date?
     /// Encoder quality for the lossy containers, 0...1.
     public var quality: Double
     /// The share of the Scattering Passes' own reach the Apron carries, 0...1.
@@ -69,10 +71,11 @@ public struct ExportOptions: Sendable, Equatable {
 
     public init(textureBudgetBytes: Int = 320 << 20, minimumTileEdge: Int = 256,
                 thermalState: ProcessInfo.ThermalState? = nil, quality: Double = 0.9,
-                apronFraction: Double = 0.6) {
+                apronFraction: Double = 0.6, creationDate: Date? = nil) {
         self.textureBudgetBytes = textureBudgetBytes
         self.minimumTileEdge = minimumTileEdge
         self.thermalState = thermalState
+        self.creationDate = creationDate
         self.quality = quality
         self.apronFraction = apronFraction
     }

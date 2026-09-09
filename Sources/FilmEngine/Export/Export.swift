@@ -19,7 +19,7 @@ extension Renderer {
         try await renderTiles(source, profile: profile, settings: settings, options: options, progress: progress) {
             writer.write($1, x: $0.x, y: $0.y, width: $0.width, height: $0.height)
         }
-        return try writer.encode(quality: options.quality)
+        return try writer.encode(quality: options.quality, creationDate: options.creationDate)
     }
 
     /// The same tiled render, delivered as pixels rather than as a file. This is how a

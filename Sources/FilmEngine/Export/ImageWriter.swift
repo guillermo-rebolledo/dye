@@ -67,7 +67,7 @@ final class ImageWriter {
         }
     }
 
-    func encode(quality: Double) throws -> Data {
+    func encode(quality: Double, creationDate: Date? = nil) throws -> Data {
         let space = output == .sRGB ? CGColorSpace(name: CGColorSpace.sRGB) : CGColorSpace(name: CGColorSpace.displayP3)
         var info = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
         if format.bitsPerComponent == 16 { info.insert(.byteOrder16Little) }
@@ -82,7 +82,7 @@ final class ImageWriter {
         guard let destination = CGImageDestinationCreateWithData(data, format.contentType.identifier as CFString, 1, nil) else {
             throw FilmError.invalid("This device cannot write \(format.displayName)")
         }
-        var properties: [CFString: Any] = [:]
+        var properties: [CFString: Any] = creationDate.map { ExportDate.properties(for: $0) } ?? [:]
         if format.isLossy { properties[kCGImageDestinationLossyCompressionQuality] = min(max(quality, 0), 1) }
         CGImageDestinationAddImage(destination, image, properties as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { throw FilmError.invalid("Encoding the export failed") }

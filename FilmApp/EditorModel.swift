@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import Photos
 import ImageIO
 import os
 import SwiftData
@@ -29,6 +30,7 @@ import FilmEngine
     /// The photo as it arrived. The Preview is a screen-sized decode of it, but an
     /// Export has to start from the full-resolution original, so the bytes are kept.
     private var original: Data?
+    private(set) var originalDate: Date?
     private var renderLoop: Task<Void, Never>?
     private var needsRender = false
 
@@ -149,7 +151,8 @@ import FilmEngine
             thumbnailInput = small
             preview = decoded
             original = data
-            export = nil
+            originalDate = ExportDate.originalDate(in: data)
+            if exportTask == nil { export = nil }
             scheduleRender()
         } catch is CancellationError { }
         catch { self.error = error.localizedDescription }
@@ -208,6 +211,7 @@ import FilmEngine
     /// its Tiles to a memory budget, and two running at once would blow it.
     enum Export {
         case running(ExportProgress)
+        case saving
         case finished(ExportRecord)
         case failed(String)
     }
@@ -227,6 +231,7 @@ import FilmEngine
         /// a time and reports its own count as it goes.
         var tileCount: Int
         var elapsedSeconds: Double
+        var savedDate: Date? = nil
 
         var megapixels: Double? {
             guard let pixelWidth, let pixelHeight else { return nil }
@@ -236,7 +241,10 @@ import FilmEngine
 
     private(set) var export: Export?
     var canExport: Bool { original != nil && exportTask == nil }
-    var isExporting: Bool { if case .running = export { true } else { false } }
+    var isExporting: Bool {
+        switch export { case .running?, .saving?: true; default: false }
+    }
+    var exportDate: ExportDate = .today
     var exportFormat: ExportFormat = .heif
     var exportOutput: RenderSettings.Output = .displayP3
     private var exportTask: Task<Void, Never>?
@@ -257,11 +265,12 @@ import FilmEngine
         for await state in observer.states { thermalState = state }
     }
 
-    /// Renders the photo at full resolution and writes it as a file to share. The
+    /// Renders the photo at full resolution and saves it to Photos and a shareable file. The
     /// renderer reports per Tile, which is also where it can be cancelled.
     func exportImage() {
         guard let original, let renderer, exportTask == nil else { return }
         let (profile, settings, format) = (profile, exportSettings, exportFormat)
+        let creationDate = exportDate.resolve(originalDate: originalDate)
         export = .running(ExportProgress(completedTiles: 0, tileCount: 0))
         // The Tile count belongs to the plan the renderer made, and the only place it
         // is published is the progress report — which arrives on the renderer's own
@@ -273,7 +282,7 @@ import FilmEngine
         let report: @Sendable (ExportProgress) -> Void = { [weak self] progress in
             tileCount.withLock { $0 = max($0, progress.tileCount) }
             Task { @MainActor in
-                guard let self, self.isExporting else { return }
+                guard let self, case .running = self.export else { return }
                 self.export = .running(progress)
             }
         }
@@ -281,15 +290,31 @@ import FilmEngine
         exportTask = Task { [weak self] in
             defer { self?.exportTask = nil }
             do {
+                let authorization = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+                try Task.checkCancellation()
+                guard authorization == .authorized || authorization == .limited else {
+                    throw FilmError.invalid("Photo not saved. Allow adding photos in Settings to save exports to Photos.")
+                }
                 let data = try await renderer.export(image: .encoded(original), profile: profile, settings: settings,
-                                                     format: format, progress: report)
+                                                     format: format, options: ExportOptions(creationDate: creationDate), progress: report)
                 try Task.checkCancellation()
                 let url = try Self.write(data, named: "\(profile.id).\(format.fileExtension)")
+                self?.export = .saving
+                do {
+                    try await PHPhotoLibrary.shared().performChanges {
+                        let request = PHAssetCreationRequest.forAsset()
+                        request.creationDate = creationDate
+                        request.addResource(with: .photo, fileURL: url, options: nil)
+                    }
+                } catch {
+                    try? FileManager.default.removeItem(at: url)
+                    throw FilmError.invalid("Photo could not be saved to Photos: \(error.localizedDescription)")
+                }
                 let size = Self.pixelSize(of: data)
                 self?.export = .finished(ExportRecord(url: url, pixelWidth: size?.width, pixelHeight: size?.height,
                                                       output: settings.output, byteCount: data.count,
                                                       tileCount: tileCount.withLock { $0 },
-                                                      elapsedSeconds: Self.seconds(since: started)))
+                                                      elapsedSeconds: Self.seconds(since: started), savedDate: creationDate))
             } catch is CancellationError {
                 self?.export = nil
             } catch {
@@ -321,12 +346,13 @@ import FilmEngine
     }
 
     func cancelExport() {
+        guard case .running = export else { return }
         exportTask?.cancel()
         export = nil
     }
 
     func dismissExport() {
-        if case .running = export { return }
+        if isExporting { return }
         export = nil
     }
 
@@ -355,7 +381,9 @@ import FilmEngine
     }
 
     private static func write(_ data: Data, named name: String) throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent(name)
         try data.write(to: url, options: .atomic)
         return url
     }
