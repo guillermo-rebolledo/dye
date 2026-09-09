@@ -84,7 +84,7 @@ private func totalLight(_ pixels: [Float16]) -> Double {
     }
 }
 
-@Test func bloomIntensityIsAZeroToTwoHundredPercentControlOnTheProfilesOwnValue() async throws {
+@Test func bloomIntensityPreservesTheStockBelowTheDetentAndBoostsAboveIt() async throws {
     let renderer = try Renderer()
     let size = 256
     let image = try point(width: size, height: size, value: 32)
@@ -99,8 +99,9 @@ private func totalLight(_ pixels: [Float16]) -> Double {
         let centre = size / 2 * size + size / 2
         return Double(image.rgba[centre * 4]) - Double(result.rgba[centre * 4])
     }
-    let stock = try await moved(1), full = try await moved(2)
-    #expect(abs(full / stock - 2) < 0.02)
+    let half = try await moved(0.5), stock = try await moved(1), full = try await moved(2)
+    #expect(abs(stock / half - 2) < 0.02)
+    #expect(full > 2.5 * stock)
     // The default is the Profile's own lens rather than an invented number.
     #expect(RenderSettings().bloomIntensity == 1)
     #expect(RenderSettings.bloomRange == 0...2)
@@ -115,7 +116,8 @@ private func totalLight(_ pixels: [Float16]) -> Double {
 @Test func bloomReachesTheEmulsionBeforeTheDensityCurvesDo() async throws {
     // The lens diffuses the light the film is about to record, so the Film Response
     // compresses the glare along with everything else. A post effect would add it
-    // linearly, and doubling the intensity would double what arrives.
+    // linearly. Doubling from 50% to 100% doubles the light moved before film
+    // response; the creative range above 100% is deliberately nonlinear.
     let renderer = try Renderer()
     let portra = try #require(ProfileCatalogue.bundled().profiles.first { $0.id == "portra-400" })
     #expect(portra.metadata.bloom.strength > 0)
@@ -128,9 +130,9 @@ private func totalLight(_ pixels: [Float16]) -> Double {
     }
     // Just outside the lit disc, where the glare is strong and nothing is near the
     // top of the range, so what follows is compression rather than clipping.
-    let (off, normal, full) = (try await glare(0), try await glare(1), try await glare(2))
+    let (off, half, normal, full) = (try await glare(0), try await glare(0.5), try await glare(1), try await glare(2))
     #expect(normal > off + 0.2)
     #expect(full > normal)
     #expect(full < 0.85)
-    #expect(full - off < 1.7 * (normal - off))
+    #expect(normal - off < 1.7 * (half - off))
 }

@@ -570,8 +570,12 @@ public actor Renderer {
     /// to it. Nil when the modelled lens or the user has nothing to diffuse.
     private func bloom(profile: Profile, settings: RenderSettings, frame: Frame, tile: any MTLTexture) -> Scatter? {
         let metadata = profile.metadata.bloom
-        let strength = metadata.strength * settings.bloomIntensity
-        guard strength > 0, metadata.radiusMicrons > 0 else { return nil }
+        // Keep 0...100% faithful to the lens. Above the detent, open up a
+        // useful diffusion range even for stocks whose baseline is only 2%.
+        let boost = max(0, settings.bloomIntensity - 1)
+        let strength = min(1, metadata.strength * settings.bloomIntensity
+                           + max(0, 0.3 - 2 * metadata.strength) * boost * boost)
+        guard metadata.strength > 0, strength > 0, metadata.radiusMicrons > 0 else { return nil }
         // A zero threshold with the narrowest knee takes every positive value: light a
         // lens cannot have received is not light it can diffuse.
         return scatter(profile: profile, radiusMicrons: [Double](repeating: metadata.radiusMicrons, count: 3),
@@ -582,9 +586,14 @@ public actor Renderer {
     /// the Stock or the user has no Halation to add.
     private func halation(profile: Profile, settings: RenderSettings, frame: Frame, tile: any MTLTexture) -> Scatter? {
         let metadata = profile.metadata.halation
+        let boost = max(0, settings.halationIntensity - 1)
         let strength = metadata.strength * settings.halationIntensity
-        guard strength > 0, metadata.radiusMicrons.contains(where: { $0 > 0 }) else { return nil }
-        let threshold = metadata.threshold
+            + max(0, 0.3 - 2 * metadata.strength) * boost * boost
+        guard metadata.strength > 0, strength > 0, metadata.radiusMicrons.contains(where: { $0 > 0 }) else { return nil }
+        // SDR photos top out near 1 in linear light. The stock threshold
+        // (often 1.6) otherwise leaves almost nothing to scatter even at 200%.
+        // The creative range reaches those highlights without lifting exposure.
+        let threshold = metadata.threshold + (min(metadata.threshold, 0.4) - metadata.threshold) * boost * boost
         return scatter(profile: profile, radiusMicrons: metadata.radiusMicrons,
                        parameters: SIMD4(Float(threshold), Float(max(threshold / 2, 1e-4)), Float(strength), 0),
                        tint: metadata.tint, frame: frame, tile: tile)
