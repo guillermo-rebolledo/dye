@@ -5,6 +5,7 @@ struct ActiveControl: View {
     let model: EditorModel
     var isEnabled = true
     var error: String?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var switchingCaption = false
 
@@ -27,9 +28,9 @@ struct ActiveControl: View {
             .id(parameter?.id)
             .transition(.opacity)
             .animation(Tokens.Motion.ease(Tokens.Motion.parameterSwitch, reduceMotion: reduceMotion), value: parameter?.id)
-            captionSlot.frame(height: Tokens.Deck.captionHeight, alignment: .topLeading)
+            captionSlot.frame(height: Tokens.Deck.captionHeight + Tokens.Deck.extraHeight(for: dynamicTypeSize), alignment: .topLeading)
         }
-        .frame(height: Tokens.Deck.controlHeight)
+        .frame(height: Tokens.Deck.controlHeight + Tokens.Deck.extraHeight(for: dynamicTypeSize))
         .onChange(of: parameter?.id) {
             Haptics.parameterSwitch()
         }
@@ -73,7 +74,7 @@ struct ActiveControl: View {
             if !caption.isEmpty {
                 Image(systemName: "info.circle").font(Tokens.TypeStyle.caption.font)
                     .foregroundStyle(Tokens.Deck.quietInk)
-                    .accessibilityLabel(caption)
+                    .accessibilityHidden(true)
             }
             Spacer(minLength: 0)
             if isEnabled, let tag = parameter?.tag {
@@ -88,7 +89,7 @@ struct ActiveControl: View {
             let parts = parameter.readoutParts
             HStack(alignment: .firstTextBaseline, spacing: Tokens.Metrics.space6) {
                 Text(isEnabled ? parts.number : "—")
-                    .typeStyle(.readout)
+                    .typeStyle(dynamicTypeSize.isAccessibilitySize ? .accessibleReadout : .readout)
                     .contentTransition(reduceMotion ? .identity : .numericText(value: parameter.value.wrappedValue))
                     .foregroundStyle(parameter.tag == .off ? Tokens.Deck.quietInk : Tokens.Palette.textPrimary)
                     .lineLimit(1).minimumScaleFactor(0.5)
@@ -123,18 +124,20 @@ struct ActiveControl: View {
     }
 
     private var captionSlot: some View {
-        ZStack(alignment: .topLeading) {
-            if let error {
-                Text(error).typeStyle(.caption).foregroundStyle(Tokens.Palette.destructive)
-                    .lineLimit(1).accessibilityLabel("Error: \(error)")
-            } else {
-                Text(switchingCaption ? "" : caption).typeStyle(.caption)
-                    .foregroundStyle(Tokens.Deck.captionInk).lineLimit(2)
-                    .id(switchingCaption ? "" : caption)
-                    .transition(.opacity)
-            }
+        // Keep the complete copy available at the largest size without ever
+        // increasing the deck again. Scrolling is confined to the caption slot.
+        ScrollView(.vertical) {
+            Text(error ?? (switchingCaption ? "" : caption)).typeStyle(.caption)
+                .foregroundStyle(error == nil ? Tokens.Deck.captionInk : Tokens.Palette.destructive)
+                .lineLimit(dynamicTypeSize >= .accessibility5 ? nil : Tokens.Deck.captionLines(for: dynamicTypeSize))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel(error.map { "Error: \($0)" } ?? caption)
+                .id(error ?? caption)
+                .transition(.opacity)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .scrollDisabled(dynamicTypeSize < .accessibility5)
+        .id(parameter?.id)
         .animation(Tokens.Motion.ease(Tokens.Motion.captionCrossfade, reduceMotion: reduceMotion), value: caption)
     }
 }

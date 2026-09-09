@@ -262,6 +262,7 @@ extension Tokens {
 
 extension Tokens.TypeStyle {
     /// The active control's value. Fixed width, one line, unit in a separate run.
+    static let accessibleReadout = Self(size: 28, weight: .medium, isMono: true, lineHeight: 34, tracking: -0.5)
     static let readout = Self(size: 34, weight: .medium, isMono: true, lineHeight: 34, tracking: -0.5)
     /// The unit beside a readout, and any secondary numeral.
     static let unit = Self(size: 15, weight: .medium, isMono: true)
@@ -571,6 +572,14 @@ private struct TokenCatalogue: View {
 extension Tokens {
     enum Deck {
         static let height: CGFloat = 316
+        /// The handoff's bounded large-text reflow. The extra caption line is
+        /// borrowed from the canvas; the action row and bottom gutter stay put.
+        static func extraHeight(for size: DynamicTypeSize) -> CGFloat {
+            size.isAccessibilitySize ? 14 : 0
+        }
+        static func captionLines(for size: DynamicTypeSize) -> Int {
+            size.isAccessibilitySize ? 3 : 2
+        }
         static let selectorHeight: CGFloat = 36
         static let segmentHeight: CGFloat = 30
         static let segmentPadding: CGFloat = 3
@@ -596,7 +605,7 @@ extension Tokens {
         static let readoutNumberWidth: CGFloat = 142
         static let border = Colour.hex(0xFFFFFF, alpha: 0.08).color
         static let captionInk = Palette.textPrimary.opacity(0.62)
-        static let quietInk = Palette.textPrimary.opacity(0.5)
+        static let quietInk = Palette.textPrimary.opacity(0.62)
         static let modifiedInk = Palette.textPrimary.opacity(0.85)
     }
 

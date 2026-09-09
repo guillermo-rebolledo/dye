@@ -197,6 +197,17 @@ extension Parameter {
         return (text, "")
     }
 
+    /// Reserve the widest value before a drag begins, including word-valued
+    /// defaults such as “neutral”. Discrete controls include every option.
+    var readoutWidthReference: String {
+        var values = [range.lowerBound, range.upperBound, defaultValue]
+        if let detent { values.append(detent) }
+        if control == .contrastFilterDiscs || control == .outputStageCards {
+            values += stride(from: range.lowerBound, through: range.upperBound, by: step).map { $0 }
+        }
+        return values.map(format).max { $0.count < $1.count } ?? readout
+    }
+
     var isModified: Bool { abs(value.wrappedValue - defaultValue) > 0.000001 }
 }
 

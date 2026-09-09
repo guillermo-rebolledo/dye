@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import FilmEngine
 
 /// The deck owns no render state. The editor supplies photo and presentation
 /// bindings; the editor places this shell below the canvas.
@@ -13,6 +14,7 @@ struct DeckView: View {
     let showContactSheet: () -> Void
     let showExport: () -> Void
     var error: String?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -39,7 +41,7 @@ struct DeckView: View {
                     }
                 }
             }
-            .frame(height: Tokens.Filmstrip.height)
+            .frame(height: Tokens.Filmstrip.height + Tokens.Deck.extraHeight(for: dynamicTypeSize))
             .id(selection.stage)
             .transition(.asymmetric(
                 insertion: .offset(x: reduceMotion ? 0 : Tokens.Motion.stageSlide).combined(with: .opacity),
@@ -54,7 +56,7 @@ struct DeckView: View {
         // The remaining 30 pt are the fixed bottom gutter. Background extends
         // through the device's home-indicator safe area without moving contents.
         .frame(maxWidth: .infinity)
-        .frame(height: Tokens.Deck.height, alignment: .top)
+        .frame(height: Tokens.Deck.height + Tokens.Deck.extraHeight(for: dynamicTypeSize), alignment: .top)
         .background(Tokens.Palette.deck.ignoresSafeArea(edges: .bottom))
         .overlay(alignment: .top) { Tokens.Deck.border.frame(height: Tokens.Elevation.hairlineWidth) }
         .onChange(of: parameters.map(\.id), initial: true) {
@@ -100,7 +102,7 @@ struct DeckPreview: View {
     var body: some View {
         VStack(spacing: Tokens.Metrics.space16) {
             Picker("Stock", selection: $model.selectedStock) {
-                ForEach(["tri-x-400", "velvia-50", "portra-400", "identity"], id: \.self) { Text($0).tag($0) }
+                ForEach(model.catalogueWithIdentity) { Text($0.metadata.displayName).tag($0.id) }
             }
             Toggle("Photo loaded", isOn: $hasPhoto)
             Toggle("Filmstrip requested", isOn: $selection.isFilmstripOpen)
@@ -130,3 +132,14 @@ struct DeckPreview: View {
 #Preview("316 pt · Identity · Lab") { DeckPreview(stock: "identity", stage: .lab).preferredColorScheme(.dark) }
 
 #Preview("316 pt · No photo") { DeckPreview(photoLoaded: false).preferredColorScheme(.dark) }
+
+#Preview("330 pt · largest text · all Stocks") {
+    DeckPreview().dynamicTypeSize(.accessibility5)
+        .preferredColorScheme(.dark)
+}
+#Preview("330 pt · largest text · no photo") {
+    DeckPreview(photoLoaded: false).dynamicTypeSize(.accessibility5).preferredColorScheme(.dark)
+}
+#Preview("330 pt · largest text · filmstrip") {
+    DeckPreview(filmstripOpen: true).dynamicTypeSize(.accessibility5).preferredColorScheme(.dark)
+}

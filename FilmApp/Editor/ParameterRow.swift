@@ -17,12 +17,10 @@ struct ParameterRow: View {
             ViewThatFits(in: .horizontal) {
                 chips(compact: false).fixedSize(horizontal: true, vertical: false)
                 chips(compact: true).fixedSize(horizontal: true, vertical: false)
-                chips(compact: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .mask(LinearGradient(stops: [.init(color: .black, location: 0),
-                                                .init(color: .black, location: Tokens.Deck.overflowStart),
-                                                .init(color: .clear, location: 1)],
-                                         startPoint: .leading, endPoint: .trailing))
+                ScrollView(.horizontal) {
+                    chips(compact: true).fixedSize(horizontal: true, vertical: false)
+                }
+                .scrollIndicators(.hidden)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             // Clip horizontally while preserving the chips' 44 pt hit targets.
@@ -100,6 +98,8 @@ struct ParameterRow: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(parameter.name)
+                .accessibilityValue(stage.displayName)
                 .accessibilityAddTraits(model.outputStage == stage ? .isSelected : [])
             }
         }
@@ -139,18 +139,17 @@ struct ParameterChip: View {
                              : AnyLayout(HStackLayout(spacing: Tokens.Metrics.space5))
         layout {
             Text(parameter.name).typeStyle(.chipName).lineLimit(1)
-                .foregroundStyle(isActive ? Tokens.Palette.textPrimary
-                                 : parameter.isModified ? Tokens.Deck.modifiedInk : Tokens.Deck.captionInk)
+                .foregroundStyle(Tokens.Palette.textPrimary)
             HStack(spacing: Tokens.Metrics.space5) {
-                Text(isEnabled ? parameter.readout : "—").typeStyle(.chipValue).lineLimit(1)
+                Text(parameter.readoutWidthReference).hidden()
+                    .overlay(alignment: .leading) { Text(isEnabled ? parameter.readout : "—") }
+                    .typeStyle(.chipValue).lineLimit(1)
                     .contentTransition(reduceMotion ? .identity : .numericText(value: parameter.value.wrappedValue))
                     .foregroundStyle(isActive ? Tokens.Palette.accent
                                      : parameter.isModified ? Tokens.Palette.textPrimary : Tokens.Deck.captionInk)
-                if parameter.isModified && isEnabled {
-                    Circle().fill(Tokens.Palette.accent)
-                        .frame(width: Tokens.Deck.modifiedDot, height: Tokens.Deck.modifiedDot)
-                        .transition(.opacity)
-                }
+                Circle().fill(Tokens.Palette.accent)
+                    .frame(width: Tokens.Deck.modifiedDot, height: Tokens.Deck.modifiedDot)
+                    .opacity(parameter.isModified && isEnabled ? 1 : 0)
             }
         }
         .padding(.horizontal, Tokens.Deck.chipPadding)
@@ -164,8 +163,10 @@ struct ParameterChip: View {
             .exclusively(before: TapGesture(count: 2).onEnded { reset() }
                 .exclusively(before: TapGesture().onEnded { select() })))
         .allowsHitTesting(isEnabled)
+        .disabled(!isEnabled)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(parameter.name)
+        .accessibilityInputLabels([parameter.name])
         .accessibilityValue(isEnabled ? parameter.readout : "Unavailable")
         .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { if isEnabled { select() } }
