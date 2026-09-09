@@ -25,13 +25,21 @@ struct DeckView: View {
                 .lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity)
                 .frame(height: Tokens.Deck.subLabelHeight)
-            VStack(spacing: Tokens.Metrics.space10) {
-                ParameterRow(model: model, selection: selection, isEnabled: hasPhoto)
-                ActiveControl(parameter: selection.activeParameter(in: parameters), model: model,
-                              isEnabled: hasPhoto, error: error ?? model.error)
+            Group {
+                if selection.isFilmstripOpen && hasPhoto {
+                    Filmstrip(catalogue: model.catalogue, thumbnails: model.thumbnails,
+                              selectedStock: Binding(get: { model.selectedStock }, set: { model.selectedStock = $0 }),
+                              close: { selection.isFilmstripOpen = false })
+                        .padding(.horizontal, -Tokens.Metrics.space16)
+                } else {
+                    VStack(spacing: Tokens.Metrics.space10) {
+                        ParameterRow(model: model, selection: selection, isEnabled: hasPhoto)
+                        ActiveControl(parameter: selection.activeParameter(in: parameters), model: model,
+                                      isEnabled: hasPhoto, error: error ?? model.error)
+                    }
+                }
             }
-            // MEM-260 replaces this 156 pt region when isFilmstripOpen is true.
-            // Until then Stock still records its intent in EditorSelection.
+            .frame(height: Tokens.Filmstrip.height)
             .id(selection.stage)
             .transition(.asymmetric(
                 insertion: .offset(x: reduceMotion ? 0 : Tokens.Motion.stageSlide).combined(with: .opacity),
@@ -75,7 +83,7 @@ struct DeckView: View {
 }
 
 /// Interactive acceptance fixture. The measured height is independent of Stock,
-/// caption, photo availability, stage and the pending filmstrip presentation.
+/// caption, photo availability, stage and the filmstrip presentation.
 struct DeckPreview: View {
     @State private var model = EditorModel()
     @State private var selection = EditorSelection()
@@ -87,6 +95,7 @@ struct DeckPreview: View {
     var stock = "portra-400"
     var stage: EditorStage = .film
     var photoLoaded = true
+    var filmstripOpen = false
 
     var body: some View {
         VStack(spacing: Tokens.Metrics.space16) {
@@ -111,7 +120,7 @@ struct DeckPreview: View {
         .sheet(isPresented: Binding(get: { sheet != nil }, set: { if !$0 { sheet = nil } })) {
             Text(sheet ?? "")
         }
-        .task { model.loadCatalogue(); model.selectedStock = stock; selection.select(stage); hasPhoto = photoLoaded }
+        .task { model.loadCatalogue(); model.selectedStock = stock; selection.select(stage); hasPhoto = photoLoaded; selection.isFilmstripOpen = filmstripOpen }
     }
 }
 
