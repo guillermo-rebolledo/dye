@@ -301,7 +301,9 @@ import FilmEngine
                 let url = try Self.write(data, named: "\(profile.id).\(format.fileExtension)")
                 self?.export = .saving
                 do {
-                    try await PHPhotoLibrary.shared().performChanges {
+                    // Photos invokes this block on its own queue. Prevent it from
+                    // inheriting MainActor and trapping Swift's executor check.
+                    try await PHPhotoLibrary.shared().performChanges { @Sendable in
                         let request = PHAssetCreationRequest.forAsset()
                         request.creationDate = creationDate
                         request.addResource(with: .photo, fileURL: url, options: nil)
