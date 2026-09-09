@@ -14,7 +14,7 @@ struct EditorView: View {
                      showPresets: { showsPresets = true }, showContactSheet: { showsContactSheet = true },
                      showExport: { isExporting = true })
             .preferredColorScheme(.dark)
-            .sheet(isPresented: $showsPresets) { PresetSheet(model: model) }
+            .sheet(isPresented: $showsPresets) { PresetSheet(model: model).filmSheet() }
             .sheet(isPresented: $showsContactSheet) { ContactSheetView() }
             .sheet(isPresented: $isExporting) { ExportSheet(model: model).filmSheet() }
             .task { model.loadCatalogue() }

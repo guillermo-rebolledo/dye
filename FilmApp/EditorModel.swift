@@ -2,6 +2,7 @@ import SwiftUI
 import PhotosUI
 import ImageIO
 import os
+import SwiftData
 import FilmEngine
 
 /// Owns the Preview Render Path: one decoded screen-sized image, the current
@@ -138,6 +139,7 @@ import FilmEngine
             pixels = nil
             beforePixels = before
             thumbnails = [:]
+            presetThumbnails = [:]
             thumbnailInput = small
             preview = decoded
             original = data
@@ -152,6 +154,64 @@ import FilmEngine
         settings.contrastFilter = Self.contrastFilter(settings.contrastFilter, for: profile)
         settings.outputStage = Self.outputStage(settings.outputStage, for: profile)
         scheduleRender()
+    }
+
+    // MARK: - Preset thumbnails
+
+    /// One Preset as the renderer needs it: something to key the result by, the Stock
+    /// it names, and the settings it decoded to. The sheet decodes, because it needs
+    /// those settings for the summary line whether a render ever arrives or not.
+    struct PresetRender: Identifiable, Sendable, Hashable {
+        let id: PersistentIdentifier
+        let stockID: String
+        let settings: RenderSettings
+    }
+
+    private(set) var presetThumbnails: [PersistentIdentifier: RenderedPixels] = [:]
+    private var presetThumbnailTask: Task<Void, Never>?
+
+    /// A frame rendered through each Preset, keyed by the Preset rather than by the
+    /// Stock. Debounced and cancelling in flight like `scheduleThumbnails()`, and
+    /// otherwise its opposite: **each Preset renders at its own decoded settings**,
+    /// not at the settings on screen, because a Preset row is a record of a saved look
+    /// rather than a preview of the current one. Get that backwards and every row
+    /// looks the same.
+    ///
+    /// The input is the current photo when one is loaded and the Contact Sheet
+    /// Reference when none is. That reference is deterministic, is what the contact
+    /// sheet itself renders, and carries saturated patches, shadows and lights above
+    /// SDR white — so a Preset's look reads as a look rather than as a grey square.
+    func schedulePresetThumbnails(_ presets: [PresetRender]) {
+        presetThumbnailTask?.cancel()
+        guard !presets.isEmpty else { return }
+        let input = thumbnailInput
+        let profiles = [Profile.identity] + catalogue
+        presetThumbnailTask = Task {
+            do {
+                try await Task.sleep(for: .milliseconds(200))
+                let source = try input ?? ContactSheetReference.image()
+                let renderer = try Renderer()
+                for preset in presets {
+                    try Task.checkCancellation()
+                    guard let profile = profiles.first(where: { $0.id == preset.stockID }) else { continue }
+                    // The same cross-Stock clamping `stockChanged()` applies: a
+                    // Contrast Filter or a Print does not survive a change of Stock,
+                    // and a Profile refuses the render outright rather than ignoring
+                    // the setting.
+                    var adjusted = preset.settings
+                    adjusted.developmentOffset = Self.developmentOffset(adjusted.developmentOffset, for: profile)
+                    adjusted.contrastFilter = Self.contrastFilter(adjusted.contrastFilter, for: profile)
+                    adjusted.outputStage = Self.outputStage(adjusted.outputStage, for: profile)
+                    // One Preset that will not render leaves its own row developing;
+                    // it does not stop the rows after it from arriving.
+                    guard let result = try? await renderer.render(image: .linear(source), profile: profile,
+                                                                  settings: adjusted) else { continue }
+                    try Task.checkCancellation()
+                    presetThumbnails[preset.id] = result
+                }
+            } catch is CancellationError { }
+            catch { self.error = error.localizedDescription }
+        }
     }
 
     // MARK: - Export

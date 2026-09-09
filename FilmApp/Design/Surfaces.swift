@@ -512,3 +512,36 @@ private struct SheetCatalogue: View {
 #Preview("Sheet chrome · actions and segments") {
     SheetCatalogue().preferredColorScheme(.dark)
 }
+
+// MARK: - Developing
+
+/// A frame whose render has not arrived yet, hatched rather than spun. Every
+/// surface that renders film into a cell — the filmstrip, the Preset rows, the
+/// contact sheet — waits the same way, and never with a spinner: these are sheets
+/// about looking at film.
+struct DevelopingFrame: View {
+    /// Off for a cell too small to set the word in.
+    var showsCaption = true
+
+    var body: some View {
+        Canvas { context, size in
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Tokens.Filmstrip.hatchBase))
+            for x in stride(from: -size.height, to: size.width, by: Tokens.Filmstrip.hatchWidth * 2) {
+                var path = Path()
+                path.move(to: CGPoint(x: x, y: size.height))
+                path.addLine(to: CGPoint(x: x + size.height, y: 0))
+                path.addLine(to: CGPoint(x: x + size.height + Tokens.Filmstrip.hatchWidth, y: 0))
+                path.addLine(to: CGPoint(x: x + Tokens.Filmstrip.hatchWidth, y: size.height))
+                path.closeSubpath()
+                context.fill(path, with: .color(Tokens.Filmstrip.hatchStripe))
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if showsCaption {
+                Text("developing…").typeStyle(.filmIndex).foregroundStyle(Tokens.Deck.captionInk)
+                    .padding(.bottom, Tokens.Filmstrip.developingInset)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
