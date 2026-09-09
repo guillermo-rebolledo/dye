@@ -127,7 +127,10 @@ extension Tokens {
         // Meaning
         /// Detents, defaults, the loaded Stock, the primary action — and never
         /// status. There is exactly one accent, and it is film-base orange.
-        static let accent = Colour.oklch(0.74, 0.15, 55).color
+        static let accent = accentColour.color
+        /// The accent before it becomes a `Color`, so the scrubber's translucent
+        /// variants are one hue rather than four hand-copied ones.
+        static let accentColour = Colour.oklch(0.74, 0.15, 55)
         static let accentPressed = Colour.oklch(0.62, 0.15, 55).color
         /// Cancel text. Destructive is system red, not the accent.
         static let destructive = Colour.oklch(0.72, 0.17, 25).color
@@ -158,6 +161,32 @@ extension Tokens {
             case .ecn2: Colour.oklch(0.74, 0.11, 165).color
             }
         }
+
+        // The scrubber track. Everything drawn inside the well, plus the
+        // indicator that rides over it.
+        /// A minor tick, one per step.
+        static let tickMinor = dynamic(dark: .hex(0xFF_FF_FF, alpha: 0.14), light: .hex(0x00_00_00, alpha: 0.14))
+        /// A major tick, one per stop or decade.
+        static let tickMajor = dynamic(dark: .hex(0xFF_FF_FF, alpha: 0.28), light: .hex(0x00_00_00, alpha: 0.28))
+        /// The band from the anchor to the value.
+        static let trackFill = accentColour.opacity(0.28).color
+        /// The anchor line, at rest.
+        static let trackAnchor = ink(0.5)
+        /// The anchor once the value is sitting on it, and the glow around it.
+        static let trackAnchorActive = accent
+        static let trackAnchorGlow = accentColour.opacity(0.8).color
+        /// The end the value has run into.
+        static let trackWall = ink(0.6)
+        /// The glow the indicator gains while a finger is on it.
+        static let indicatorGlow = accentColour.opacity(0.5).color
+        /// The indicator face. Light mode is provisional, like the rest of the
+        /// derived light values: a pale indicator would vanish on paper, so it
+        /// inverts to ink rather than lightening further.
+        static let indicatorFace = gradient(dark: (.hex(0xFF_FF_FF), .hex(0xD8_D6_D2)),
+                                            light: (.hex(0x4A_48_44), .hex(0x2A_29_26)))
+        /// The indicator mid-drag, which flattens to one tone.
+        static let indicatorFaceDragging = gradient(dark: (.hex(0xFF_FF_FF), .hex(0xFF_FF_FF)),
+                                                    light: (.hex(0x2A_29_26), .hex(0x2A_29_26)))
 
         // Elevation. Only `Surfaces.swift` should reach for these.
         /// The 1 pt line along a raised face's top edge.
@@ -299,9 +328,11 @@ extension Tokens {
         static let chipRadius: CGFloat = 9
         static let segmentRadius: CGFloat = 8
         /// A segmented trough.
-        static let troughRadius: CGFloat = 7
-        /// The scrubber track.
-        static let trackRadius: CGFloat = 11
+        static let troughRadius: CGFloat = 11
+        /// The scrubber track. §4 of the handoff gives the track `radius 7` and
+        /// §2 gives the segmented trough `radius 11`; §10's "trough/track 7 · 11"
+        /// is that pair, written in the other order.
+        static let trackRadius: CGFloat = 7
         static let buttonRadius: CGFloat = 12
         static let sheetRadius: CGFloat = 22
         static let filmstripCellRadius: CGFloat = 3
@@ -309,6 +340,48 @@ extension Tokens {
         /// Chips draw 34 pt tall and claim a 44 pt hit area around that.
         static let chipHeight: CGFloat = 34
         static let minimumHitTarget: CGFloat = 44
+    }
+}
+
+// MARK: - Track
+
+extension Tokens {
+    /// The scrubber's own dimensions, from §4 of the handoff. They sit apart from
+    /// `Metrics` because each one belongs to this one component, where a spacing
+    /// step or a hit target belongs to all of them. The track's corner radius is
+    /// the exception and stays in `Metrics` with the other radii.
+    enum Track {
+        static let height: CGFloat = 28
+        /// A tick, an anchor and an end wall, in the widths the handoff gives.
+        static let tickWidth: CGFloat = 1
+        static let tickInsetMinor: CGFloat = 6
+        static let tickInsetMajor: CGFloat = 2
+        static let anchorWidth: CGFloat = 2
+        static let wallWidth: CGFloat = 3
+
+        /// The closest two minor ticks may sit before the row reads as a solid
+        /// band. Temperature steps every 50 K over 8000 K, which is 160 ticks
+        /// across the track and would draw as fill rather than as steps.
+        static let minimumTickSpacing: CGFloat = 4
+        /// Roughly how many major ticks span the track. The interval itself is
+        /// rounded to 1, 2 or 5 times a power of ten, so it lands on a stop for
+        /// Exposure and a decade for Temperature without either being named.
+        static let majorTickTarget: Double = 6
+
+        static let indicatorWidth: CGFloat = 4
+        static let indicatorRadius: CGFloat = 2
+        /// How far the indicator stands proud of the track, top and bottom.
+        static let indicatorOverhang: CGFloat = 4
+        /// How far inside the end the indicator parks at a range limit.
+        static let indicatorEndInset: CGFloat = 2
+
+        /// The glow around an anchor the value is sitting on, and around the
+        /// indicator while a finger is on it. The handoff writes these as 8 px
+        /// and 12 px, halved here like every other blur in this file.
+        static let anchorGlowRadius: CGFloat = 4
+        static let indicatorGlowRadius: CGFloat = 6
+        /// What a disabled track fades to.
+        static let disabledOpacity: Double = 0.4
     }
 }
 
@@ -342,6 +415,13 @@ extension Tokens {
         static let troughShade: Double = 0.8
         static let trackBlur: CGFloat = 1.5
         static let trackShade: Double = 0.9
+
+        /// The scrubber indicator's own shadow: a dark hairline right against
+        /// the edge so it separates from a light track, and a short cast below.
+        static let indicatorHairlineWidth: CGFloat = 0.5
+        static let indicatorCastBlur: CGFloat = 1.5
+        static let indicatorCastOffset: CGFloat = 1
+        static let indicatorShade: Double = 0.8
     }
 }
 
