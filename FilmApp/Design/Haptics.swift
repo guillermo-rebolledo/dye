@@ -11,9 +11,9 @@ import UIKit
 /// UIKit honours for us, silences these.
 @MainActor
 enum Haptics {
-    /// Arriving at a detent: 0 EV, the Stock's own Kelvin balance, 0 tint, `box`
-    /// development, 100 % on bloom, halation and grain, 0 on vignette, gate weave
-    /// and frame border, the reciprocity threshold on the shutter dial.
+    /// Arriving at a detent: 0 EV, the Stock Balance in Kelvin, 0 tint, the `box`
+    /// Development Offset, 100 % on bloom, halation and grain, 0 on vignette,
+    /// gate weave and frame border, the reciprocity threshold on the shutter dial.
     static func detent() { impact(.rigid) }
 
     /// One step of a discrete control.
@@ -45,27 +45,12 @@ enum Haptics {
     /// while a finger keeps pushing.
     static func rangeLimit() { impact(.heavy) }
 
-    /// Warms the generators a gesture is about to need. Call it when a drag
-    /// begins, not on every change.
-    static func prepare(for gesture: Gesture = .drag) {
+    /// Warms the Taptic Engine for a gesture that is about to fire several of
+    /// these. Call it when a drag begins, not on every change, and let it go
+    /// cold again when the drag ends.
+    static func prepare() {
         selectionGenerator.prepare()
-        for style in gesture.styles { generator(style).prepare() }
-    }
-
-    /// What a call site is about to do, so `prepare(for:)` warms the right
-    /// generators rather than all of them.
-    enum Gesture: Sendable {
-        /// A scrubber drag: detents, range walls, threshold captions.
-        case drag
-        /// A press or a tap on a chip, a segment or an action.
-        case press
-
-        var styles: [UIImpactFeedbackGenerator.FeedbackStyle] {
-            switch self {
-            case .drag: [.rigid, .medium, .heavy]
-            case .press: [.light, .medium]
-            }
-        }
+        for style in warmStyles { generator(style).prepare() }
     }
 
     // MARK: Plumbing
@@ -73,15 +58,14 @@ enum Haptics {
     private static let selectionGenerator = UISelectionFeedbackGenerator()
     private static var impactGenerators: [UIImpactFeedbackGenerator.FeedbackStyle: UIImpactFeedbackGenerator] = [:]
 
+    private static let warmStyles: [UIImpactFeedbackGenerator.FeedbackStyle] = [.light, .medium, .rigid, .heavy]
+
     private static func selection() {
         selectionGenerator.selectionChanged()
-        selectionGenerator.prepare()
     }
 
     private static func impact(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
-        let generator = generator(style)
-        generator.impactOccurred()
-        generator.prepare()
+        generator(style).impactOccurred()
     }
 
     private static func generator(_ style: UIImpactFeedbackGenerator.FeedbackStyle) -> UIImpactFeedbackGenerator {
@@ -130,6 +114,10 @@ private struct HapticCatalogue: View {
     }
 }
 
-#Preview("Haptics") {
+#Preview("Haptics · dark") {
     HapticCatalogue().preferredColorScheme(.dark)
+}
+
+#Preview("Haptics · light") {
+    HapticCatalogue().preferredColorScheme(.light)
 }

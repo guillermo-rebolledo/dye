@@ -30,8 +30,8 @@ enum Surfaces {
     enum Depth: Sendable {
         case trough, track
 
-        var blur: CGFloat { self == .trough ? 2 : 3 }
-        var shade: Double { self == .trough ? 0.8 : 0.9 }
+        var blur: CGFloat { self == .trough ? Tokens.Elevation.troughBlur : Tokens.Elevation.trackBlur }
+        var shade: Double { self == .trough ? Tokens.Elevation.troughShade : Tokens.Elevation.trackShade }
     }
 }
 
@@ -65,13 +65,14 @@ struct Raised<S: InsettableShape>: ViewModifier {
         content
             .background(shape.fill(face.gradient(pressed: pressed)))
             .overlay(topEdge)
-            .overlay(shape.strokeBorder(Tokens.Palette.edgeHairline, lineWidth: 0.5))
+            .overlay(shape.strokeBorder(Tokens.Palette.edgeHairline,
+                                        lineWidth: Tokens.Elevation.hairlineWidth))
             .compositingGroup()
             // A pressed face has already travelled its millimetre, so it casts a
             // shorter shadow than one at rest.
-            .shadow(color: Tokens.Palette.shade(0.7),
-                    radius: pressed ? 1 : 1.5,
-                    y: pressed ? 0.5 : 1)
+            .shadow(color: Tokens.Palette.shade(Tokens.Elevation.castShade),
+                    radius: pressed ? Tokens.Elevation.castBlurPressed : Tokens.Elevation.castBlur,
+                    y: pressed ? Tokens.Elevation.castOffsetPressed : Tokens.Elevation.castOffset)
             .offset(y: pressed ? Tokens.Motion.pressDepth : 0)
     }
 
@@ -79,12 +80,15 @@ struct Raised<S: InsettableShape>: ViewModifier {
     /// Pressed, that highlight flips to a shadow falling in from above.
     @ViewBuilder private var topEdge: some View {
         if pressed {
-            InsetShadow(shape: shape, colour: Tokens.Palette.shade(0.7), blur: 3, offsetY: 2)
+            InsetShadow(shape: shape,
+                        colour: Tokens.Palette.shade(Tokens.Elevation.pressedInsetShade),
+                        blur: Tokens.Elevation.pressedInsetBlur,
+                        offsetY: Tokens.Elevation.pressedInsetOffset)
         } else {
             shape.strokeBorder(
                 LinearGradient(colors: [Tokens.Palette.edgeHighlight, .clear],
                                startPoint: .top, endPoint: .bottom),
-                lineWidth: 1)
+                lineWidth: Tokens.Elevation.highlightWidth)
         }
     }
 }
@@ -102,8 +106,9 @@ struct Recessed<S: InsettableShape>: ViewModifier {
             .overlay(InsetShadow(shape: shape,
                                  colour: Tokens.Palette.shade(depth.shade),
                                  blur: depth.blur,
-                                 offsetY: 1))
-            .overlay(shape.strokeBorder(Tokens.Palette.wellHairline, lineWidth: 0.5))
+                                 offsetY: Tokens.Elevation.wellInsetOffset))
+            .overlay(shape.strokeBorder(Tokens.Palette.wellHairline,
+                                        lineWidth: Tokens.Elevation.hairlineWidth))
             .compositingGroup()
     }
 }

@@ -151,7 +151,7 @@ extension Tokens {
         /// accent itself — an unexposed C-41 mask is where the accent came from.
         static func process(_ process: FilmProcess) -> Color {
             switch process {
-            case .c41: Colour.oklch(0.74, 0.15, 55).color
+            case .c41: accent
             case .e6: Colour.oklch(0.74, 0.11, 235).color
             case .bwSilver: Colour.oklch(0.82, 0, 0).color
             case .bwChromogenic: Colour.oklch(0.82, 0.03, 80).color
@@ -212,11 +212,16 @@ extension Tokens {
             return isMono ? base.monospacedDigit() : base
         }
 
-        /// What a line of this style actually occupies, for components that have
-        /// to reserve a fixed slot for a value that changes.
-        var naturalLineHeight: CGFloat { lineHeight ?? uiFont.lineHeight }
+        /// The height a component should reserve for one line of this style, so
+        /// a value that changes cannot move the layout around it. Where the
+        /// handoff sets leading tighter than the font's own line box — the
+        /// readout's 34/34 — the font wins, because SwiftUI cannot draw a line
+        /// shorter than its own metrics and a clipped readout is worse than a
+        /// slightly taller one.
+        var slotHeight: CGFloat { max(lineHeight ?? 0, uiFont.lineHeight) }
 
-        var lineSpacing: CGFloat { max(0, naturalLineHeight - uiFont.lineHeight) }
+        /// Leading beyond the font's own, which is all `lineSpacing` can add.
+        var lineSpacing: CGFloat { max(0, (lineHeight ?? 0) - uiFont.lineHeight) }
 
         private var uiFont: UIFont {
             let uiWeight = UIFont.Weight(weight)
@@ -307,6 +312,39 @@ extension Tokens {
     }
 }
 
+// MARK: - Elevation
+
+extension Tokens {
+    /// The geometry of the three surfaces, in points, so `Surfaces.swift` states
+    /// no number of its own. SwiftUI's blur radius is about half the CSS blur the
+    /// handoff writes, so every blur here is the handoff's value halved.
+    enum Elevation {
+        /// The shadow a raised face casts, at rest and once it has travelled.
+        static let castBlur: CGFloat = 1.5
+        static let castOffset: CGFloat = 1
+        static let castBlurPressed: CGFloat = 1
+        static let castOffsetPressed: CGFloat = 0.5
+        static let castShade: Double = 0.7
+
+        /// The 1 pt highlight along a face's top edge, and the half-point outline
+        /// that separates it from the deck.
+        static let highlightWidth: CGFloat = 1
+        static let hairlineWidth: CGFloat = 0.5
+
+        /// What that highlight becomes when the face goes down.
+        static let pressedInsetBlur: CGFloat = 1.5
+        static let pressedInsetOffset: CGFloat = 2
+        static let pressedInsetShade: Double = 0.7
+
+        /// How far light falls into a well, and how little comes back.
+        static let wellInsetOffset: CGFloat = 1
+        static let troughBlur: CGFloat = 1
+        static let troughShade: Double = 0.8
+        static let trackBlur: CGFloat = 1.5
+        static let trackShade: Double = 0.9
+    }
+}
+
 // MARK: - Motion
 
 extension Tokens {
@@ -372,6 +410,7 @@ private struct TokenCatalogue: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Tokens.Metrics.space20) {
                 section("Surfaces") { swatches(surfaces) }
+                section("Faces") { faces }
                 section("Meaning") { swatches(meanings) }
                 section("Ink") { swatches(inks) }
                 section("Process") {
@@ -393,6 +432,27 @@ private struct TokenCatalogue: View {
             .padding(Tokens.Metrics.space20)
         }
         .background(Tokens.Palette.deck)
+    }
+
+    /// The raised gradients, which are the only tokens that are not flat fills.
+    private var faces: some View {
+        VStack(alignment: .leading, spacing: Tokens.Metrics.space5) {
+            ForEach(Array(gradients.enumerated()), id: \.offset) { _, item in
+                HStack(spacing: Tokens.Metrics.space10) {
+                    RoundedRectangle(cornerRadius: Tokens.Metrics.chipRadius)
+                        .fill(item.1)
+                        .frame(width: 64, height: Tokens.Metrics.chipHeight)
+                    Text(item.0).typeStyle(.chipName).foregroundStyle(Tokens.Palette.textPrimary)
+                }
+            }
+        }
+    }
+
+    private var gradients: [(String, LinearGradient)] {
+        [("raised face", Tokens.Palette.raisedFace),
+         ("raised face · pressed", Tokens.Palette.raisedFacePressed),
+         ("raised icon", Tokens.Palette.raisedIcon),
+         ("raised icon · pressed", Tokens.Palette.raisedIconPressed)]
     }
 
     private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
