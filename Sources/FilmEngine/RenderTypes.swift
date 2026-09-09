@@ -83,6 +83,10 @@ public struct RenderSettings: Codable, Sendable, Equatable, Hashable {
     public var gateWeave: Double
     /// The unexposed rebate around the frame, 0...1 of its full width.
     public var frameBorder: Double
+    /// Tone and colour work done to the scan afterwards, the way a photo editor
+    /// does it. Per-pixel and after the Output Stage, so nothing here reaches the
+    /// film; all eight default to zero, where the Pass is an exact pass-through.
+    public var adjustments: Adjustments
     /// Fixes the Grain field and the gate weave displacement. The same seed renders
     /// the same frame, which is what makes Golden Images possible with Grain on.
     public var seed: UInt32
@@ -111,7 +115,7 @@ public struct RenderSettings: Codable, Sendable, Equatable, Hashable {
                 developmentOffset: Double = 0, contrastFilter: ContrastFilter = .none,
                 halationIntensity: Double = 1,
                 bloomIntensity: Double = 1, grainIntensity: Double = 1, vignette: Double = 0, gateWeave: Double = 0, frameBorder: Double = 0,
-                seed: UInt32 = 0, outputStage: OutputStage? = nil) {
+                adjustments: Adjustments = Adjustments(), seed: UInt32 = 0, outputStage: OutputStage? = nil) {
         self.output = output
         self.temperatureKelvin = temperatureKelvin
         self.tint = tint
@@ -125,14 +129,15 @@ public struct RenderSettings: Codable, Sendable, Equatable, Hashable {
         self.vignette = vignette
         self.gateWeave = gateWeave
         self.frameBorder = frameBorder
+        self.adjustments = adjustments
         self.seed = seed
         self.outputStage = outputStage
     }
 
-    /// Every key but the exposure time and the Contrast Filter is required. Both
-    /// arrived after Presets were already being written, and a saved Preset that
-    /// predates them means a frame nobody recorded a shutter speed for and no glass
-    /// on the lens, not a broken Preset.
+    /// Every key but the exposure time, the Contrast Filter and the Adjustments is
+    /// required. All three arrived after Presets were already being written, and a
+    /// saved Preset that predates them means a frame nobody recorded a shutter speed
+    /// for, no glass on the lens and a scan nobody touched, not a broken Preset.
     public init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         output = try values.decode(Output.self, forKey: .output)
@@ -148,6 +153,7 @@ public struct RenderSettings: Codable, Sendable, Equatable, Hashable {
         vignette = try values.decode(Double.self, forKey: .vignette)
         gateWeave = try values.decode(Double.self, forKey: .gateWeave)
         frameBorder = try values.decode(Double.self, forKey: .frameBorder)
+        adjustments = try values.decodeIfPresent(Adjustments.self, forKey: .adjustments) ?? Adjustments()
         seed = try values.decode(UInt32.self, forKey: .seed)
         outputStage = try values.decodeIfPresent(OutputStage.self, forKey: .outputStage)
     }
@@ -177,6 +183,88 @@ public struct RenderSettings: Codable, Sendable, Equatable, Hashable {
         guard gateWeave.isFinite, Self.gateWeaveRange.contains(gateWeave) else { throw FilmError.invalid("Gate weave must be 0...1") }
         guard frameBorder.isFinite, Self.frameBorderRange.contains(frameBorder) else {
             throw FilmError.invalid("Frame border must be 0...1")
+        }
+        try adjustments.validate()
+    }
+}
+
+/// The user's tone and colour controls over the scan, the ones a photo editor
+/// offers: what is done to the picture *after* the film has had its say.
+///
+/// Every value is bipolar, −1…1, with zero meaning the control is not applied.
+/// The app shows them as ±100. They act on the positive the Output Stage returns —
+/// or on the Transparency, for a reversal Stock, or on the Working Space itself for
+/// the identity Profile — and never on the light before the film, which is what
+/// keeps Highlights from changing what the Emulsion recorded. Exposure, Temperature
+/// and Tint are deliberately not here: they already exist as the Light controls,
+/// and there they mean what they say.
+///
+/// The tone controls are applied per channel as one monotone curve in a display
+/// encoding, so they cannot invert a gradient and a scene value above diffuse white
+/// survives them; the colour controls act on chroma about Rec.2020 luminance.
+public struct Adjustments: Codable, Sendable, Equatable, Hashable {
+    /// Lifts the darker tones, pulls back the brighter ones and adds a little
+    /// midtone contrast in one move, so detail reads without the picture going flat.
+    public var brilliance: Double
+    /// The brightest tones only. Negative recovers a highlight that is at or past
+    /// white, positive pushes the brights up.
+    public var highlights: Double
+    /// The darkest tones only. Positive opens the shadows to reveal what the film
+    /// kept there; negative closes them.
+    public var shadows: Double
+    /// The separation of light from dark about mid-grey, as an S-curve.
+    public var contrast: Double
+    /// The midtones, with black and white held where they are.
+    public var brightness: Double
+    /// Where black sits. Positive deepens the blacks by crushing the darkest
+    /// tones into them; negative lifts them, the way a matte print does.
+    public var blackPoint: Double
+    /// Every colour's intensity equally. −1 is a neutral grey.
+    public var saturation: Double
+    /// Muted colours more than saturated ones, and skin tones least of all.
+    public var vibrance: Double
+
+    public static let range = -1.0...1.0
+
+    public init(brilliance: Double = 0, highlights: Double = 0, shadows: Double = 0, contrast: Double = 0,
+                brightness: Double = 0, blackPoint: Double = 0, saturation: Double = 0, vibrance: Double = 0) {
+        self.brilliance = brilliance
+        self.highlights = highlights
+        self.shadows = shadows
+        self.contrast = contrast
+        self.brightness = brightness
+        self.blackPoint = blackPoint
+        self.saturation = saturation
+        self.vibrance = vibrance
+    }
+
+    /// A Preset saved before one of these existed decodes it as not applied.
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        brilliance = try values.decodeIfPresent(Double.self, forKey: .brilliance) ?? 0
+        highlights = try values.decodeIfPresent(Double.self, forKey: .highlights) ?? 0
+        shadows = try values.decodeIfPresent(Double.self, forKey: .shadows) ?? 0
+        contrast = try values.decodeIfPresent(Double.self, forKey: .contrast) ?? 0
+        brightness = try values.decodeIfPresent(Double.self, forKey: .brightness) ?? 0
+        blackPoint = try values.decodeIfPresent(Double.self, forKey: .blackPoint) ?? 0
+        saturation = try values.decodeIfPresent(Double.self, forKey: .saturation) ?? 0
+        vibrance = try values.decodeIfPresent(Double.self, forKey: .vibrance) ?? 0
+    }
+
+    /// The controls in the order the app lists them, each with the name it shows.
+    public var all: [(name: String, value: Double)] {
+        [("Brilliance", brilliance), ("Highlights", highlights), ("Shadows", shadows), ("Contrast", contrast),
+         ("Brightness", brightness), ("Black point", blackPoint), ("Saturation", saturation), ("Vibrance", vibrance)]
+    }
+
+    /// True when nothing is applied and the Pass has nothing to do.
+    public var isNeutral: Bool { all.allSatisfy { $0.value == 0 } }
+
+    public func validate() throws {
+        for (name, value) in all {
+            guard value.isFinite, Self.range.contains(value) else {
+                throw FilmError.invalid("\(name) must be within ±1")
+            }
         }
     }
 }

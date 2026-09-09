@@ -294,3 +294,23 @@ Behaviour, ranges and caption copy: `FilmApp/EditorModel.swift`,
 
 Appearance: `design_handoff_dye_editor/README.md` and
 `design_handoff_dye_editor/Dye Editor.dc.html`, screens `1a`–`1q`.
+
+## Addendum: the Adjust stage
+
+Added after the redesign shipped, and the one place this spec's "presentation-layer
+change" rule does not hold: the deck has a fourth stage, **Adjust**, and it is
+backed by a new Pass. [`adjustments.md`](adjustments.md) is the source of truth
+for both; what follows is only what changed here.
+
+- `EditorStage` has four cases and the stage selector draws four segments. The
+  deck stays 316 pt: the Adjust stage's eight chips overflow into the parameter
+  row's horizontal scroll, which the row already provided for.
+- The eight parameters are all scrubbers, ±100 in steps of 1, detent at 0, and
+  every Stock offers every one of them, because the Pass acts on whatever the
+  Output Stage returned. Zero reads `0`, not `+0` and not `● OFF`: it is bipolar
+  and the detent is the neutral setting.
+- Exposure, Temperature and Tint stay on the Light stage and are not repeated.
+  They change the light the film received; the Adjust stage changes the scan.
+- The Preset summary line gains one word, `adjusted`, when any of the eight is
+  off zero, and the LUT footnote says the cube carries them, because it does.
+

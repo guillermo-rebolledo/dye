@@ -126,7 +126,7 @@ struct ExportSheet: View {
     /// voice as the parameter captions.
     private var lutFootnote: Text {
         Text("A LUT is a colour mapping, one pixel at a time. This one carries the "
-             + "stock's response, your exposure, white balance and development, and nothing else: ")
+             + "stock's response, your exposure, white balance, development and adjustments, and nothing else: ")
             + Text("no grain, no halation, no bloom, no micro-contrast and no vignette")
             .bold().foregroundColor(Tokens.Palette.textSecondary)
             + Text(", because none of those is a function of a single pixel's colour. It will look "

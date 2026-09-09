@@ -444,7 +444,109 @@ kernel void scanOutput(texture2d<half, access::read> input [[texture(0)]],
     output.write(half4(half3(positive), pixel.a), p);
 }
 
-// Pass 11, Geometry. The lens's falloff, the gate's unsteadiness and the frame's
+// The sRGB transfer function and its inverse, both applied through the sign so an
+// out-of-gamut Working Space value survives a round trip, and both continuing the
+// power curve above one so scene light past diffuse white does too. The Output
+// Transform encodes with the first; the Adjustment Pass works between the two.
+float transfer(float x) {
+    float a = abs(x);
+    return copysign(a <= 0.0031308f ? 12.92f * a : 1.055f * pow(a, 1.0f / 2.4f) - 0.055f, x);
+}
+
+static float inverseTransfer(float x) {
+    float a = abs(x);
+    return copysign(a <= 0.04045f ? a / 12.92f : pow((a + 0.055f) / 1.055f, 2.4f), x);
+}
+
+// Pass 11, Adjustments. What a photo editor does to the scan afterwards: the tone
+// and colour controls, applied per pixel to the positive the Output Stage returned
+// and never to the light before the film. Neutral settings do not run the Pass.
+//
+// `tone` = (black point, brightness, shadows, highlights), `colour` = (contrast,
+// saturation, vibrance, unused), each −1…1 except that the renderer has already
+// folded Brilliance into shadows, highlights and contrast, and clamped the sums to
+// what keeps the curve below monotone.
+//
+// The tone controls compose one curve in the display encoding, applied to each
+// channel, which is what a photo editor's RGB tone curve is. Every term is a
+// polynomial in the clamped value with zeros at black and white, so the curve is
+// monotone across the whole control range, holds the two ends still where a
+// control says it does, and leaves a value outside 0…1 alone rather than
+// extrapolating it — except highlight recovery, whose whole purpose is to bring
+// light from above white back below it, and which is a knee for that reason.
+struct AdjustmentUniforms {
+    float4 tone;
+    float4 colour;
+};
+
+static float adjustTone(float x, float4 tone, float contrast) {
+    // Black point: positive moves the encoded value that reads as black up to
+    // 0.15, crushing what was below it into black itself rather than past it;
+    // negative lifts black to a matte grey. An out-of-gamut value below zero is
+    // left where it was, because it was never a tone to crush.
+    float t = 0.15f * tone.x;
+    x = max((x - t) / (1.0f - t), min(x, 0.0f));
+    // Brightness: the midtones, peaking at mid-grey, with black and white held.
+    float c = clamp(x, 0.0f, 1.0f);
+    x += 0.5f * tone.y * c * (1.0f - c);
+    // Shadows: peaks a third of the way up, and is gone by white.
+    c = clamp(x, 0.0f, 1.0f);
+    x += 0.5f * tone.z * c * (1.0f - c) * (1.0f - c);
+    // Highlights: pushing peaks two thirds of the way up and is gone by white;
+    // recovering is a C1 knee from mid-grey that compresses everything above it,
+    // including light past white, back toward the range.
+    if (tone.w >= 0.0f) {
+        c = clamp(x, 0.0f, 1.0f);
+        x += 0.5f * tone.w * c * c * (1.0f - c);
+    } else if (x > 0.5f) {
+        float d = x - 0.5f;
+        x = 0.5f + d / (1.0f - tone.w * d);
+    }
+    // Contrast: an S about mid-grey, slope 1.5 there at full and 0.5 at full
+    // negative, flattening into a toe and a shoulder at the ends.
+    c = clamp(x, 0.0f, 1.0f);
+    x += 2.0f * contrast * (c - 0.5f) * c * (1.0f - c);
+    return x;
+}
+
+kernel void adjust(texture2d<half, access::read> input [[texture(0)]],
+                   texture2d<half, access::write> output [[texture(1)]],
+                   constant AdjustmentUniforms &adjustments [[buffer(15)]],
+                   uint2 p [[thread_position_in_grid]]) {
+    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
+    half4 pixel = input.read(p);
+    float3 value = float3(pixel.rgb);
+    float3 encoded = float3(transfer(value.r), transfer(value.g), transfer(value.b));
+    for (uint c = 0; c < 3; ++c) encoded[c] = adjustTone(encoded[c], adjustments.tone, adjustments.colour.x);
+    value = float3(inverseTransfer(encoded.r), inverseTransfer(encoded.g), inverseTransfer(encoded.b));
+
+    // Colour, in linear light about Rec.2020 luminance, which chroma scaling holds.
+    float luminance = dot(value, float3(0.2627f, 0.6780f, 0.0593f));
+    float3 chroma = value - luminance;
+    float vibrance = adjustments.colour.z;
+    if (vibrance != 0.0f) {
+        float top = max(max(value.r, value.g), value.b);
+        float bottom = min(min(value.r, value.g), value.b);
+        float spread = top - bottom;
+        // How saturated the pixel already is; a boost goes to the muted ones.
+        float saturated = top > 1e-6f ? clamp(spread / top, 0.0f, 1.0f) : 0.0f;
+        // Skin sits between red and yellow with red on top: about 10° to 50° of
+        // hue. Those pixels are protected from most of a boost, not from a cut.
+        float skin = 0.0f;
+        if (value.r >= value.g && value.g >= value.b && spread > 1e-6f) {
+            float hue = (value.g - value.b) / spread;
+            skin = smoothstep(0.15f, 0.35f, hue) * (1.0f - smoothstep(0.65f, 0.9f, hue));
+        }
+        float gain = vibrance > 0.0f
+            ? 1.0f + vibrance * (1.0f - saturated) * (1.0f - 0.75f * skin)
+            : 1.0f + vibrance;
+        chroma *= gain;
+    }
+    chroma *= 1.0f + adjustments.colour.y;
+    output.write(half4(half3(luminance + chroma), pixel.a), p);
+}
+
+// Pass 12, Geometry. The lens's falloff, the gate's unsteadiness and the frame's
 // own edge: everything whose value depends on where in the frame a pixel sits.
 // `geometry` = (vignette, gate weave x, gate weave y, border half-width), the
 // weave and the border in pixels converted from Film-Plane Microns.
@@ -475,12 +577,7 @@ kernel void geometry(texture2d<half, access::sample> input [[texture(0)]],
     output.write(half4(half3(float3(pixel.rgb) * falloff * border), pixel.a), p);
 }
 
-float transfer(float x) {
-    float a = abs(x);
-    return copysign(a <= 0.0031308f ? 12.92f * a : 1.055f * pow(a, 1.0f / 2.4f) - 0.055f, x);
-}
-
-// Pass 12. `output` is `RenderSettings.Output`: 0 leaves the Working Space alone,
+// Pass 13. `output` is `RenderSettings.Output`: 0 leaves the Working Space alone,
 // 1 encodes Display P3 and 2 sRGB. Both share the sRGB transfer function and
 // differ only in primaries, and both keep values outside 0...1 rather than
 // clamping, so EDR headroom survives to the display. A file writer is where

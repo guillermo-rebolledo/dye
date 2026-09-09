@@ -6,8 +6,8 @@ extension Renderer {
     ///
     /// This falls out of MEM-239's tier split rather than being modelled separately:
     /// everything that is a pure per-pixel colour mapping — White Balance, Exposure,
-    /// the Film Response and its Development Offset blend, the Output Stage and the
-    /// Output Transform — is exactly what a cube can carry, and everything the runtime
+    /// the Film Response and its Development Offset blend, the Output Stage, the
+    /// Adjustment Pass and the Output Transform — is exactly what a cube can carry, and everything the runtime
     /// keeps for itself is exactly what it cannot. So the LUT is *rendered*, through
     /// the same shaders and the same Plan as a photograph, with the spatial Passes
     /// off. Nothing here reimplements the look, which is why it cannot drift from it.
@@ -80,6 +80,8 @@ extension Renderer {
         if settings.temperatureKelvin != RenderSettings.defaultTemperatureKelvin || settings.tint != 0 {
             parts.append("\(Int(settings.temperatureKelvin.rounded())) K")
         }
+        // The Adjustment Pass is per-pixel, so a cube carries it whole.
+        if !settings.adjustments.isNeutral { parts.append("adjusted") }
         return parts.joined(separator: " · ")
     }
 }

@@ -80,6 +80,9 @@ struct DeckView: View {
             case .print: return "Print · enlarged onto RA-4 paper · Display P3"
             case .none: return "Reversal · the film is the final image · nothing to scan or print"
             }
+        case .adjust:
+            if model.isIdentity { return "Tone and colour over the working space: there is no film here to come after" }
+            return "Tone and colour over the \(model.adjustedSubject), the way a photo editor works: nothing here reaches the film"
         }
     }
 }
@@ -130,6 +133,8 @@ struct DeckPreview: View {
 #Preview("316 pt · Tri-X · Film") { DeckPreview(stock: "tri-x-400").preferredColorScheme(.dark) }
 #Preview("316 pt · Velvia · Lab") { DeckPreview(stock: "velvia-50", stage: .lab).preferredColorScheme(.dark) }
 #Preview("316 pt · Identity · Lab") { DeckPreview(stock: "identity", stage: .lab).preferredColorScheme(.dark) }
+#Preview("316 pt · Portra · Adjust") { DeckPreview(stage: .adjust).preferredColorScheme(.dark) }
+#Preview("316 pt · Velvia · Adjust") { DeckPreview(stock: "velvia-50", stage: .adjust).preferredColorScheme(.dark) }
 
 #Preview("316 pt · No photo") { DeckPreview(photoLoaded: false).preferredColorScheme(.dark) }
 
