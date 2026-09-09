@@ -19,10 +19,7 @@ struct ShutterDial: View, Animatable {
     }
 
     private var mapping: Scrubber.TrackMap {
-        Scrubber.TrackMap(parameter: parameter,
-            width: CGFloat(parameter.range.upperBound - parameter.range.lowerBound)
-                * Tokens.Discrete.pointsPerStop
-                + 2 * (Tokens.Track.indicatorEndInset + Tokens.Track.indicatorWidth / 2))
+        .shutterDial(for: parameter)
     }
 
     var body: some View {

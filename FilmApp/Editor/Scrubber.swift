@@ -141,6 +141,12 @@ extension Scrubber {
         let parameter: Parameter
         let width: CGFloat
 
+        static func shutterDial(for parameter: Parameter) -> Self {
+            Self(parameter: parameter,
+                 width: CGFloat(parameter.range.upperBound - parameter.range.lowerBound) * Tokens.Discrete.pointsPerStop
+                    + 2 * (Tokens.Track.indicatorEndInset + Tokens.Track.indicatorWidth / 2))
+        }
+
         /// The indicator parks 2 pt inside the end, so half of it plus that inset
         /// is what the track gives up at each end. Every mark on the track uses
         /// this same mapping, which is what keeps the detent tick under the

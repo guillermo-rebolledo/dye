@@ -67,7 +67,8 @@ struct CanvasView: View {
                         }
                         .overlay(alignment: .top) {
                             if let active = drag?.track.parameter ?? (previewReadout ? parameter : nil) {
-                                CanvasReadoutPill(name: active.name, value: active.readout)
+                                CanvasReadoutPill(name: active.name, value: active.readout,
+                                                  widthReference: drag?.widthReference ?? active.readout)
                                     .padding(.top, Tokens.Canvas.readoutTopInset)
                             }
                         }
@@ -95,18 +96,31 @@ struct CanvasView: View {
     private struct FineDrag {
         let track: Scrubber.TrackMap
         let origin: CGFloat
+        let widthReference: String
+
+        init(track: Scrubber.TrackMap) {
+            self.track = track
+            origin = track.origin(of: track.parameter.value.wrappedValue)
+            let parameter = track.parameter
+            // SF Mono has equal advances. Reserve the longest formatted step,
+            // including zero labels, detents and values outside the UI clamp.
+            var candidates = [parameter.readout, parameter.format(parameter.range.upperBound)]
+            for value in stride(from: parameter.range.lowerBound, through: parameter.range.upperBound, by: parameter.step) {
+                candidates.append(parameter.format(value))
+            }
+            if let detent = parameter.detent { candidates.append(parameter.format(detent)) }
+            widthReference = candidates.max { $0.count < $1.count } ?? parameter.readout
+        }
     }
 
     private func fineDrag(_ translation: CGFloat?, width: CGFloat) {
         guard let translation else { drag = nil; return }
         guard let parameter else { return }
         if drag == nil {
-            let trackWidth = parameter.control == .shutterDial
-                ? CGFloat(parameter.range.upperBound - parameter.range.lowerBound) * Tokens.Discrete.pointsPerStop
-                    + 2 * (Tokens.Track.indicatorEndInset + Tokens.Track.indicatorWidth / 2)
-                : width
-            let track = Scrubber.TrackMap(parameter: parameter, width: trackWidth)
-            drag = FineDrag(track: track, origin: track.origin(of: parameter.value.wrappedValue))
+            let track = parameter.control == .shutterDial
+                ? Scrubber.TrackMap.shutterDial(for: parameter)
+                : Scrubber.TrackMap(parameter: parameter, width: width)
+            drag = FineDrag(track: track)
             Haptics.prepare()
         }
         guard let drag else { return }
@@ -213,11 +227,14 @@ private struct RenderTimePill: View {
 private struct CanvasReadoutPill: View {
     let name: String
     let value: String
+    let widthReference: String
 
     var body: some View {
         HStack(spacing: Tokens.Canvas.readoutGap) {
             Text(name).typeStyle(.chipName).foregroundStyle(Tokens.Canvas.compareText)
-            Text(value).typeStyle(.chipValue).monospacedDigit().foregroundStyle(Tokens.Canvas.readoutValue)
+            Text(widthReference).hidden()
+                .overlay(alignment: .leading) { Text(value) }
+                .typeStyle(.chipValue).monospacedDigit().foregroundStyle(Tokens.Canvas.readoutValue)
         }
         .lineLimit(1)
         .padding(.horizontal, Tokens.Metrics.space10)
@@ -268,6 +285,7 @@ private final class CanvasGestureRecognizer: UIGestureRecognizer {
     var onLoupe: (FilmCanvas.Loupe?) -> Void = { _ in }
     private var mode = Mode.waiting
     private var fingers: Set<UITouch> = []
+    private weak var compareTouch: UITouch?
     private var origin = CGPoint.zero
     private var pinchDistance: CGFloat = 0
     private var startingLoupe: FilmCanvas.Loupe?
@@ -288,6 +306,7 @@ private final class CanvasGestureRecognizer: UIGestureRecognizer {
                 do { try await Task.sleep(for: .seconds(Tokens.Canvas.compareHoldDuration)) }
                 catch { return }
                 guard let self, self.mode == .waiting, self.fingers.count == 1 else { return }
+                self.compareTouch = self.fingers.first
                 self.mode = .compare
                 self.state = .began
                 self.onCompare(true)
@@ -329,6 +348,8 @@ private final class CanvasGestureRecognizer: UIGestureRecognizer {
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
         fingers.subtract(touches)
+        // An unrelated finger cannot release the initiating compare hold.
+        if mode == .compare, let compareTouch, !touches.contains(compareTouch) { return }
         // The first lift ends inspection; remaining fingers never start a new mode.
         finish()
         mode = .ignored
@@ -351,6 +372,7 @@ private final class CanvasGestureRecognizer: UIGestureRecognizer {
         holdTask?.cancel()
         holdTask = nil
         fingers.removeAll()
+        compareTouch = nil
         mode = .waiting
     }
 
@@ -381,6 +403,6 @@ private final class CanvasGestureRecognizer: UIGestureRecognizer {
 }
 
 #Preview("Canvas · fine drag readout") {
-    CanvasReadoutPill(name: "Exposure", value: "+0.7 EV")
+    CanvasReadoutPill(name: "Exposure", value: "+0.7 EV", widthReference: "+3.0 EV")
         .padding(Tokens.Metrics.space20).background(Tokens.Palette.canvas)
 }
