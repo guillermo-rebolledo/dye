@@ -632,3 +632,38 @@ extension Tokens {
 extension Tokens.TypeStyle {
     static let cardCaption = Self(size: 10.5, weight: .regular, isMono: false, lineHeight: 13)
 }
+
+// MARK: - Canvas
+
+extension Tokens {
+    enum Canvas {
+        static let compareHeight: CGFloat = 24
+        static let compareRadius: CGFloat = 12
+        static let compareHoldDuration: Double = 0.15
+        static let comparingDeckOpacity: Double = 0.6
+        static let renderHeight: CGFloat = 22
+        static let renderPadding: CGFloat = 8
+        static let idleDelay: Double = 2
+        static let idleOpacity: Double = 0.4
+        static let gateAspectRatio: CGFloat = 4 / 3
+        static let gateRadius: CGFloat = 6
+        static let gateBorderWidth: CGFloat = 1
+        static let hatchWidth: CGFloat = 8
+        static let gateTextGap: CGFloat = 8
+        static let pillFill = Colour.hex(0x0A0A0C, alpha: 0.55).color
+        static let pillBorder = Colour.hex(0xFFFFFF, alpha: 0.14).color
+        static let compareText = Palette.inkOnCanvas(0.85)
+        static let originalText = Colour.hex(0x111111).color
+        static let renderText = Palette.inkOnCanvas(0.7)
+        static let emptyCaption = Palette.inkOnCanvas(0.5)
+        static let gateBorder = Colour.hex(0xFFFFFF, alpha: 0.08).color
+        static let hatch = Colour.hex(0xFFFFFF, alpha: 0.02).color
+    }
+}
+
+extension Tokens.TypeStyle {
+    static let comparePill = Self(size: 11, weight: .medium, isMono: false, lineHeight: 11)
+    static let renderTime = Self(size: 11, weight: .medium, isMono: true, lineHeight: 11)
+    static let emptyTitle = Self(size: 17, weight: .semibold, isMono: false, lineHeight: 20)
+    static let emptyCaption = Self(size: 13, weight: .regular, isMono: false, lineHeight: 16)
+}

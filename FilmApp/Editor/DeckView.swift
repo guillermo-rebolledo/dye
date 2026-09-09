@@ -2,7 +2,7 @@ import SwiftUI
 import PhotosUI
 
 /// The deck owns no render state. The editor supplies photo and presentation
-/// bindings, and MEM-259 will place this shell below the canvas.
+/// bindings; the editor places this shell below the canvas.
 struct DeckView: View {
     let model: EditorModel
     let selection: EditorSelection
@@ -12,12 +12,15 @@ struct DeckView: View {
     let showPresets: () -> Void
     let showContactSheet: () -> Void
     let showExport: () -> Void
+    var error: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let parameters = model.parameters(for: selection.stage)
         VStack(spacing: Tokens.Metrics.space10) {
             StageSelector(selection: selection)
+                .disabled(!hasPhoto)
+                .opacity(hasPhoto ? 1 : Tokens.Deck.unavailableOpacity)
             Text(subLabel).typeStyle(.subLabel).foregroundStyle(Tokens.Deck.quietInk)
                 .lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity)
@@ -25,7 +28,7 @@ struct DeckView: View {
             VStack(spacing: Tokens.Metrics.space10) {
                 ParameterRow(model: model, selection: selection, isEnabled: hasPhoto)
                 ActiveControl(parameter: selection.activeParameter(in: parameters), model: model,
-                              isEnabled: hasPhoto, error: model.error)
+                              isEnabled: hasPhoto, error: error ?? model.error)
             }
             // MEM-260 replaces this 156 pt region when isFilmstripOpen is true.
             // Until then Stock still records its intent in EditorSelection.
