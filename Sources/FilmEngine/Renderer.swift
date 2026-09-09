@@ -49,7 +49,7 @@ public actor Renderer {
         for name in ["passthrough", "whiteBalance", "exposure", "reciprocity", "filmResponse", "monochromeResponse", "scanOutput", "outputTransform",
                      "scatterThreshold", "scatterDownsample", "scatterBlurHorizontal", "scatterBlurVertical",
                      "scatterScale", "scatterUpsample", "scatterComposite",
-                     "mtfBlur", "mtfCombine", "grain", "grainDyeCloud", "geometry"] {
+                     "mtfBlur", "mtfCombine", "grain", "grainDyeCloud", "adjust", "geometry"] {
             guard let function = library.makeFunction(name: name) else { throw FilmError.invalid("Missing shader \(name)") }
             pipelines[name] = try device.makeComputePipelineState(function: function)
         }
@@ -64,7 +64,7 @@ public actor Renderer {
     }
 
     /// The sole renderer test seam. Encoded input is colour-managed before Metal;
-    /// linear input already belongs to the Working Space. All twelve passes run.
+    /// linear input already belongs to the Working Space. All thirteen passes run.
     ///
     /// This is the Preview Render Path: one Tile that is the whole frame. `export`
     /// runs the same graph over many Tiles of one frame.
@@ -175,6 +175,8 @@ public actor Renderer {
             encoder.setBytes(&base, length: MemoryLayout<SIMD4<Float>>.size, index: 7)
             var failure = plan.reciprocity ?? SIMD4(repeating: 1)
             encoder.setBytes(&failure, length: MemoryLayout<SIMD4<Float>>.size, index: 13)
+            var adjustments = plan.adjustments ?? AdjustmentUniforms(tone: .zero, colour: .zero)
+            encoder.setBytes(&adjustments, length: MemoryLayout<AdjustmentUniforms>.stride, index: 15)
             encoder.dispatchThreads(MTLSize(width: input.width, height: input.height, depth: 1),
                 threadsPerThreadgroup: MTLSize(width: 16, height: 16, depth: 1))
             encoder.endEncoding()
@@ -202,6 +204,9 @@ public actor Renderer {
         let scan: Bool
         let grayDensity: SIMD4<Float>
         let baseDensity: SIMD4<Float>
+        /// The Adjustment Pass's controls, or nil when every one is at zero and the
+        /// Pass has nothing to do. Per-pixel, so an Exported LUT carries it.
+        let adjustments: AdjustmentUniforms?
         let bloom: Scatter?
         let halation: Scatter?
         let mtf: MTF?
@@ -285,6 +290,14 @@ public actor Renderer {
         /// (sigma, kernel radius) in pixels, for the fine and the coarse Gaussian.
         let fine: SIMD2<Float>
         let coarse: SIMD2<Float>
+    }
+
+    /// Laid out to match `AdjustmentUniforms` in the shader: `tone` is (black point,
+    /// brightness, shadows, highlights) and `colour` is (contrast, saturation,
+    /// vibrance, unused), with Brilliance already folded in by `adjustments(_:)`.
+    private struct AdjustmentUniforms {
+        var tone: SIMD4<Float>
+        var colour: SIMD4<Float>
     }
 
     /// Laid out to match `GrainUniforms` in the shader; every member is 16-byte aligned.
@@ -398,12 +411,28 @@ public actor Renderer {
                     lower: lower, upper: upper, blend: blend, shaper: shaper, scan: scan,
                     grayDensity: SIMD4(Float(gray.x), Float(gray.y), Float(gray.z), scan ? 1 : 0),
                     baseDensity: SIMD4(Float(base.x), Float(base.y), Float(base.z), 0),
+                    adjustments: Self.adjustments(settings.adjustments),
                     bloom: spatial ? bloom(profile: profile, settings: settings, frame: frame, tile: tile) : nil,
                     halation: spatial ? halation(profile: profile, settings: settings, frame: frame, tile: tile) : nil,
                     mtf: spatial ? mtf(profile: profile, width: width, height: height) : nil,
                     grain: spatial ? grain(profile: profile, settings: settings, width: width, height: height,
                                            base: base, gray: gray, model: grainModel) : nil,
                     geometry: spatial ? geometry(profile: profile, settings: settings, width: width, height: height) : nil)
+    }
+
+    /// Brilliance is not a curve of its own. It is the three moves a photo editor
+    /// makes to bring detail out — open the shadows, pull the highlights back, add
+    /// a little contrast in the middle — made together, so it resolves here to those
+    /// three controls and the shader never sees it. The sums are clamped to where
+    /// each curve stays monotone: shadows and highlights have that headroom above
+    /// one, contrast does not.
+    private static func adjustments(_ a: Adjustments) -> AdjustmentUniforms? {
+        guard !a.isNeutral else { return nil }
+        let shadows = min(max(a.shadows + 0.6 * a.brilliance, -1.5), 1.5)
+        let highlights = min(max(a.highlights - 0.5 * a.brilliance, -1.5), 1.5)
+        let contrast = min(max(a.contrast + 0.3 * a.brilliance, -1), 1)
+        return AdjustmentUniforms(tone: SIMD4(Float(a.blackPoint), Float(a.brightness), Float(shadows), Float(highlights)),
+                                  colour: SIMD4(Float(contrast), Float(a.saturation), Float(a.vibrance), 0))
     }
 
     /// What a Tile of this frame has to carry, and where it may start. Measured against
@@ -782,6 +811,7 @@ public actor Renderer {
         case .reciprocity: plan.reciprocity == nil ? "passthrough" : "reciprocity"
         case .filmResponse: profile.metadata.process.isMonochrome ? "monochromeResponse" : "filmResponse"
         case .outputStage: plan.scan ? "scanOutput" : "passthrough"
+        case .adjust: plan.adjustments == nil ? "passthrough" : "adjust"
         case .outputTransform: "outputTransform"
         default: "passthrough"
         }
@@ -864,9 +894,10 @@ public actor Renderer {
     }
 }
 
-/// The twelve-stage pipeline, in the order the light meets it. Bloom is the taking
-/// lens and so precedes Halation, which happens inside the film.
+/// The thirteen-stage pipeline, in the order the light meets it. Bloom is the taking
+/// lens and so precedes Halation, which happens inside the film; the Adjustment
+/// Pass follows the Output Stage because it is work done to the scan afterwards.
 private enum Pass: String, CaseIterable {
     case decode, whiteBalance, exposure, reciprocity, bloom, halation, mtf, filmResponse, grain,
-         outputStage, geometry, outputTransform
+         outputStage, adjust, geometry, outputTransform
 }

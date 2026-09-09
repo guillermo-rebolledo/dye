@@ -116,12 +116,13 @@ private struct ActiveControlPreview: View {
             ActiveControl(parameter: model.parameters(for: .light).first, model: model)
             ActiveControl(parameter: model.parameters(for: .light).first { $0.id == .temperature }, model: model)
             ActiveControl(parameter: model.parameters(for: .lab).first { $0.id == .vignette }, model: model)
+            ActiveControl(parameter: model.parameters(for: .adjust).first { $0.id == .highlights }, model: model)
             ActiveControl(parameter: model.parameters(for: .light).first, model: model)
         }
         .padding(.horizontal, Tokens.Metrics.space16).background(Tokens.Palette.deck)
     }
 }
 
-#Preview("112 pt · bipolar, live caption, empty caption, error") {
+#Preview("112 pt · bipolar, live caption, empty caption, adjustment, error") {
     ActiveControlPreview().preferredColorScheme(.dark)
 }

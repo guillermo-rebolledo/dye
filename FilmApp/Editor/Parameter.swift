@@ -1,15 +1,15 @@
 import SwiftUI
 import FilmEngine
 
-/// One of the deck's three stages, in the order light travels: what happened to
-/// the light before the film, the Film Response itself, and what happens to the
-/// negative afterwards.
+/// One of the deck's four stages, in the order light travels: what happened to
+/// the light before the film, the Film Response itself, what happens to the
+/// negative afterwards, and what is done to the scan on the computer after that.
 ///
 /// This is the stage *selector's* stage and has nothing to do with the Output
 /// Stage, which is one of the parameters the Lab stage offers. `CONTEXT.md` warns
 /// that bare "stage" collides, so the type is qualified rather than the term.
 enum EditorStage: String, CaseIterable, Identifiable, Hashable {
-    case light, film, lab
+    case light, film, lab, adjust
 
     var id: String { rawValue }
 
@@ -18,6 +18,7 @@ enum EditorStage: String, CaseIterable, Identifiable, Hashable {
         case .light: "Light"
         case .film: "Film"
         case .lab: "Lab"
+        case .adjust: "Adjust"
         }
     }
 }
@@ -41,6 +42,10 @@ enum EditorRange {
     /// is how a shutter speed dial is spaced, over the engine's own seconds range.
     static let exposureTimeStops =
         log2(RenderSettings.exposureSecondsRange.lowerBound)...log2(RenderSettings.exposureSecondsRange.upperBound)
+
+    /// The Adjustments at the ±100 a photo editor shows them, over `Adjustments.range`,
+    /// which is ±1. Not a clamp: the two ranges are the same range in different units.
+    static let adjustment = Adjustments.range.lowerBound * 100...Adjustments.range.upperBound * 100
 }
 
 /// One control the deck can offer, as a value rather than as a call site.
@@ -61,6 +66,7 @@ struct Parameter: Identifiable {
         case exposure, temperature, tint, exposureTime
         case contrastFilter, development, bloom, halation, grain
         case outputStage, vignette, gateWeave, frameBorder
+        case brilliance, highlights, shadows, contrast, brightness, blackPoint, saturation, vibrance
     }
 
     /// Which control draws the parameter. Not everything is a scrubber, and the
@@ -179,6 +185,15 @@ extension Parameter {
         case .gateWeave: return defaults.gateWeave
         case .frameBorder: return defaults.frameBorder
         case .contrastFilter, .outputStage: return 0
+        // Every Adjustment defaults to not applied, and the deck shows it at ×100.
+        case .brilliance: return defaults.adjustments.brilliance * 100
+        case .highlights: return defaults.adjustments.highlights * 100
+        case .shadows: return defaults.adjustments.shadows * 100
+        case .contrast: return defaults.adjustments.contrast * 100
+        case .brightness: return defaults.adjustments.brightness * 100
+        case .blackPoint: return defaults.adjustments.blackPoint * 100
+        case .saturation: return defaults.adjustments.saturation * 100
+        case .vibrance: return defaults.adjustments.vibrance * 100
         }
     }
 
@@ -224,10 +239,11 @@ extension EditorModel {
         case .light: lightParameters
         case .film: filmParameters
         case .lab: labParameters
+        case .adjust: adjustParameters
         }
     }
 
-    /// Every parameter on offer, across all three stages.
+    /// Every parameter on offer, across all four stages.
     var allParameters: [Parameter] { EditorStage.allCases.flatMap(parameters(for:)) }
 
     private var lightParameters: [Parameter] {
@@ -362,6 +378,34 @@ extension EditorModel {
         return parameters
     }
 
+    /// The photo editor's controls over the scan, every one of them for every
+    /// Stock: the Adjustment Pass acts on whatever the Output Stage returned, so
+    /// there is no Stock it has nothing to act on. Exposure, Temperature and Tint
+    /// are not repeated here. They exist on the Light stage, where they change the
+    /// light the film received, and a second set that changed the scan instead
+    /// would be two controls with one name.
+    ///
+    /// All eight are bipolar, ±100 over the engine's ±1, and zero is the detent:
+    /// not the least of the effect but the effect not applied.
+    private var adjustParameters: [Parameter] {
+        func adjustment(_ id: Parameter.Identity, _ name: String, _ keyPath: WritableKeyPath<Adjustments, Double>,
+                        caption: @escaping () -> String) -> Parameter {
+            Parameter(id: id, name: name, stage: .adjust, value: adjustmentBinding(keyPath),
+                      range: EditorRange.adjustment, step: 1, detent: 0,
+                      format: Self.adjustmentLabel, caption: caption)
+        }
+        return [
+            adjustment(.brilliance, "Brilliance", \.brilliance) { [weak self] in self?.brillianceHint ?? "" },
+            adjustment(.highlights, "Highlights", \.highlights) { [weak self] in self?.highlightsHint ?? "" },
+            adjustment(.shadows, "Shadows", \.shadows) { [weak self] in self?.shadowsHint ?? "" },
+            adjustment(.contrast, "Contrast", \.contrast) { [weak self] in self?.contrastHint ?? "" },
+            adjustment(.brightness, "Brightness", \.brightness) { [weak self] in self?.brightnessHint ?? "" },
+            adjustment(.blackPoint, "Black point", \.blackPoint) { [weak self] in self?.blackPointHint ?? "" },
+            adjustment(.saturation, "Saturation", \.saturation) { [weak self] in self?.saturationHint ?? "" },
+            adjustment(.vibrance, "Vibrance", \.vibrance) { [weak self] in self?.vibranceHint ?? "" },
+        ]
+    }
+
     // MARK: - Bindings
 
     private func binding(_ keyPath: ReferenceWritableKeyPath<EditorModel, Double>) -> Binding<Double> {
@@ -390,6 +434,13 @@ extension EditorModel {
                        set: { self.outputStage = stages[Self.index($0, in: stages)] })
     }
 
+    /// An Adjustment as the ±100 the deck shows, over the ±1 the engine stores. The
+    /// read is rounded so a value that went in as a whole number comes back as one.
+    private func adjustmentBinding(_ keyPath: WritableKeyPath<Adjustments, Double>) -> Binding<Double> {
+        Binding(get: { (self.settings.adjustments[keyPath: keyPath] * 100).rounded() },
+                set: { self.settings.adjustments[keyPath: keyPath] = min(max($0, -100), 100) / 100 })
+    }
+
     private static func index<Element>(_ value: Double, in list: [Element]) -> Int {
         min(max(Int(value.rounded()), 0), list.count - 1)
     }
@@ -397,6 +448,12 @@ extension EditorModel {
     // MARK: - Formats
 
     private static func percentage(_ value: Double) -> String { String(format: "%.0f%%", value * 100) }
+
+    /// Signed either side of zero, and a bare zero at the detent, which is where a
+    /// photo editor's own readout puts it.
+    private static func adjustmentLabel(_ value: Double) -> String {
+        value == 0 ? "0" : String(format: "%+.0f", value)
+    }
 
     private static func developmentLabel(_ offset: Double) -> String {
         if abs(offset) < 0.05 { return "normal" }
@@ -507,6 +564,64 @@ extension EditorModel {
         }
         if abs(intensity - 1) < 0.025 { return "At this stock's own granularity. " + base }
         return String(format: "At %.0f%% of this stock's own granularity. ", intensity * 100) + base
+    }
+
+    /// What the Adjustments act on, named the way the Lab stage names it: the scan,
+    /// the print, the transparency, or for Identity the working space itself.
+    var adjustedSubject: String {
+        if isIdentity { return "working space" }
+        switch outputStage {
+        case .scan: return "scan"
+        case .print: return "print"
+        case .none: return "transparency"
+        }
+    }
+
+    /// The Adjustment captions all make the same first point, because it is the one
+    /// a photo editor's controls never have to make: these act on the scan, after
+    /// the film, and what the emulsion did not keep is not there for them to find.
+    var brillianceHint: String {
+        "Opens the shadows, pulls the highlights back and adds a little contrast in the middle, all in one move, "
+            + "so detail reads without the picture going flat. It works on the \(adjustedSubject), after the film: "
+            + "what the emulsion kept in the shadows is what there is to bring out."
+    }
+
+    var highlightsHint: String {
+        "The brightest tones only. Pull it down to recover a highlight that is at or past white, as far as the "
+            + "film's own shoulder left anything there to recover, or push it up to make the brights sing. "
+            + "Mid-grey and everything below it stay where they are."
+    }
+
+    var shadowsHint: String {
+        "The darkest tones only. Lift them to open what the film kept in the shadows, or lower them to close "
+            + "the picture down. Black stays black and the highlights barely move."
+    }
+
+    var contrastHint: String {
+        "The separation of light from dark about mid-grey, as an S-curve with black and white held. Raise it "
+            + "and the picture snaps; lower it and it flattens toward the \(adjustedSubject)'s own softness. "
+            + "This is not the film's contrast, which Development sets."
+    }
+
+    var brightnessHint: String {
+        "The midtones, with black and white held where they are. Unlike Exposure, which changes how much light "
+            + "reached the film, this moves the \(adjustedSubject) afterwards and nothing in the emulsion's response changes."
+    }
+
+    var blackPointHint: String {
+        "Where black sits. Raise it and the deepest tones crush into a true black; lower it and black lifts to a "
+            + "matte grey, the way a print on soft paper does. The frame border, if there is one, stays unexposed either way."
+    }
+
+    var saturationHint: String {
+        "Every colour's intensity equally, about its own luminance, so a saturated frame keeps its brightness. "
+            + "All the way down is a neutral grey, which is not a black & white stock: a Monochrome Collapse weighs "
+            + "the colours the way its emulsion does, and this weighs them all the same."
+    }
+
+    var vibranceHint: String {
+        "Boosts the muted colours more than the ones already vivid, and holds back on skin, so a face survives "
+            + "what the sky gets. Pulled down, it is a plain desaturation."
     }
 
     /// A Stock with no Output Stage is not offered a disabled scan-or-print choice;

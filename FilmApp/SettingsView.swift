@@ -49,7 +49,7 @@ struct GlossaryView: View {
 
     var body: some View {
         List {
-            ForEach(["Controls", "Light", "Film", "Lab", "Export"], id: \.self) { section in
+            ForEach(["Controls", "Light", "Film", "Lab", "Adjust", "Export"], id: \.self) { section in
                 let items = matches.filter { $0.section == section }
                 if !items.isEmpty {
                     Section(section) {
@@ -106,9 +106,17 @@ private struct GlossaryEntry: Identifiable {
         .init(section: "Lab", title: "Vignette", explanation: "Darken the edges of the frame. Zero leaves the edges unchanged."),
         .init(section: "Lab", title: "Gate weave", explanation: "Add simulated film-gate displacement. Zero keeps the frame steady."),
         .init(section: "Lab", title: "Frame border", explanation: "Add a border around the image. Zero leaves it borderless."),
+        .init(section: "Adjust", title: "Brilliance", explanation: "Brighten the shadows, tone down the highlights and add midtone contrast together, so detail stands out. Applies to the scan after the film, like a photo editor. Zero is off."),
+        .init(section: "Adjust", title: "Highlights", explanation: "Adjust only the brightest parts of the photo. Negative values recover highlights at or past white; positive values push them up."),
+        .init(section: "Adjust", title: "Shadows", explanation: "Adjust only the darkest parts of the photo. Positive values reveal shadow detail; negative values deepen it. Black stays black."),
+        .init(section: "Adjust", title: "Contrast", explanation: "Increase or decrease the difference between light and dark areas about mid-grey. Black and white are held in place."),
+        .init(section: "Adjust", title: "Brightness", explanation: "Shift the midtones while keeping black and white where they are. Unlike Exposure, this changes the scan rather than the light reaching the film."),
+        .init(section: "Adjust", title: "Black point", explanation: "Set the darkest point of the image. Positive values deepen the blacks; negative values lift them to a matte grey."),
+        .init(section: "Adjust", title: "Saturation", explanation: "Adjust the overall colour intensity. −100 is a neutral grey at the same brightness."),
+        .init(section: "Adjust", title: "Vibrance", explanation: "Boost muted colours more than vivid ones while keeping skin tones natural. Negative values desaturate evenly."),
         .init(section: "Export", title: "Photo format", explanation: "HEIF and JPEG save eight bits per colour channel. TIFF saves sixteen bits per channel. Save to Photos renders the full-resolution image and adds it to your device’s photo library after permission is granted."),
         .init(section: "Export", title: "Colour space", explanation: "Display P3 preserves a wider range of colours. sRGB is useful for destinations that may discard colour profiles. Exported photos include a colour profile."),
         .init(section: "Export", title: "Photo date", explanation: "Today uses the current date. Original date uses the source photo’s date when available. If the source has no original date, the app uses today. A photo saved with an older date may appear earlier in a date-sorted library."),
-        .init(section: "Export", title: "LUT", explanation: "A .cube LUT stores a colour mapping: the stock’s response, exposure, white balance and development. It excludes spatial effects such as grain, halation, bloom, micro-contrast and vignette, so it will not reproduce the complete rendered photo. Use Share to save or send the LUT file.")
+        .init(section: "Export", title: "LUT", explanation: "A .cube LUT stores a colour mapping: the stock’s response, exposure, white balance, development and adjustments. It excludes spatial effects such as grain, halation, bloom, micro-contrast and vignette, so it will not reproduce the complete rendered photo. Use Share to save or send the LUT file.")
     ]
 }

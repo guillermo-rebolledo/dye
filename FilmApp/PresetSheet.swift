@@ -163,7 +163,7 @@ struct PresetRow: Identifiable, Equatable {
         return EditorModel.PresetRender(id: id, stockID: preset.stockID, settings: settings)
     }
 
-    /// `Portra 400 · +0.3 EV · 5200 K · Print`, from the decoded settings alone.
+    /// `Portra 400 · +0.3 EV · 5200 K · Print · adjusted`, from the decoded settings alone.
     var summary: String {
         guard let settings else { return "Saved before this version; cannot be read" }
         return Self.look(profile, settings: settings, fallbackStockName: preset.stockID)
@@ -196,6 +196,8 @@ struct PresetRow: Identifiable, Equatable {
                                 settings.developmentOffset))
         }
         if settings.outputStage == OutputStage.print { parts.append(OutputStage.print.displayName) }
+        // One word for all eight: a line that listed them would name nothing.
+        if !settings.adjustments.isNeutral { parts.append("adjusted") }
         return parts.joined(separator: " · ")
     }
 }

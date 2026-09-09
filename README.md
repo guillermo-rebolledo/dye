@@ -21,11 +21,11 @@ concurrency; the renderer actor owns GPU state and keeps work off the UI actor.
 The renderer's sole entry point accepts encoded photo bytes or linear Rec.2020
 float16 pixels, a Profile and RenderSettings. ImageIO/Core Graphics honour the
 input colour profile; CIRAWFilter handles RAW's camera colour matrix. Core Image
-is confined to RAW decode. The ordered twelve-pass Metal graph uses RGBA16Float
+is confined to RAW decode. The ordered thirteen-pass Metal graph uses RGBA16Float
 textures throughout. White Balance, Exposure, Bloom, Halation, MTF, Film Response
 (tetrahedral Colour Cube sampling for colour, a Monochrome Collapse and Density
-Curve for black & white), Grain, the Output Stage, Geometry and the
-Display P3 output transform alter pixels; Reciprocity does too, for a Stock and an
+Curve for black & white), Grain, the Output Stage, the Adjustment Pass, Geometry
+and the Display P3 output transform alter pixels; Reciprocity does too, for a Stock and an
 exposure time that call for it, and is a pass-through everywhere else.
 The canvas displays the tagged P3 result with Metal.
 

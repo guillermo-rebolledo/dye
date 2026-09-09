@@ -28,7 +28,8 @@ A render applies **Passes** in a fixed order to a photograph, in the **Working S
 The user's controls sit at specific points in that order — **Exposure** and
 **White Balance** before the **Film Response**, **Development Offset** selecting
 between Colour Cubes, **Bloom**, **Halation** and **Grain** scaled relative to the
-Profile's own values. A **Preset** saves a Stock plus those settings.
+Profile's own values, and the **Adjustments** over the scan after the **Output
+Stage**. A **Preset** saves a Stock plus those settings.
 
 ## Language
 
@@ -157,7 +158,7 @@ _Avoid_: generator, compiler, toolchain
 ### The pipeline
 
 **Pass**:
-One stage of the twelve-stage render pipeline. Their order is a correctness
+One stage of the thirteen-stage render pipeline. Their order is a correctness
 requirement, not a performance preference.
 _Avoid_: step, stage (collides with Output Stage), filter, node
 
@@ -296,6 +297,28 @@ The developed reversal image itself, read by transmission under a viewing light
 rather than scanned or printed. A reversal Stock's Colour Cube carries one, which
 is what makes its Output Stage `none` rather than merely unimplemented.
 _Avoid_: slide, chrome, projection
+
+**Adjustment Pass**:
+The Pass applying the Adjustments to the positive the Output Stage returned — or
+to the Transparency, or for the identity Profile to the Working Space itself. It
+follows the Output Stage and precedes Geometry, because it is work done to the
+scan afterwards and the Frame Border is not part of the scan. Per-pixel, so an
+Exported LUT carries it. At neutral it does not run at all.
+_Avoid_: grade, develop module, post, colour correction
+
+**Adjustments**:
+The user's tone and colour controls over the scan, the ones a photo editor offers:
+Brilliance, Highlights, Shadows, Contrast, Brightness, Black Point, Saturation and
+Vibrance. Bipolar, ±1 in the engine and ±100 in the app, with zero meaning not
+applied. Exposure, Temperature and Tint are not Adjustments: they are the Light
+controls and act before the film.
+_Avoid_: edits, tweaks, sliders, corrections, develop settings
+
+**Brilliance**:
+An Adjustment that is not a curve of its own: the shadows opened, the highlights
+pulled back and a little midtone contrast added, together. The renderer resolves
+it to those three before the shader sees it.
+_Avoid_: clarity, dehaze, pop
 
 **Geometry**:
 The Pass applying everything whose value depends on where in the frame a pixel
