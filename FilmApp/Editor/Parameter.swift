@@ -161,6 +161,30 @@ struct Parameter: Identifiable {
     }
 }
 
+// The reset is the setting's default, not its detent: tungsten Stock Balance
+// is 3200 K, while a fresh editor's Scene Illuminant is still 5500 K.
+extension Parameter {
+    var defaultValue: Double {
+        let defaults = RenderSettings()
+        switch id {
+        case .exposure: return defaults.exposureStops
+        case .temperature: return defaults.temperatureKelvin
+        case .tint: return defaults.tint
+        case .exposureTime: return log2(defaults.exposureSeconds)
+        case .development: return min(max(defaults.developmentOffset, range.lowerBound), range.upperBound)
+        case .bloom: return defaults.bloomIntensity
+        case .halation: return defaults.halationIntensity
+        case .grain: return defaults.grainIntensity
+        case .vignette: return defaults.vignette
+        case .gateWeave: return defaults.gateWeave
+        case .frameBorder: return defaults.frameBorder
+        case .contrastFilter, .outputStage: return 0
+        }
+    }
+
+    var isModified: Bool { abs(value.wrappedValue - defaultValue) > 0.000001 }
+}
+
 // MARK: - The parameters a Stock offers
 
 extension EditorModel {
@@ -459,9 +483,11 @@ extension EditorModel {
 
     /// A Stock with no Output Stage is not offered a disabled scan-or-print choice;
     /// the copy says why there is nothing to choose and moves on to the geometry.
-    var outputDescription: String {
+    var outputDescription: String { outputDescription(for: outputStage) }
+
+    func outputDescription(for stage: OutputStage) -> String {
         if isIdentity { return "Nothing happens after the identity response; the image is converted for the display." }
-        switch outputStage {
+        switch stage {
         case .scan: return "The negative is scanned: densities are inverted and auto-balanced so mid-grey comes back neutral, the way most people picture this stock."
             + (outputStages.isEmpty ? "" : " A print of the same negative is a different picture, not a filter over this one.")
         case .print: return "The negative is enlarged onto RA-4 colour paper. The enlarger's filter pack is set so mid-grey prints neutral, "
