@@ -63,34 +63,11 @@ struct Raised<S: InsettableShape>: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .background(shape.fill(face.gradient(pressed: pressed)))
-            .overlay(topEdge)
+            .background(shape.fill(pressed ? Tokens.Palette.wellSegment : Tokens.Palette.chip))
             .overlay(shape.strokeBorder(Tokens.Palette.edgeHairline,
                                         lineWidth: Tokens.Elevation.hairlineWidth))
-            .compositingGroup()
-            // A pressed face has already travelled its millimetre, so it casts a
-            // shorter shadow than one at rest.
-            .shadow(color: Tokens.Palette.shade(Tokens.Elevation.castShade),
-                    radius: pressed ? Tokens.Elevation.castBlurPressed : Tokens.Elevation.castBlur,
-                    y: pressed ? Tokens.Elevation.castOffsetPressed : Tokens.Elevation.castOffset)
-            .offset(y: pressed ? Tokens.Motion.pressDepth : 0)
     }
 
-    /// At rest, a 1 pt highlight along the top edge, fading out down the sides.
-    /// Pressed, that highlight flips to a shadow falling in from above.
-    @ViewBuilder private var topEdge: some View {
-        if pressed {
-            InsetShadow(shape: shape,
-                        colour: Tokens.Palette.shade(Tokens.Elevation.pressedInsetShade),
-                        blur: Tokens.Elevation.pressedInsetBlur,
-                        offsetY: Tokens.Elevation.pressedInsetOffset)
-        } else {
-            shape.strokeBorder(
-                LinearGradient(colors: [Tokens.Palette.edgeHighlight, .clear],
-                               startPoint: .top, endPoint: .bottom),
-                lineWidth: Tokens.Elevation.highlightWidth)
-        }
-    }
 }
 
 // MARK: - Recessed
@@ -103,10 +80,6 @@ struct Recessed<S: InsettableShape>: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(shape.fill(fill))
-            .overlay(InsetShadow(shape: shape,
-                                 colour: Tokens.Palette.shade(depth.shade),
-                                 blur: depth.blur,
-                                 offsetY: Tokens.Elevation.wellInsetOffset))
             .overlay(shape.strokeBorder(Tokens.Palette.wellHairline,
                                         lineWidth: Tokens.Elevation.hairlineWidth))
             .compositingGroup()

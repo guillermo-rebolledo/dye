@@ -42,7 +42,7 @@ struct CanvasView: View {
         GeometryReader { geometry in
             Group {
                 switch content {
-                case let .photo(pixels, before, milliseconds):
+                case let .photo(pixels, before, _):
                     FilmCanvas(image: isComparing ? before ?? pixels : pixels, loupe: loupe)
                         // Never inherit a crossfade from changes to the chrome.
                         .transaction { $0.animation = nil }
@@ -72,13 +72,6 @@ struct CanvasView: View {
                                     .padding(.top, Tokens.Canvas.readoutTopInset)
                             }
                         }
-                        .overlay(alignment: .bottomTrailing) {
-                            if let milliseconds {
-                                RenderTimePill(milliseconds: milliseconds)
-                                    .opacity(isComparing ? 0 : 1)
-                                    .padding(Tokens.Metrics.space10)
-                            }
-                        }
                 case .empty, .loading:
                     emptyGate
                         .aspectRatio(Tokens.Canvas.gateAspectRatio, contentMode: .fit)
@@ -94,11 +87,11 @@ struct CanvasView: View {
     }
 
     private struct FineDrag {
-        let track: Scrubber.TrackMap
+        let track: ParameterDial.TrackMap
         let origin: CGFloat
         let widthReference: String
 
-        init(track: Scrubber.TrackMap) {
+        init(track: ParameterDial.TrackMap) {
             self.track = track
             origin = track.origin(of: track.parameter.value.wrappedValue)
             let parameter = track.parameter
@@ -116,15 +109,15 @@ struct CanvasView: View {
     private func fineDrag(_ translation: CGFloat?, width: CGFloat) {
         guard let translation else { drag = nil; return }
         guard let parameter else { return }
+        let isDial = parameter.control == .dial || parameter.control == .shutterDial
         if drag == nil {
-            let track = parameter.control == .shutterDial
-                ? Scrubber.TrackMap.shutterDial(for: parameter)
-                : Scrubber.TrackMap(parameter: parameter, width: width)
+            let track = isDial ? ParameterDial.TrackMap.dial(for: parameter)
+                               : ParameterDial.TrackMap(parameter: parameter, width: width)
             drag = FineDrag(track: track)
             Haptics.prepare()
         }
         guard let drag else { return }
-        let direction: CGFloat = parameter.control == .shutterDial ? -1 : 1
+        let direction: CGFloat = isDial ? -1 : 1
         let outcome = drag.track.resolve(drag.origin + translation * Tokens.Canvas.dragGain * direction)
         let previous = parameter.value.wrappedValue
         guard outcome.value != previous else { return }
@@ -136,7 +129,8 @@ struct CanvasView: View {
     }
 
     private var comparePill: some View {
-        Text(isComparing ? "Original" : "Hold to compare")
+        Text("Original")
+            .opacity(isComparing ? 1 : 0)
             .typeStyle(.comparePill)
             .foregroundStyle(isComparing ? Tokens.Canvas.originalText : Tokens.Canvas.compareText)
             .padding(.horizontal, Tokens.Metrics.space10)
@@ -173,10 +167,7 @@ struct CanvasView: View {
             VStack(spacing: Tokens.Canvas.gateTextGap) {
                 Text(isLoading ? "Decoding…" : "Open a photo")
                     .typeStyle(.emptyTitle).foregroundStyle(Tokens.Palette.inkOnCanvas)
-                if !isLoading {
-                    Text("Choose a photo to begin.")
-                        .typeStyle(.emptyCaption).foregroundStyle(Tokens.Canvas.emptyCaption)
-                }
+
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: Tokens.Canvas.gateRadius))
@@ -189,34 +180,6 @@ struct CanvasView: View {
     private var isLoading: Bool {
         if case .loading = content { return true }
         return false
-    }
-}
-
-private struct RenderTimePill: View {
-    let milliseconds: Double
-    @State private var isIdle = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        Text("\(milliseconds, specifier: "%.0f") ms")
-            .typeStyle(.renderTime).monospacedDigit()
-            .foregroundStyle(Tokens.Canvas.renderText)
-            .padding(.horizontal, Tokens.Canvas.renderPadding)
-            .frame(height: Tokens.Canvas.renderHeight)
-            .background {
-                Capsule().fill(.ultraThinMaterial)
-                    .environment(\.colorScheme, .dark)
-                    .overlay(Capsule().fill(Tokens.Canvas.pillFill))
-            }
-            .overlay(Capsule().strokeBorder(Tokens.Canvas.pillBorder, lineWidth: Tokens.Elevation.hairlineWidth))
-            .opacity(isIdle ? Tokens.Canvas.idleOpacity : 1)
-            .allowsHitTesting(false)
-            .task(id: milliseconds) {
-                isIdle = false
-                do { try await Task.sleep(for: .seconds(Tokens.Canvas.idleDelay)) }
-                catch { return }
-                withAnimation(Tokens.Motion.ease(Tokens.Motion.tick, reduceMotion: reduceMotion)) { isIdle = true }
-            }
     }
 }
 

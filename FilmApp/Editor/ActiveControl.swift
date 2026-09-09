@@ -4,12 +4,8 @@ struct ActiveControl: View {
     let parameter: Parameter?
     let model: EditorModel
     var isEnabled = true
-    var error: String?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var switchingCaption = false
-
-    private var caption: String { isEnabled ? parameter?.captionText ?? "" : "" }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,18 +24,10 @@ struct ActiveControl: View {
             .id(parameter?.id)
             .transition(.opacity)
             .animation(Tokens.Motion.ease(Tokens.Motion.parameterSwitch, reduceMotion: reduceMotion), value: parameter?.id)
-            captionSlot.frame(height: Tokens.Deck.captionHeight + Tokens.Deck.extraHeight(for: dynamicTypeSize), alignment: .topLeading)
         }
         .frame(height: Tokens.Deck.controlHeight + Tokens.Deck.extraHeight(for: dynamicTypeSize))
         .onChange(of: parameter?.id) {
             Haptics.parameterSwitch()
-        }
-        .task(id: parameter?.id) {
-            guard !reduceMotion else { switchingCaption = false; return }
-            switchingCaption = true
-            do { try await Task.sleep(for: .seconds(Tokens.Motion.parameterSwitch)) }
-            catch { return }
-            switchingCaption = false
         }
         .onChange(of: observedValue) { previous, current in
             guard previous.id == current.id, isEnabled, let parameter,
@@ -71,14 +59,9 @@ struct ActiveControl: View {
             Text(parameter?.name ?? "").typeStyle(.controlName)
                 .foregroundStyle(Tokens.Palette.textPrimary)
                 .lineLimit(1)
-            if !caption.isEmpty {
-                Image(systemName: "info.circle").font(Tokens.TypeStyle.caption.font)
-                    .foregroundStyle(Tokens.Deck.quietInk)
-                    .accessibilityHidden(true)
-            }
             Spacer(minLength: 0)
-            if isEnabled, let tag = parameter?.tag {
-                Text(tag == .off ? "● OFF" : "● DETENT").typeStyle(.tag)
+            if isEnabled, parameter?.tag == .off {
+                Text("OFF").typeStyle(.tag)
                     .foregroundStyle(Tokens.Palette.accent)
             }
         }
@@ -110,8 +93,8 @@ struct ActiveControl: View {
     @ViewBuilder private var track: some View {
         if let parameter {
             switch parameter.control {
-            case .scrubber:
-                Scrubber(parameter: parameter, isEnabled: isEnabled)
+            case .dial:
+                ParameterDial(parameter: parameter, isEnabled: isEnabled)
                     .padding(.horizontal, -Tokens.Metrics.space16)
             case .shutterDial:
                 ShutterDial(parameter: parameter, isEnabled: isEnabled)
@@ -123,23 +106,7 @@ struct ActiveControl: View {
         } else { Color.clear }
     }
 
-    private var captionSlot: some View {
-        // Keep the complete copy available at the largest size without ever
-        // increasing the deck again. Scrolling is confined to the caption slot.
-        ScrollView(.vertical) {
-            Text(error ?? (switchingCaption ? "" : caption)).typeStyle(.caption)
-                .foregroundStyle(error == nil ? Tokens.Deck.captionInk : Tokens.Palette.destructive)
-                .lineLimit(dynamicTypeSize >= .accessibility5 ? nil : Tokens.Deck.captionLines(for: dynamicTypeSize))
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityLabel(error.map { "Error: \($0)" } ?? caption)
-                .id(error ?? caption)
-                .transition(.opacity)
-        }
-        .scrollDisabled(dynamicTypeSize < .accessibility5)
-        .id(parameter?.id)
-        .animation(Tokens.Motion.ease(Tokens.Motion.captionCrossfade, reduceMotion: reduceMotion), value: caption)
-    }
+
 }
 
 private struct ActiveControlPreview: View {
@@ -149,8 +116,7 @@ private struct ActiveControlPreview: View {
             ActiveControl(parameter: model.parameters(for: .light).first, model: model)
             ActiveControl(parameter: model.parameters(for: .light).first { $0.id == .temperature }, model: model)
             ActiveControl(parameter: model.parameters(for: .lab).first { $0.id == .vignette }, model: model)
-            ActiveControl(parameter: model.parameters(for: .light).first, model: model,
-                          error: "The photo could not be rendered.")
+            ActiveControl(parameter: model.parameters(for: .light).first, model: model)
         }
         .padding(.horizontal, Tokens.Metrics.space16).background(Tokens.Palette.deck)
     }

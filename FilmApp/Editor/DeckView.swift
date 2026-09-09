@@ -23,10 +23,6 @@ struct DeckView: View {
             StageSelector(selection: selection)
                 .disabled(!hasPhoto)
                 .opacity(hasPhoto ? 1 : Tokens.Deck.unavailableOpacity)
-            Text(subLabel).typeStyle(.subLabel).foregroundStyle(Tokens.Deck.quietInk)
-                .lineLimit(1).truncationMode(.tail)
-                .frame(maxWidth: .infinity)
-                .frame(height: Tokens.Deck.subLabelHeight)
             Group {
                 if selection.isFilmstripOpen && hasPhoto {
                     Filmstrip(catalogue: model.catalogue, thumbnails: model.thumbnails,
@@ -37,16 +33,24 @@ struct DeckView: View {
                     VStack(spacing: Tokens.Metrics.space10) {
                         ParameterRow(model: model, selection: selection, isEnabled: hasPhoto)
                         ActiveControl(parameter: selection.activeParameter(in: parameters), model: model,
-                                      isEnabled: hasPhoto, error: error ?? model.error)
+                                      isEnabled: hasPhoto)
                     }
                 }
             }
-            .frame(height: Tokens.Filmstrip.height + Tokens.Deck.extraHeight(for: dynamicTypeSize))
+            .frame(height: (selection.isFilmstripOpen && hasPhoto ? Tokens.Filmstrip.height : Tokens.Deck.parameterAreaHeight) + Tokens.Deck.extraHeight(for: dynamicTypeSize))
             .id(selection.stage)
             .transition(.asymmetric(
                 insertion: .offset(x: reduceMotion ? 0 : Tokens.Motion.stageSlide).combined(with: .opacity),
                 removal: .offset(x: reduceMotion ? 0 : -Tokens.Motion.stageSlide).combined(with: .opacity)))
             .animation(Tokens.Motion.ease(Tokens.Motion.stageSwitch, reduceMotion: reduceMotion), value: selection.stage)
+            if let message = error ?? model.error {
+                ScrollView {
+                    Text(message).typeStyle(.caption).foregroundStyle(Tokens.Palette.destructive)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityLabel("Error: \(message)")
+                }
+                .frame(height: 44)
+            }
             ActionRow(photo: $photo, hasPhoto: hasPhoto, canExport: model.canExport || model.isExporting,
                       showPresets: showPresets, showContactSheet: showContactSheet, showExport: showExport,
                       isLoupeEnabled: $isLoupeEnabled)
@@ -56,7 +60,7 @@ struct DeckView: View {
         // The remaining 30 pt are the fixed bottom gutter. Background extends
         // through the device's home-indicator safe area without moving contents.
         .frame(maxWidth: .infinity)
-        .frame(height: Tokens.Deck.height + Tokens.Deck.extraHeight(for: dynamicTypeSize), alignment: .top)
+        .frame(height: Tokens.Deck.height + (selection.isFilmstripOpen && hasPhoto ? Tokens.Filmstrip.height - Tokens.Deck.parameterAreaHeight : 0) + Tokens.Deck.extraHeight(for: dynamicTypeSize) + ((error ?? model.error) == nil ? 0 : 54), alignment: .top)
         .background(Tokens.Palette.deck.ignoresSafeArea(edges: .bottom))
         .overlay(alignment: .top) { Tokens.Deck.border.frame(height: Tokens.Elevation.hairlineWidth) }
         .onChange(of: parameters.map(\.id), initial: true) {
@@ -64,24 +68,7 @@ struct DeckView: View {
         }
     }
 
-    private var subLabel: String {
-        guard hasPhoto else { return "No photo loaded" }
-        switch selection.stage {
-        case .light: return "Light as it reached the emulsion on the day."
-        case .film:
-            if model.isIdentity { return "No film: the working space passes straight through" }
-            let metadata = model.profile.metadata
-            let approximation = metadata.isApproximation ? " · approximation" : ""
-            return "\(metadata.displayName) · \(metadata.process.displayName) · balanced for \(Int(metadata.balance)) K\(approximation)"
-        case .lab:
-            if model.isIdentity { return "Display P3" }
-            switch model.outputStage {
-            case .scan: return "Scan · Display P3"
-            case .print: return "Print · enlarged onto RA-4 paper · Display P3"
-            case .none: return "Reversal · the film is the final image · nothing to scan or print"
-            }
-        }
-    }
+
 }
 
 /// Interactive acceptance fixture. The measured height is independent of Stock,

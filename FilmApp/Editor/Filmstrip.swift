@@ -12,33 +12,11 @@ struct Filmstrip: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var profiles: [Profile] { [.identity] + catalogue }
-    private var selectedProfile: Profile { profiles.first { $0.id == selectedStock } ?? .identity }
-
-    private var provenance: String? {
-        guard let parentID = selectedProfile.metadata.derivedFrom else { return nil }
-        let parent = catalogue.first { $0.id == parentID }?.metadata.displayName ?? parentID
-        if selectedProfile.id == "cinestill-800t" {
-            return "Same emulsion as \(parent); no remjet."
-        }
-        return "Derived from \(parent)."
-    }
-
     var body: some View {
         VStack(spacing: Tokens.Filmstrip.footerGap) {
             strip
             HStack(spacing: Tokens.Metrics.space10) {
-                VStack(alignment: .leading, spacing: 0) {
-                    legend
-                        .frame(height: Tokens.Filmstrip.footerLineHeight)
-                    if let provenance {
-                        Text(provenance).typeStyle(.filmProvenance)
-                            .foregroundStyle(Tokens.Deck.captionInk)
-                            .lineLimit(1).truncationMode(.tail)
-                            .accessibilityLabel(provenance)
-                        .frame(height: Tokens.Filmstrip.footerLineHeight)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                Spacer(minLength: 0)
                 Button { Haptics.buttonPress(); close() } label: {
                     Text("Controls").typeStyle(.filmControls)
                         .foregroundStyle(Tokens.Palette.textPrimary)
@@ -163,24 +141,7 @@ struct Filmstrip: View {
         .accessibilityHidden(true)
     }
 
-    private var legend: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: Tokens.Metrics.space10) {
-                ForEach(FilmProcess.allCases, id: \.self) { process in
-                    HStack(spacing: Tokens.Metrics.space4) {
-                        Circle().fill(Tokens.Palette.process(process))
-                            .frame(width: Tokens.Metrics.space6, height: Tokens.Metrics.space6)
-                        Text(process.rawValue.uppercased()).typeStyle(.filmLegend)
-                            .foregroundStyle(Tokens.Deck.captionInk)
-                    }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(process.displayName)
-                }
-            }
-        }
-        .scrollIndicators(.hidden)
-        .accessibilityLabel("Process legend")
-    }
+
 }
 
 /// Real Catalogue and real rendered reference pixels; alternate entries remain

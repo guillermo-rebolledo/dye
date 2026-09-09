@@ -45,18 +45,9 @@ private struct DeckActionLabel: View {
     var body: some View {
         VStack(spacing: Tokens.Metrics.space4) {
             Image(systemName: symbol).font(Tokens.TypeStyle.controlName.font)
-                .foregroundStyle(primary ? Tokens.Palette.canvas : Tokens.Palette.textPrimary)
+                .foregroundStyle(primary ? Tokens.Palette.accent : Tokens.Palette.textPrimary)
                 .frame(width: Tokens.Deck.actionIconWidth, height: Tokens.Deck.actionIconHeight)
-                .background {
-                    if primary {
-                        RoundedRectangle(cornerRadius: Tokens.Metrics.trackRadius).fill(Tokens.Palette.accent)
-                    } else if enabled {
-                        Color.clear.raisedSurface(cornerRadius: Tokens.Metrics.trackRadius, face: .icon)
-                    } else {
-                        RoundedRectangle(cornerRadius: Tokens.Metrics.trackRadius).fill(Tokens.Palette.chip)
-                    }
-                }
-            Text(name).typeStyle(.actionLabel).foregroundStyle(Tokens.Deck.quietInk).lineLimit(1)
+
         }
         .opacity(enabled ? 1 : Tokens.Deck.unavailableOpacity)
         .frame(maxWidth: .infinity)
