@@ -38,7 +38,7 @@ struct ContactSheetView: View {
         HStack {
             // Accurate rather than decorative: `ContactSheetReference.settings`
             // pins the seed at 253.
-            Text("Fixed HDR reference · all Stocks · Seed 253")
+            Text("Contact Sheet")
                 .typeStyle(.contactHeader).foregroundStyle(Tokens.Palette.textSecondary)
                 .lineLimit(1).minimumScaleFactor(0.8)
             Spacer(minLength: Tokens.Metrics.space10)
@@ -124,7 +124,7 @@ struct ContactSheetPaper: View {
             .clipped()
             .overlay(Rectangle().strokeBorder(Tokens.ContactSheet.frameEdge,
                                               lineWidth: Tokens.Elevation.hairlineWidth))
-            .overlay { if marked { GreasePencil() } }
+            .overlay { if marked { SelectionMark() } }
             HStack(alignment: .firstTextBaseline, spacing: Tokens.Metrics.space4) {
                 Text(profile.metadata.displayName)
                     .typeStyle(.contactName).foregroundStyle(Tokens.Palette.textSecondary)
@@ -147,8 +147,7 @@ struct ContactSheetPaper: View {
     /// size is read off a render rather than asserted, so it cannot go stale.
     private var legend: some View {
         let processes = Set(profiles.filter { $0.id != Profile.identity.id }.map(\.metadata.process)).count
-        let width = images.values.first.map { "\nrendered at \($0.width) px" } ?? ""
-        return Text("\(profiles.count) stocks · \(processes) processes" + width)
+        return Text("\(profiles.count) stocks · \(processes) processes")
             .typeStyle(.contactFooter)
             .foregroundStyle(Tokens.Palette.textDisabled)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
@@ -163,46 +162,17 @@ struct ContactSheetPaper: View {
 /// Drawn as a hand-drawn stroke rather than a geometric ring. A perfect circle
 /// would read as a selection state — something the app did — where an overshot,
 /// wandering line reads as a mark someone made.
-private struct GreasePencil: View {
+private struct SelectionMark: View {
     var body: some View {
         ZStack {
-            GreasePencilStroke()
-                .stroke(Tokens.Palette.accent,
-                        style: StrokeStyle(lineWidth: Tokens.ContactSheet.markWidth,
-                                           lineCap: .round, lineJoin: .round))
-                .padding(Tokens.ContactSheet.markInset)
-                .rotationEffect(.degrees(Tokens.ContactSheet.markRotation))
-                .opacity(Tokens.ContactSheet.markOpacity)
-            Text("this one")
+            Image(systemName: "checkmark")
                 .typeStyle(.greasePencil)
                 .foregroundStyle(Tokens.Palette.accent)
-                .shadow(color: Tokens.Filmstrip.indexShadow, radius: Tokens.Filmstrip.indexShadowRadius)
-                .rotationEffect(.degrees(Tokens.ContactSheet.labelRotation))
                 .padding(Tokens.ContactSheet.labelGap)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-    }
-}
-
-/// An ellipse a hand drew: the radius wanders on two slow terms rather than on
-/// noise, and the stroke carries past where it started instead of closing.
-private struct GreasePencilStroke: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let centre = CGPoint(x: rect.midX, y: rect.midY)
-        let radius = CGSize(width: rect.width / 2, height: rect.height / 2)
-        let sweep = (1 + Tokens.ContactSheet.markOvershoot) * 2 * .pi
-        let steps = Tokens.ContactSheet.markSteps
-        for step in 0...steps {
-            let angle = Double(step) / Double(steps) * sweep + Tokens.ContactSheet.markStart
-            let wobble = 1 + Tokens.ContactSheet.markWobble * (sin(angle * 3 + 0.7) + 0.6 * cos(angle * 2 - 1.1))
-            let point = CGPoint(x: centre.x + cos(angle) * radius.width * wobble,
-                                y: centre.y + sin(angle) * radius.height * wobble)
-            if step == 0 { path.move(to: point) } else { path.addLine(to: point) }
-        }
-        return path
     }
 }
 

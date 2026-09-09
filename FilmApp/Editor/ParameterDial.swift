@@ -1,37 +1,23 @@
 import SwiftUI
 import FilmEngine
 
-/// The control every continuous parameter is edited with: a recessed 28 pt track
-/// carrying ticks, a fill, an anchor and an indicator, dragged from anywhere in
-/// the deck's width.
-///
-/// **The drag is relative.** Touching the row at x does not move the value to x;
-/// the value moves by as much as the finger does. This is the single behaviour
-/// the control exists for, because it is used with a thumb resting over the photo
-/// being judged, and an absolute track would throw the value away on first touch
-/// just to reach it.
-///
-/// The hit area is the full row and `minimumHitTarget` tall, taller than the
-/// track it draws, so the finger does not have to find the 28 pt band.
-///
-/// **No throttle.** Every step writes straight to the binding. `EditorModel`'s
-/// render loop already coalesces, so a drag renders the latest values rather than
-/// every intermediate one; a second throttle here would only put the preview
-/// behind the thumb.
-struct Scrubber: View {
+/// A horizontal dial: the graduated tape moves beneath a fixed center hairline.
+/// Touch is relative, with stepped values, sticky detents, and a full 44 pt hit area.
+/// The renderer already coalesces updates, so every step writes to the binding.
+struct ParameterDial: View {
     let parameter: Parameter
     var isEnabled: Bool = true
 
     @State private var drag: Drag?
 
     var body: some View {
-        GeometryReader { proxy in
-            let track = TrackMap(parameter: parameter, width: proxy.size.width)
-            ScrubberTrack(parameter: parameter,
-                          value: parameter.value.wrappedValue,
-                          isDragging: drag != nil,
-                          isAtLimit: drag?.wasAtLimit ?? false,
-                          isEnabled: isEnabled)
+        GeometryReader { _ in
+            let track = TrackMap.dial(for: parameter)
+            ParameterDialTrack(parameter: parameter,
+                               value: parameter.value.wrappedValue,
+                               isDragging: drag != nil,
+                               isAtLimit: drag?.wasAtLimit ?? false,
+                               isEnabled: isEnabled)
                 .frame(maxHeight: .infinity)
                 .contentShape(Rectangle())
                 .gesture(gesture(track), including: isEnabled ? .all : .none)
@@ -61,7 +47,8 @@ struct Scrubber: View {
         DragGesture(minimumDistance: 0)
             .onChanged { change in
                 var state = drag ?? begin(track)
-                let outcome = track.resolve(state.origin + change.translation.width)
+                guard change.translation.width != 0 else { return }
+                let outcome = track.resolve(state.origin - change.translation.width)
                 commit(outcome, from: &state)
                 drag = state
             }
@@ -129,7 +116,7 @@ struct Scrubber: View {
 
 // MARK: - The track map
 
-extension Scrubber {
+extension ParameterDial {
     /// The map between a value and a position on the track, and the only place
     /// that knows about the detent's stickiness. It is `TrackMap` rather than
     /// `Geometry` because `CONTEXT.md` gives Geometry to the Pass that draws the
@@ -144,16 +131,20 @@ extension Scrubber {
         let parameter: Parameter
         let width: CGFloat
 
-        static func shutterDial(for parameter: Parameter) -> Self {
-            Self(parameter: parameter,
-                 width: CGFloat(parameter.range.upperBound - parameter.range.lowerBound) * Tokens.Discrete.pointsPerStop
-                    + 2 * (Tokens.Track.indicatorEndInset + Tokens.Track.indicatorWidth / 2))
+        /// Fixed spacing per step lets the tape extend beyond the viewport.
+        /// Shutter speeds retain the handoff's 54 pt per stop / 18 pt per third stop.
+        static func dial(for parameter: Parameter) -> Self {
+            let pointsPerStep = parameter.control == .shutterDial
+                ? Tokens.Discrete.pointsPerStop * CGFloat(parameter.step)
+                : Tokens.Track.dialPointsPerStep
+            let span = parameter.range.upperBound - parameter.range.lowerBound
+            let travel = CGFloat(span / max(parameter.step, .ulpOfOne)) * pointsPerStep
+            return Self(parameter: parameter,
+                        width: travel + 2 * (Tokens.Track.indicatorEndInset + Tokens.Track.indicatorWidth / 2))
         }
 
-        /// The indicator parks 2 pt inside the end, so half of it plus that inset
-        /// is what the track gives up at each end. Every mark on the track uses
-        /// this same mapping, which is what keeps the detent tick under the
-        /// indicator that is sitting on it.
+        /// Logical tape coordinates include an inset at each end. Rendering
+        /// translates these coordinates so the current value sits at the center.
         var lead: CGFloat { Tokens.Track.indicatorEndInset + Tokens.Track.indicatorWidth / 2 }
         var travel: CGFloat { max(width - 2 * lead, 1) }
         var span: Double { parameter.range.upperBound - parameter.range.lowerBound }
@@ -169,23 +160,6 @@ extension Scrubber {
         func x(of value: Double) -> CGFloat { x(fraction: parameter.fraction(of: value)) }
 
         var detentX: CGFloat? { parameter.detentFraction.map(x(fraction:)) }
-
-        /// The fill runs from here: zero on a bipolar parameter, where the value
-        /// departs in a direction, and the left end on a unipolar one, where
-        /// there is only one direction to depart in.
-        ///
-        /// This is deliberately not the detent. Grain runs 0…200 % with its
-        /// detent at 100 %, and `1q` fills it from the left; only the anchor
-        /// *line* marks the detent.
-        var fillOrigin: Double {
-            isBipolar ? parameter.fraction(of: 0) : 0
-        }
-
-        /// A parameter whose range crosses zero. Exposure, Tint and the
-        /// Development Offset; nothing else the deck offers.
-        var isBipolar: Bool {
-            parameter.range.lowerBound < 0 && parameter.range.upperBound > 0
-        }
 
         /// Whether a value has run into an end of the range. A value that arrived
         /// from a Preset outside the editor's clamp reads as at the limit and
@@ -215,7 +189,11 @@ extension Scrubber {
                 // Kelvin need not fall on a step boundary.
                 return Outcome(value: detent, isAtDetent: true, isAtLimit: isAtLimit(detent))
             }
-            return stepped(at: detentX + offset - (offset < 0 ? -stick : stick))
+            let outcome = stepped(at: detentX + offset - (offset < 0 ? -stick : stick))
+            // An off-grid detent must not round back across itself on release.
+            // Stay at the detent until the next step in the drag direction.
+            let value = offset < 0 ? min(outcome.value, detent) : max(outcome.value, detent)
+            return Outcome(value: value, isAtDetent: parameter.isAtDetent(value), isAtLimit: isAtLimit(value))
         }
 
         private func stepped(at point: CGFloat) -> Outcome {
@@ -223,7 +201,7 @@ extension Scrubber {
             let value = Self.settle(raw, for: parameter)
             return Outcome(value: value,
                            isAtDetent: parameter.isAtDetent(value),
-                           isAtLimit: isAtLimit(value))
+                                isAtLimit: isAtLimit(value))
         }
 
         /// A value on the parameter's step grid and inside its range. The one
@@ -244,18 +222,6 @@ extension Scrubber {
         }
 
         // MARK: Ticks
-
-        /// Minor ticks are one per step, thinned to the densest multiple of the
-        /// step that still leaves them `minimumTickSpacing` apart. Temperature
-        /// steps every 50 K across 8000 K, which is 160 ticks over 380 pt and
-        /// would draw as a solid band rather than as steps.
-        var minorInterval: Double {
-            guard parameter.step > 0, span > 0 else { return span }
-            let perStep = travel * CGFloat(parameter.step / span)
-            guard perStep > 0 else { return span }
-            let multiple = max(1, (Tokens.Track.minimumTickSpacing / perStep).rounded(.up))
-            return parameter.step * Double(multiple)
-        }
 
         /// A major tick per stop or decade, derived rather than named: the 1, 2 or
         /// 5 times a power of ten nearest a track's worth divided by the target
@@ -279,8 +245,7 @@ extension Scrubber {
             let first = origin + ((lower - origin) / interval).rounded(.up) * interval
             let count = Int(((parameter.range.upperBound - first) / interval).rounded(.down))
             guard count >= 0 else { return [] }
-            // The thinning above keeps this well under a few hundred; the cap is
-            // only here so a degenerate range cannot ask for a million lines.
+            // App ranges contain at most a few hundred steps; cap degenerate input.
             return (0...min(count, 512)).map { first + Double($0) * interval }
         }
     }
@@ -288,133 +253,96 @@ extension Scrubber {
 
 // MARK: - Drawing
 
-/// The track and everything on it, with no gesture of its own. Splitting the
-/// drawing from the drag is what lets the `#Preview` show mid-drag and every
-/// other state as a still, without the view carrying a hook it only needs there.
-struct ScrubberTrack: View, Animatable {
+/// Drawing is separate so previews can show drag, detent and boundary states.
+struct ParameterDialTrack: View, Animatable {
     let parameter: Parameter
     var value: Double
     nonisolated var animatableData: Double {
         get { value }
         set { value = newValue }
     }
-    var isDragging: Bool = false
-    /// Whether the drag has run into an end. Not derived from the value, because
-    /// three of the Lab parameters rest at zero, which *is* their lower bound,
-    /// and a wall lit before anyone touched the control says nothing happened.
-    var isAtLimit: Bool = false
-    var isEnabled: Bool = true
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: Tokens.Metrics.trackRadius, style: .continuous)
-    }
+    var isDragging = false
+    var isAtLimit = false
+    var isEnabled = true
 
     var body: some View {
         GeometryReader { proxy in
-            let track = Scrubber.TrackMap(parameter: parameter, width: proxy.size.width)
-            ZStack(alignment: .topLeading) {
-                Canvas(rendersAsynchronously: false) { context, size in
-                    draw(in: context, size: size, track: track)
-                }
+            let map = ParameterDial.TrackMap.dial(for: parameter)
+            Canvas { context, size in
+                draw(in: context, size: size, map: map)
+            }
+            .mask(LinearGradient(stops: [
+                .init(color: .clear, location: 0),
+                .init(color: .black, location: Tokens.Discrete.tickerFade),
+                .init(color: .black, location: 1 - Tokens.Discrete.tickerFade),
+                .init(color: .clear, location: 1)
+            ], startPoint: .leading, endPoint: .trailing))
+            .overlay {
                 if isEnabled {
-                    anchor(track)
-                    wall(track)
+                    Rectangle()
+                        .fill(isAtLimit ? Tokens.Palette.trackWall
+                              : parameter.isAtDetent(value) ? Tokens.Palette.accent : Tokens.Palette.textPrimary)
+                        .frame(width: Tokens.Discrete.hairline, height: Tokens.Track.height)
+                        .shadow(color: isDragging ? Tokens.Palette.indicatorGlow : .clear,
+                                radius: Tokens.Track.indicatorGlowRadius)
                 }
             }
-            .clipShape(shape)
-            .recessedSurface(shape, fill: Tokens.Palette.wellTrack, depth: .track)
-            // The indicator stands proud of the track top and bottom, so it sits
-            // outside the clip rather than inside it.
-            .overlay(alignment: .topLeading) {
-                if isEnabled { indicator(track) }
-            }
+            .frame(width: proxy.size.width, height: Tokens.Track.height)
         }
         .frame(height: Tokens.Track.height)
         .opacity(isEnabled ? 1 : Tokens.Track.disabledOpacity)
+        .accessibilityHidden(true)
     }
 
-    // MARK: Ticks and fill
+    private func draw(in context: GraphicsContext, size: CGSize, map: ParameterDial.TrackMap) {
+        let current = min(max(value, parameter.range.lowerBound), parameter.range.upperBound)
+        let pointsPerUnit = map.travel / CGFloat(map.span)
+        func x(_ mark: Double) -> CGFloat { size.width / 2 + CGFloat(mark - current) * pointsPerUnit }
+        let major = parameter.control == .shutterDial ? 1 : map.majorInterval
+        let labelOrigin = parameter.control == .shutterDial ? parameter.range.lowerBound : 0
 
-    private func draw(in context: GraphicsContext, size: CGSize, track: Scrubber.TrackMap) {
-        ticks(in: context, size: size, track: track,
-              interval: track.minorInterval, origin: parameter.range.lowerBound,
-              inset: Tokens.Track.tickInsetMinor, colour: Tokens.Palette.tickMinor)
-        ticks(in: context, size: size, track: track,
-              interval: track.majorInterval, origin: 0,
-              inset: Tokens.Track.tickInsetMajor, colour: Tokens.Palette.tickMajor)
-        // The fill goes on last, over the ticks, the way `1q` layers them.
-        if isEnabled { fill(in: context, size: size, track: track) }
-    }
-
-    private func ticks(in context: GraphicsContext, size: CGSize, track: Scrubber.TrackMap,
-                       interval: Double, origin: Double, inset: CGFloat, colour: Color) {
-        var path = Path()
-        for mark in track.marks(every: interval, from: origin) {
-            let x = track.x(fraction: parameter.fraction(of: mark)) - Tokens.Track.tickWidth / 2
-            path.addRect(CGRect(x: x, y: inset,
-                                width: Tokens.Track.tickWidth, height: size.height - inset * 2))
+        for mark in map.marks(every: parameter.step, from: parameter.range.lowerBound) {
+            let position = x(mark)
+            guard position >= 0, position <= size.width else { continue }
+            let tick = CGRect(x: position - Tokens.Track.tickWidth / 2, y: 0,
+                              width: Tokens.Track.tickWidth, height: Tokens.Track.tickInsetMinor)
+            context.fill(Path(tick), with: .color(Tokens.Palette.tickMinor))
         }
-        context.fill(path, with: .color(colour))
-    }
-
-    private func fill(in context: GraphicsContext, size: CGSize, track: Scrubber.TrackMap) {
-        let origin = track.x(fraction: track.fillOrigin)
-        let head = track.x(of: value)
-        let rect = CGRect(x: min(origin, head), y: 0, width: abs(head - origin), height: size.height)
-        context.fill(Path(rect), with: .color(Tokens.Palette.trackFill))
-    }
-
-    // MARK: Anchor, wall, indicator
-
-    /// The line the fill runs from. A unipolar parameter anchors at its own left
-    /// wall, where a line would only draw over the end of the track, so it has
-    /// none. On the detent the line becomes accent and lights.
-    @ViewBuilder private func anchor(_ track: Scrubber.TrackMap) -> some View {
-        if let fraction = parameter.detentFraction, fraction > 0 {
-            let onDetent = parameter.isAtDetent(value)
-            Rectangle()
-                .fill(onDetent ? Tokens.Palette.trackAnchorActive : Tokens.Palette.trackAnchor)
-                .frame(width: Tokens.Track.anchorWidth, height: Tokens.Track.height)
-                .shadow(color: onDetent ? Tokens.Palette.trackAnchorGlow : .clear,
-                        radius: Tokens.Track.anchorGlowRadius)
-                .position(x: track.x(fraction: fraction), y: Tokens.Track.height / 2)
-                .animation(Tokens.Motion.ease(Tokens.Motion.tick, reduceMotion: reduceMotion), value: onDetent)
+        for mark in map.marks(every: major, from: labelOrigin) {
+            let position = x(mark)
+            guard position >= 0, position <= size.width else { continue }
+            let tick = CGRect(x: position - Tokens.Track.tickWidth / 2, y: 0,
+                              width: Tokens.Track.tickWidth, height: Tokens.Track.dialMajorTickHeight)
+            context.fill(Path(tick), with: .color(Tokens.Palette.tickMajor))
+            context.draw(Text(parameter.format(mark)).font(Tokens.TypeStyle.tag.font)
+                .foregroundStyle(Tokens.Palette.textSecondary),
+                at: CGPoint(x: position, y: Tokens.Discrete.tickerLabelY))
         }
-    }
-
-    /// The end the value has run into. No rubber-band and no bounce: the wall
-    /// lights and that is the whole of the feedback.
-    @ViewBuilder private func wall(_ track: Scrubber.TrackMap) -> some View {
-        if isAtLimit {
-            let atUpper = value >= parameter.range.upperBound
-            Rectangle()
-                .fill(Tokens.Palette.trackWall)
-                .frame(width: Tokens.Track.wallWidth, height: Tokens.Track.height)
-                .position(x: atUpper ? track.width - Tokens.Track.wallWidth / 2 : Tokens.Track.wallWidth / 2,
-                          y: Tokens.Track.height / 2)
+        if isEnabled, let detent = parameter.detent, parameter.range.contains(detent) {
+            let tick = CGRect(x: x(detent) - Tokens.Track.anchorWidth / 2, y: 0,
+                              width: Tokens.Track.anchorWidth, height: Tokens.Track.dialMajorTickHeight)
+            context.fill(Path(tick), with: .color(Tokens.Palette.accent))
         }
-    }
-
-    private func indicator(_ track: Scrubber.TrackMap) -> some View {
-        let shape = RoundedRectangle(cornerRadius: Tokens.Track.indicatorRadius, style: .continuous)
-        return shape
-            .fill(isDragging ? Tokens.Palette.indicatorFaceDragging : Tokens.Palette.indicatorFace)
-            .indicatorSurface(shape, glow: isDragging ? Tokens.Palette.indicatorGlow : .clear)
-            .frame(width: Tokens.Track.indicatorWidth,
-                   height: Tokens.Track.height + Tokens.Track.indicatorOverhang * 2)
-            .position(x: track.x(of: value), y: Tokens.Track.height / 2)
+        // The finite tape ends at its real bounds. On arrival the end cap lights
+        // at the fixed hairline; dragging farther cannot rubber-band the scale.
+        for bound in [parameter.range.lowerBound, parameter.range.upperBound] {
+            let position = x(bound)
+            guard position >= 0, position <= size.width else { continue }
+            let cap = CGRect(x: position - Tokens.Track.wallWidth / 2, y: 0,
+                             width: Tokens.Track.wallWidth, height: size.height)
+            context.fill(Path(cap), with: .color(isAtLimit && current == bound
+                                                ? Tokens.Palette.trackWall : Tokens.Palette.tickMajor))
+        }
     }
 }
 
 // MARK: - Preview
 
-/// Every state the ticket names, as stills, over one live scrubber that actually
-/// drags. The stills are `ScrubberTrack` because mid-drag and at-detent are
+/// Every state the ticket names, as stills, over one live dial that actually
+/// drags. The stills are `ParameterDialTrack` because mid-drag and at-detent are
 /// moments rather than settings; the live row underneath is the real control and
 /// is what the drag, the detent stick and the range wall are judged on.
-private struct ScrubberCatalogue: View {
+private struct ParameterDialCatalogue: View {
     @State private var exposure: Double = 0.5
     @State private var grain: Double = 1
 
@@ -468,15 +396,15 @@ private struct ScrubberCatalogue: View {
                        isEnabled: Bool = true) -> some View {
         VStack(alignment: .leading, spacing: Tokens.Metrics.space6) {
             header(title, parameter, value: value)
-            ScrubberTrack(parameter: parameter, value: value, isDragging: isDragging,
-                          isAtLimit: isAtLimit, isEnabled: isEnabled)
+            ParameterDialTrack(parameter: parameter, value: value, isDragging: isDragging,
+                               isAtLimit: isAtLimit, isEnabled: isEnabled)
         }
     }
 
     private func live(_ title: String, _ parameter: Parameter) -> some View {
         VStack(alignment: .leading, spacing: Tokens.Metrics.space6) {
             header(title, parameter, value: parameter.value.wrappedValue)
-            Scrubber(parameter: parameter)
+            ParameterDial(parameter: parameter)
         }
     }
 
@@ -497,10 +425,10 @@ private struct ScrubberCatalogue: View {
     }
 }
 
-#Preview("Scrubber · dark") {
-    ScrubberCatalogue().preferredColorScheme(.dark)
+#Preview("ParameterDial · dark") {
+    ParameterDialCatalogue().preferredColorScheme(.dark)
 }
 
-#Preview("Scrubber · light") {
-    ScrubberCatalogue().preferredColorScheme(.light)
+#Preview("ParameterDial · light") {
+    ParameterDialCatalogue().preferredColorScheme(.light)
 }

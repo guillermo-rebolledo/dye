@@ -6,6 +6,7 @@ struct EditorView: View {
     @State private var model = EditorModel()
     @State private var photo: PhotosPickerItem?
     @State private var isExporting = false
+    @State private var showsSettings = false
     @State private var showsPresets = false
     @State private var showsContactSheet = false
 
@@ -13,6 +14,18 @@ struct EditorView: View {
         EditorScreen(model: model, canvas: canvas, error: model.error, photo: $photo,
                      showPresets: { showsPresets = true }, showContactSheet: { showsContactSheet = true },
                      showExport: { isExporting = true })
+            .overlay(alignment: .topTrailing) {
+                Button { showsSettings = true } label: {
+                    Image(systemName: "gearshape")
+                        .frame(width: 44, height: 44)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Tokens.Palette.textPrimary)
+                .accessibilityLabel("Settings")
+                .padding(.trailing, Tokens.Metrics.space16)
+            }
+            .sheet(isPresented: $showsSettings) { SettingsView(model: model) }
             .preferredColorScheme(.dark)
             .sheet(isPresented: $showsPresets) { PresetSheet(model: model).filmSheet() }
             .fullScreenCover(isPresented: $showsContactSheet) { ContactSheetView(selectedStock: model.selectedStock) }

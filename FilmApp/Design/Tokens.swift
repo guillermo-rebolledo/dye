@@ -352,6 +352,9 @@ extension Tokens {
     /// step or a hit target belongs to all of them. The track's corner radius is
     /// the exception and stays in `Metrics` with the other radii.
     enum Track {
+        /// A fixed pitch gives the dial travel beyond the visible row.
+        static let dialPointsPerStep: CGFloat = 9
+        static let dialMajorTickHeight: CGFloat = 10
         static let height: CGFloat = 28
         /// A tick, an anchor and an end wall, in the widths the handoff gives.
         static let tickWidth: CGFloat = 1
@@ -571,26 +574,21 @@ private struct TokenCatalogue: View {
 
 extension Tokens {
     enum Deck {
-        static let height: CGFloat = 316
-        /// The handoff's bounded large-text reflow. The extra caption line is
-        /// borrowed from the canvas; the action row and bottom gutter stay put.
+        static let height: CGFloat = 268
+        /// Give large readouts extra breathing room at accessibility sizes.
         static func extraHeight(for size: DynamicTypeSize) -> CGFloat {
             size.isAccessibilitySize ? 14 : 0
-        }
-        static func captionLines(for size: DynamicTypeSize) -> Int {
-            size.isAccessibilitySize ? 3 : 2
         }
         static let selectorHeight: CGFloat = 36
         static let segmentHeight: CGFloat = 30
         static let segmentPadding: CGFloat = 3
-        static let subLabelHeight: CGFloat = 14
-        static let controlHeight: CGFloat = 112
+        static let parameterAreaHeight: CGFloat = 128
+        static let controlHeight: CGFloat = 84
         static let headerHeight: CGFloat = 16
         static let readoutHeight: CGFloat = 34
-        static let captionHeight: CGFloat = 28
-        // The four slots total 106; the remaining six points separate the header.
+        // Header, readout and dial total 78 points, plus a six-point gap.
         static let headerGap: CGFloat = 6
-        static let actionHeight: CGFloat = 40
+        static let actionHeight: CGFloat = 44
         static let actionIconWidth: CGFloat = 40
         static let actionIconHeight: CGFloat = 26
         static let chipPadding: CGFloat = 9

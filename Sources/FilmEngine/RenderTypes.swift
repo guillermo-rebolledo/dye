@@ -68,10 +68,12 @@ public struct RenderSettings: Codable, Sendable, Equatable, Hashable {
     /// it to act on, and asking for one there is an error rather than a no-op.
     public var contrastFilter: ContrastFilter
     /// Halation scaled relative to the Profile's own strength: 1 is the Profile
-    /// value, 0 disables the Pass, 2 is the top of the user's 0–200% control.
+    /// value, 0 disables the Pass. Above 1, strength increases and the highlight
+    /// threshold falls; 2 is the maximum creative boost.
     public var halationIntensity: Double
     /// Bloom scaled relative to the Profile's own lens diffusion: 1 is the Profile
-    /// value, 0 disables the Pass, 2 is the top of the user's 0–200% control.
+    /// value, 0 disables the Pass. Above 1, diffusion increases to a stronger
+    /// creative effect; 2 is the maximum boost.
     public var bloomIntensity: Double
     /// Grain scaled relative to the Profile's own granularity: 1 is the Profile
     /// value, 0 disables the Pass, 2 is the top of the user's 0–200% control.

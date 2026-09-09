@@ -72,7 +72,7 @@ struct Parameter: Identifiable {
     /// Which control draws the parameter. Not everything is a scrubber, and the
     /// active-control area keeps its height while changing what fills the track.
     enum Control {
-        case scrubber
+        case dial
         case shutterDial
         case contrastFilterDiscs
         case outputStageCards
@@ -108,7 +108,7 @@ struct Parameter: Identifiable {
 
     init(id: Identity, name: String, stage: EditorStage, value: Binding<Double>,
          range: ClosedRange<Double>, step: Double, detent: Double? = nil,
-         control: Control = .scrubber, format: @escaping (Double) -> String,
+         control: Control = .dial, format: @escaping (Double) -> String,
          caption: (() -> String)? = nil, readsOffAtZero: Bool = false) {
         self.id = id
         self.name = name
@@ -352,7 +352,7 @@ extension EditorModel {
         if !outputStages.isEmpty {
             let stages = outputStages
             parameters.append(
-                Parameter(id: .outputStage, name: "Read the negative by", stage: .lab,
+                Parameter(id: .outputStage, name: "Output", stage: .lab,
                           value: outputStageBinding,
                           range: 0...Double(stages.count - 1), step: 1,
                           control: .outputStageCards,
@@ -532,6 +532,7 @@ extension EditorModel {
             + "\(Int(bloomRadiusMicrons)) µm of film. It takes that light from the scene rather than adding it, "
             + "and the film records the result, so it softens a highlight's surroundings instead of brightening them. "
             + "Halation, below, is the film reflecting light back into itself and is a different thing."
+        if intensity > 1.025 { return "Boosted diffusion. 100% restores the modelled lens. " + base }
         if abs(intensity - 1) < 0.025 { return "At the modelled lens's own diffusion. " + base }
         return String(format: "At %.0f%% of the modelled lens's own diffusion. ", intensity * 100) + base
     }
@@ -542,6 +543,7 @@ extension EditorModel {
         let reach = halationReachMicrons
         let base = "Light passing through the emulsion reflects off the back of the film and re-exposes it from behind, "
             + "reaching about \(Int(reach)) µm furthest in red. It happens before the density curves, not as an effect added afterwards."
+        if intensity > 1.025 { return "Boosted halation reaches softer highlights. 100% restores the stock response. " + base }
         if abs(intensity - 1) < 0.025 { return "At this stock's own strength. " + base }
         return String(format: "At %.0f%% of this stock's own strength. ", intensity * 100) + base
     }
@@ -692,7 +694,14 @@ private struct ParameterCatalogue: View {
                         parameter.range.lowerBound, parameter.range.upperBound, parameter.step,
                         parameter.detent.map { String(format: "%.4g", $0) } ?? "—"))
                 .font(.caption2.monospaced()).foregroundStyle(.secondary)
-            Slider(value: parameter.value, in: parameter.range, step: parameter.step)
+            switch parameter.control {
+            case .dial, .shutterDial:
+                ParameterDial(parameter: parameter)
+            case .contrastFilterDiscs:
+                ContrastFilterDiscs(parameter: parameter, filters: model.contrastFilters)
+            case .outputStageCards:
+                OutputStageCards(model: model)
+            }
             if let caption = parameter.captionText {
                 Text(caption).font(.caption).foregroundStyle(.secondary)
             }

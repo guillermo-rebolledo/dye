@@ -15,6 +15,29 @@ conflict for whoever opens the file next.
 no render path is touched. Three model-layer additions are needed and they are
 listed in §5; all three are reporting, not rendering.
 
+## Dial update — September 2026
+
+All eleven numeric controls now use the handoff's shutter ticker pattern: a
+moving graduated tape beneath a fixed 1.5 pt center hairline, with faded edges
+and an amber neutral/stock detent. This supersedes the moving-indicator track
+specified for continuous controls in the original handoff.
+
+`ParameterDial` covers Exposure, Temperature, Tint, Exposure time, Development,
+Bloom, Halation, Grain, Vignette, Gate weave, and Frame border, including the
+parameter catalogue preview. Contrast filter discs and Scan/Print cards remain
+selection controls. No stock `Slider` remains in the app.
+
+Drag left to increase and right to decrease. Touching the control does not jump
+the value. Continuous parameters use 9 pt per step; shutter speed retains 54 pt
+per stop with thirds-of-a-stop steps. Canvas adjustment uses the same direction
+at half gain. Existing ranges, step sizes, 6 pt detent stick, limit haptics,
+VoiceOver adjustment, reset animation and Reduce Motion behavior are retained.
+The tape stops at its bounds and the end cap lights at the center hairline.
+The dial keeps the 28 pt drawing / 44 pt hit area and fixed deck allocation.
+
+Run `python3 Scripts/check-dial-mapping.py` to check the production mapping
+across all numeric ranges, including a stock balance between two Kelvin steps.
+
 ## 1. Scope
 
 Rebuilt: the editor screen and all four of its secondary surfaces.
@@ -295,6 +318,23 @@ Behaviour, ranges and caption copy: `FilmApp/EditorModel.swift`,
 Appearance: `design_handoff_dye_editor/README.md` and
 `design_handoff_dye_editor/Dye Editor.dc.html`, screens `1a`–`1q`.
 
+
+## Minimal UI — September 2026
+
+The editor keeps control names, values and dial marks, with explanations moved to
+Settings → Glossary. The glossary is searchable and includes stock-specific
+context for available controls, gestures, film terms and export options.
+
+The standard deck is 268 pt (48 pt shorter); the filmstrip gets an additional
+28 pt and accessibility text sizes retain their extra space. Errors add a
+scrollable message region rather than displacing controls. Action icons retain
+VoiceOver names and 44 pt targets. A Settings gear is available before import.
+
+Shared control surfaces use flat fills and subtle borders. Export uses compact
+progress and choices, preserving original-date fallback and save status. Presets
+and Contact Sheet omit instructional copy. Render timing and the persistent
+compare hint no longer overlay the photo; comparison still shows “Original”.
+
 ## Addendum: the Adjust stage
 
 Added after the redesign shipped, and the one place this spec's "presentation-layer
@@ -305,12 +345,14 @@ for both; what follows is only what changed here.
 - `EditorStage` has four cases and the stage selector draws four segments. The
   deck stays 316 pt: the Adjust stage's eight chips overflow into the parameter
   row's horizontal scroll, which the row already provided for.
-- The eight parameters are all scrubbers, ±100 in steps of 1, detent at 0, and
+- The eight parameters are all dials, ±100 in steps of 1, detent at 0, and
   every Stock offers every one of them, because the Pass acts on whatever the
-  Output Stage returned. Zero reads `0`, not `+0` and not `● OFF`: it is bipolar
+  Output Stage returned. Zero reads `0`, not `+0` and not `OFF`: it is bipolar
   and the detent is the neutral setting.
 - Exposure, Temperature and Tint stay on the Light stage and are not repeated.
   They change the light the film received; the Adjust stage changes the scan.
 - The Preset summary line gains one word, `adjusted`, when any of the eight is
-  off zero, and the LUT footnote says the cube carries them, because it does.
+  off zero, and the glossary's LUT entry says the cube carries them, because it
+  does. The captions reach the glossary through the same path as every other
+  control's, under an `Adjust` section of their own.
 

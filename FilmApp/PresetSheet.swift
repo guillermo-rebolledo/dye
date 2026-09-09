@@ -41,7 +41,6 @@ struct PresetSheet: View {
         SheetSurface(title: "Presets", done: { dismiss() }) {
             VStack(alignment: .leading, spacing: Tokens.Sheet.rowGap) {
                 saveLine
-                Text(helper).typeStyle(.caption).foregroundStyle(Tokens.Palette.textTertiary)
                 if let error {
                     Text(error).typeStyle(.caption).foregroundStyle(Tokens.Palette.destructive)
                 }
@@ -90,16 +89,11 @@ struct PresetSheet: View {
     /// actually be kept rather than describing Presets in general. It stops there:
     /// listing the parameters would name the same settings the clause after it has
     /// already promised to keep.
-    private var helper: String {
-        let stage = model.settings.outputStage == OutputStage.print ? " · \(OutputStage.print.displayName)" : ""
-        return "Saves \(model.profile.metadata.displayName)\(stage) and every setting as they are now."
-    }
-
     // MARK: - Rows
 
     @ViewBuilder private func list(_ rows: [PresetRow]) -> some View {
         if rows.isEmpty {
-            Text("No presets yet. Name the current look above to keep it.")
+            Text("No presets yet")
                 .typeStyle(.caption)
                 .foregroundStyle(Tokens.Palette.textQuaternary)
                 .multilineTextAlignment(.center)
