@@ -565,3 +565,70 @@ private struct TokenCatalogue: View {
 #Preview("Tokens · light") {
     TokenCatalogue().preferredColorScheme(.light)
 }
+
+// MARK: - Deck
+
+extension Tokens {
+    enum Deck {
+        static let height: CGFloat = 316
+        static let selectorHeight: CGFloat = 36
+        static let segmentHeight: CGFloat = 30
+        static let segmentPadding: CGFloat = 3
+        static let subLabelHeight: CGFloat = 14
+        static let controlHeight: CGFloat = 112
+        static let headerHeight: CGFloat = 16
+        static let readoutHeight: CGFloat = 34
+        static let captionHeight: CGFloat = 28
+        // The four slots total 106; the remaining six points separate the header.
+        static let headerGap: CGFloat = 6
+        static let actionHeight: CGFloat = 40
+        static let actionIconWidth: CGFloat = 40
+        static let actionIconHeight: CGFloat = 26
+        static let chipPadding: CGFloat = 9
+        static let modifiedDot: CGFloat = 5
+        static let unavailableOpacity: Double = 0.35
+        static let overflowStart: CGFloat = 0.92
+        static let thumbnailWidth: CGFloat = 26
+        static let thumbnailHeight: CGFloat = 24
+        static let processEdge: CGFloat = 2
+        static let stockWidth: CGFloat = 104
+        static let compactChipWidth: CGFloat = 48
+        static let readoutNumberWidth: CGFloat = 142
+        static let border = Colour.hex(0xFFFFFF, alpha: 0.08).color
+        static let captionInk = Palette.textPrimary.opacity(0.62)
+        static let quietInk = Palette.textPrimary.opacity(0.5)
+        static let modifiedInk = Palette.textPrimary.opacity(0.85)
+    }
+
+    enum Discrete {
+        static let discDiameter: CGFloat = 30
+        static let selectionRing: CGFloat = 1.5
+        static let selectionHalo: CGFloat = 4
+        static let cardHeight: CGFloat = 62
+        static let cardRing: CGFloat = 1
+        static let cardAccent = Palette.accent.opacity(0.6)
+        static let glassHighlight = Colour.hex(0xFFFFFF, alpha: 0.55).color
+        static let glassRim = Colour.hex(0x000000, alpha: 0.5).color
+        static let glassBlur: CGFloat = 2
+        static let glassOffset: CGFloat = -2
+        static let pointsPerStop: CGFloat = 54
+        static let hairline: CGFloat = 1.5
+        static let tickerFade: CGFloat = 0.12
+        static let tickerLabelY: CGFloat = 18
+
+        static func glass(_ filter: ContrastFilter) -> Color {
+            switch filter {
+            case .none: .clear
+            case .yellow: Colour.hex(0xD8B632).color
+            case .orange: Colour.hex(0xC97929).color
+            case .red: Colour.hex(0xA63B35).color
+            case .green: Colour.hex(0x4D8250).color
+            case .blue: Colour.hex(0x396AA3).color
+            }
+        }
+    }
+}
+
+extension Tokens.TypeStyle {
+    static let cardCaption = Self(size: 10.5, weight: .regular, isMono: false, lineHeight: 13)
+}
