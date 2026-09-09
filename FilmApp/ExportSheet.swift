@@ -97,7 +97,7 @@ struct ExportSheet: View {
             Button("Export LUT (.cube)") { model.exportLUT() }
                 .buttonStyle(SheetActionStyle(kind: .standard))
                 .disabled(!model.canExport)
-            lutFootnote
+            lutFootnote.typeStyle(.caption).foregroundStyle(Tokens.Palette.textTertiary)
         }
     }
 
@@ -107,7 +107,7 @@ struct ExportSheet: View {
         Text("A LUT is a colour mapping, one pixel at a time. This one carries the "
              + "stock's response, your exposure, white balance and development, and nothing else: ")
             + Text("no grain, no halation, no bloom, no micro-contrast and no vignette")
-            .foregroundColor(Tokens.Palette.textSecondary)
+            .bold().foregroundColor(Tokens.Palette.textSecondary)
             + Text(", because none of those is a function of a single pixel's colour. It will look "
                    + "flatter than the app does, and that is the LUT being honest rather than wrong.")
     }

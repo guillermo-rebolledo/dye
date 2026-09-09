@@ -80,7 +80,6 @@ struct PresetSheet: View {
             do { try context.save() } catch { context.rollback(); throw error }
             name = ""
             error = nil
-            Haptics.reset()
         } catch { self.error = error.localizedDescription }
     }
 
