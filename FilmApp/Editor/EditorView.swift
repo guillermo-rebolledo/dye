@@ -65,13 +65,7 @@ private struct EditorScreen: View {
                 .accessibilityElement(children: canvas.hasPhoto ? .ignore : .combine)
                 .accessibilityLabel(canvas.accessibilityLabel)
                 .accessibilityValue(isComparing ? "Original" : "")
-                .accessibilityActions {
-                    if canvas.hasPhoto {
-                        Button(accessibleBefore ? "Show edited photo" : "Show original photo") {
-                            accessibleBefore.toggle()
-                        }
-                    }
-                }
+                .modifier(CompareAccessibility(isEnabled: canvas.hasPhoto, showsOriginal: $accessibleBefore))
             DeckView(model: model, selection: selection, hasPhoto: canvas.hasPhoto, photo: $photo,
                      isLoupeEnabled: $isLoupeEnabled, showPresets: showPresets,
                      showContactSheet: showContactSheet, showExport: showExport, error: error)
@@ -84,6 +78,24 @@ private struct EditorScreen: View {
         .onChange(of: isComparing) { Haptics.compare() }
         .onChange(of: photo) { accessibleBefore = false }
         .onChange(of: canvas.hasPhoto) { if !canvas.hasPhoto { accessibleBefore = false } }
+    }
+}
+
+private struct CompareAccessibility: ViewModifier {
+    let isEnabled: Bool
+    @Binding var showsOriginal: Bool
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if isEnabled {
+            content.accessibilityAction(named: showsOriginal ? "Show edited photo" : "Show original photo") {
+                showsOriginal.toggle()
+            }
+            // SwiftUI caches custom action names on the accessibility element.
+            // Refresh its identity only for the VoiceOver toggle, never a hold.
+            .id(showsOriginal)
+        } else {
+            content
+        }
     }
 }
 
