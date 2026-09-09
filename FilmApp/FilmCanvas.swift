@@ -4,9 +4,29 @@ import FilmEngine
 
 struct FilmCanvas: UIViewRepresentable {
     let image: RenderedPixels
+    var loupe: Loupe?
+
+    /// Normalized image focus and finger travel, independent of view size.
+    struct Loupe {
+        var focus = CGPoint(x: 0.5, y: 0.5)
+        var translation = CGSize.zero
+
+        func samplingRect(image: CGSize, drawable: CGSize) -> SIMD4<Float> {
+            // One Preview texel per physical display pixel, not per UIKit point.
+            let width = drawable.width / max(image.width, 1)
+            let height = drawable.height / max(image.height, 1)
+            let x = width >= 1 ? (1 - width) / 2 : min(max(focus.x * (1 - width) - translation.width * width, 0), 1 - width)
+            let y = height >= 1 ? (1 - height) / 2 : min(max(focus.y * (1 - height) - translation.height * height, 0), 1 - height)
+            // Align the crop to texels so linear sampling cannot blur pixel pitch.
+            return SIMD4(Float((x * image.width).rounded() / image.width),
+                         Float((y * image.height).rounded() / image.height), Float(width), Float(height))
+        }
+    }
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> MTKView {
         let view = EDRMetalView(frame: .zero, device: MTLCreateSystemDefaultDevice())
+        view.isOpaque = false
+        view.backgroundColor = .clear
         view.colorPixelFormat = .rgba16Float
         (view.layer as? CAMetalLayer)?.colorspace = CGColorSpace(name: CGColorSpace.extendedDisplayP3)
         view.isPaused = true
@@ -16,11 +36,13 @@ struct FilmCanvas: UIViewRepresentable {
     }
     func updateUIView(_ view: MTKView, context: Context) {
         context.coordinator.image = image
+        context.coordinator.loupe = loupe
         view.setNeedsDisplay()
     }
 
     @MainActor final class Coordinator: NSObject, MTKViewDelegate {
         var image: RenderedPixels?
+        var loupe: Loupe?
         private var pipeline: (any MTLRenderPipelineState)?
         private var queue: (any MTLCommandQueue)?
         func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) { }
@@ -37,9 +59,12 @@ struct FilmCanvas: UIViewRepresentable {
                         float2 uv = float2((id << 1) & 2, id & 2);
                         return {float4(uv * float2(2, -2) + float2(-1, 1), 0, 1), uv};
                     }
-                    fragment half4 canvasFragment(Vertex v [[stage_in]], texture2d<half> image [[texture(0)]]) {
+                    fragment half4 canvasFragment(Vertex v [[stage_in]], texture2d<half> image [[texture(0)]],
+                                                  constant float4 &crop [[buffer(0)]]) {
                         constexpr sampler s(filter::linear, address::clamp_to_edge);
-                        half4 pixel = image.sample(s, v.uv);
+                        float2 uv = crop.xy + v.uv * crop.zw;
+                        if (any(uv < 0) || any(uv > 1)) return half4(0);
+                        half4 pixel = image.sample(s, uv);
                         return half4(pixel.rgb * pixel.a, pixel.a);
                     }
                     """
@@ -63,6 +88,9 @@ struct FilmCanvas: UIViewRepresentable {
                 }
                 encoder.setRenderPipelineState(pipeline)
                 encoder.setFragmentTexture(texture, index: 0)
+                var crop = loupe?.samplingRect(image: CGSize(width: image.width, height: image.height),
+                                              drawable: view.drawableSize) ?? SIMD4<Float>(0, 0, 1, 1)
+                encoder.setFragmentBytes(&crop, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
                 encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
                 encoder.endEncoding()
                 command.present(drawable)

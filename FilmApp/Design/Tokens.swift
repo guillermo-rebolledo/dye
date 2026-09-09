@@ -640,6 +640,13 @@ extension Tokens {
         static let compareHeight: CGFloat = 24
         static let compareRadius: CGFloat = 12
         static let compareHoldDuration: Double = 0.15
+        static let dragThreshold: CGFloat = 8
+        static let dragGain: CGFloat = 0.5
+        static let readoutHeight: CGFloat = 26
+        static let readoutTopInset: CGFloat = 22
+        static let readoutGap: CGFloat = 8
+        static let readoutFill = Colour.hex(0x0A0A0C, alpha: 0.7).color
+        static let readoutValue = Colour.oklch(0.8, 0.15, 55).color
         static let comparingDeckOpacity: Double = 0.6
         static let renderHeight: CGFloat = 22
         static let renderPadding: CGFloat = 8
