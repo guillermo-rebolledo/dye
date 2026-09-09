@@ -39,8 +39,9 @@ struct Scrubber: View {
         .frame(height: Tokens.Metrics.minimumHitTarget)
         .accessibilityElement()
         .accessibilityLabel(parameter.name)
-        .accessibilityValue(parameter.readout)
+        .accessibilityValue(isEnabled ? parameter.readout : "Unavailable")
         .accessibilityAdjustableAction(adjust)
+        .disabled(!isEnabled)
     }
 
     // MARK: Dragging
@@ -106,6 +107,7 @@ struct Scrubber: View {
     /// however the value got there — including the wall, which fires on arrival
     /// and then stays quiet however many more times the increment is refused.
     private func adjust(_ direction: AccessibilityAdjustmentDirection) {
+        guard isEnabled else { return }
         let current = parameter.value.wrappedValue
         let step = direction == .increment ? parameter.step : -parameter.step
         let next = TrackMap.settle(current + step, for: parameter)
