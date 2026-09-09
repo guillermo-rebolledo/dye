@@ -839,9 +839,6 @@ extension Tokens {
         static let fieldPadding: CGFloat = 12
         static let savePadding: CGFloat = 16
         static let listRadius: CGFloat = 14
-        /// The dimensions the Preset scheduler renders into. Larger than the
-        /// 44×34 it draws so the thumbnail survives a Retina scale factor.
-        static let thumbnailRenderWidth = 192
     }
 }
 

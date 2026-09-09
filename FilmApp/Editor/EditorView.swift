@@ -15,7 +15,7 @@ struct EditorView: View {
                      showExport: { isExporting = true })
             .preferredColorScheme(.dark)
             .sheet(isPresented: $showsPresets) { PresetSheet(model: model).filmSheet() }
-            .sheet(isPresented: $showsContactSheet) { ContactSheetView() }
+            .fullScreenCover(isPresented: $showsContactSheet) { ContactSheetView(selectedStock: model.selectedStock) }
             .sheet(isPresented: $isExporting) { ExportSheet(model: model).filmSheet() }
             .task { model.loadCatalogue() }
             .task { await model.watchThermalState() }
