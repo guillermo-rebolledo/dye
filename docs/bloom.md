@@ -42,6 +42,10 @@ and the identity calibration Profile carry zero, as their Halation does.
 0–200% control. Zero skips the Pass entirely, which is also what the Baker's Step
 Wedges do.
 
+Above 100%, a quadratic creative boost raises diffusion to at least 30% at
+200% (capped at 100% to conserve light). The 0–100% range still scales the
+profile linearly. A profile with zero diffusion stays disabled.
+
 ## The pass
 
 Bloom and Halation share one set of kernels and one **Scattering Pyramid** design,
@@ -72,6 +76,7 @@ point, with an identity Colour Cube isolating the Pass.
   the falloff is neutral — all three channels alike — where Halation's is red.
 - The glare covers the same fraction of the frame at 512, 1024 and 2048 pixels, and
   a portrait frame blooms as a landscape one.
-- Zero intensity leaves the frame bit-identical, and 200% doubles the light moved.
+- Zero intensity leaves the frame bit-identical; 50–100% doubles the light moved,
+  and the range above 100% provides a stronger creative boost.
 - Bloom reaches the Emulsion before the density curves: doubling the intensity does
   not double the result through a Stock's Film Response.

@@ -475,6 +475,7 @@ extension EditorModel {
             + "\(Int(bloomRadiusMicrons)) µm of film. It takes that light from the scene rather than adding it, "
             + "and the film records the result, so it softens a highlight's surroundings instead of brightening them. "
             + "Halation, below, is the film reflecting light back into itself and is a different thing."
+        if intensity > 1.025 { return "Boosted diffusion. 100% restores the modelled lens. " + base }
         if abs(intensity - 1) < 0.025 { return "At the modelled lens's own diffusion. " + base }
         return String(format: "At %.0f%% of the modelled lens's own diffusion. ", intensity * 100) + base
     }
@@ -485,6 +486,7 @@ extension EditorModel {
         let reach = halationReachMicrons
         let base = "Light passing through the emulsion reflects off the back of the film and re-exposes it from behind, "
             + "reaching about \(Int(reach)) µm furthest in red. It happens before the density curves, not as an effect added afterwards."
+        if intensity > 1.025 { return "Boosted halation reaches softer highlights. 100% restores the stock response. " + base }
         if abs(intensity - 1) < 0.025 { return "At this stock's own strength. " + base }
         return String(format: "At %.0f%% of this stock's own strength. ", intensity * 100) + base
     }

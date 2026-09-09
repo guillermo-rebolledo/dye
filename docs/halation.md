@@ -36,6 +36,12 @@ the Pass entirely, which is also what the Baker's Step Wedges do, because
 neighbouring wedge samples are unrelated exposures rather than adjacent points in
 one scene.
 
+Above 100%, a quadratic creative boost raises strength to at least 0.3 at
+200% and lowers the threshold toward 0.4 in linear light. This lets ordinary
+SDR photo highlights scatter; doubling the stock threshold’s tiny excess alone
+was often invisible. The 0–100% range, stock tint, and radii are unchanged.
+Profiles with zero halation stay disabled.
+
 ## The pass
 
 1. **Threshold with a smooth knee.** Per channel, across ±half the threshold, a C1
