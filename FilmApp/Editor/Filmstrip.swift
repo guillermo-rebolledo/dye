@@ -27,15 +27,22 @@ struct Filmstrip: View {
         VStack(spacing: Tokens.Filmstrip.footerGap) {
             strip
             HStack(spacing: Tokens.Metrics.space10) {
-                if let provenance {
-                    Text(provenance).typeStyle(.filmProvenance)
-                        .foregroundStyle(Tokens.Deck.captionInk)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityLabel(provenance)
-                } else {
+                VStack(alignment: .leading, spacing: 0) {
                     legend
+                        .frame(height: Tokens.Filmstrip.footerLineHeight)
+                    if let provenance {
+                        // A horizontally readable caption keeps both the legend
+                        // and the full provenance available in the fixed footer.
+                        ScrollView(.horizontal) {
+                            Text(provenance).typeStyle(.filmProvenance)
+                                .foregroundStyle(Tokens.Deck.captionInk)
+                                .fixedSize()
+                        }
+                        .scrollIndicators(.hidden)
+                        .frame(height: Tokens.Filmstrip.footerLineHeight)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 Button { Haptics.buttonPress(); close() } label: {
                     Text("Controls").typeStyle(.filmControls)
                         .foregroundStyle(Tokens.Palette.textPrimary)
@@ -62,6 +69,8 @@ struct Filmstrip: View {
                         cell(profile, index: index).id(profile.id)
                     }
                 }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Stock filmstrip")
                 .padding(.horizontal, Tokens.Metrics.space16)
                 .padding(.top, Tokens.Metrics.space14)
                 .padding(.bottom, Tokens.Metrics.space14)
@@ -78,8 +87,6 @@ struct Filmstrip: View {
         .background(Tokens.Filmstrip.base)
         .overlay(alignment: .top) { sprockets.padding(.top, Tokens.Filmstrip.rebateInset) }
         .overlay(alignment: .bottom) { sprockets.padding(.bottom, Tokens.Filmstrip.rebateInset) }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Stock filmstrip")
     }
 
     private func cell(_ profile: Profile, index: Int) -> some View {
@@ -106,7 +113,8 @@ struct Filmstrip: View {
                                 .allowsHitTesting(false)
                         }
                     }
-                Text(profile.metadata.displayName).typeStyle(.filmName)
+                Text((profile.metadata.isApproximation ? "Approx. · " : "") + profile.metadata.displayName)
+                    .typeStyle(.filmName)
                     .foregroundStyle(selected ? Tokens.Palette.accent : Tokens.Palette.textPrimary)
                     .lineLimit(1).truncationMode(.tail)
             }

@@ -676,6 +676,7 @@ extension Tokens {
         static let stripHeight: CGFloat = 124
         static let footerGap: CGFloat = 8
         static let footerHeight: CGFloat = 24
+        static let footerLineHeight: CGFloat = 12
         static let cellWidth: CGFloat = 100
         static let cellHeight: CGFloat = 80
         static let processEdge: CGFloat = 3
