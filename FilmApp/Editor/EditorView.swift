@@ -47,25 +47,25 @@ private struct EditorScreen: View {
     let showContactSheet: () -> Void
     let showExport: () -> Void
     @State private var selection = EditorSelection()
-    @State private var isLoupeEnabled = false
-    @GestureState private var holdingBefore = false
+    @State var isLoupeEnabled = false
+    @State private var holdingBefore = false
     @State var accessibleBefore = false
+    var previewReadout = false
 
     private var isComparing: Bool { canvas.hasPhoto && (holdingBefore || accessibleBefore) }
 
     var body: some View {
         VStack(spacing: 0) {
-            CanvasView(content: canvas, isComparing: isComparing)
-                .contentShape(Rectangle())
-                .gesture(LongPressGesture(minimumDuration: Tokens.Canvas.compareHoldDuration)
-                    .sequenced(before: DragGesture(minimumDistance: 0))
-                    .updating($holdingBefore) { value, state, _ in
-                        if case .second(true, _) = value { state = true }
-                    }, including: canvas.hasPhoto ? .all : .none)
+            CanvasView(content: canvas, isComparing: isComparing,
+                       isLoupeEnabled: isLoupeEnabled,
+                       parameter: selection.isFilmstripOpen ? nil : selection.activeParameter(in: model.parameters(for: selection.stage)),
+                       onCompare: { holdingBefore = $0 }, previewReadout: previewReadout)
+                .id(model.selectedStock)
                 .accessibilityElement(children: canvas.hasPhoto ? .ignore : .combine)
                 .accessibilityLabel(canvas.accessibilityLabel)
                 .accessibilityValue(isComparing ? "Original" : "")
-                .modifier(CompareAccessibility(isEnabled: canvas.hasPhoto, showsOriginal: $accessibleBefore))
+                .modifier(CanvasAccessibility(isEnabled: canvas.hasPhoto, showsOriginal: $accessibleBefore,
+                                              isLoupeEnabled: $isLoupeEnabled))
             DeckView(model: model, selection: selection, hasPhoto: canvas.hasPhoto, photo: $photo,
                      isLoupeEnabled: $isLoupeEnabled, showPresets: showPresets,
                      showContactSheet: showContactSheet, showExport: showExport, error: error)
@@ -76,23 +76,27 @@ private struct EditorScreen: View {
         .ignoresSafeArea(.container, edges: .bottom)
         .background(Tokens.Palette.canvas.ignoresSafeArea())
         .onChange(of: isComparing) { Haptics.compare() }
-        .onChange(of: photo) { accessibleBefore = false }
-        .onChange(of: canvas.hasPhoto) { if !canvas.hasPhoto { accessibleBefore = false } }
+        .onChange(of: photo) { accessibleBefore = false; isLoupeEnabled = false; holdingBefore = false }
+        .onChange(of: canvas.hasPhoto) { if !canvas.hasPhoto { accessibleBefore = false; isLoupeEnabled = false; holdingBefore = false } }
     }
 }
 
-private struct CompareAccessibility: ViewModifier {
+private struct CanvasAccessibility: ViewModifier {
     let isEnabled: Bool
     @Binding var showsOriginal: Bool
+    @Binding var isLoupeEnabled: Bool
 
     @ViewBuilder func body(content: Content) -> some View {
         if isEnabled {
             content.accessibilityAction(named: showsOriginal ? "Show edited photo" : "Show original photo") {
                 showsOriginal.toggle()
             }
+            .accessibilityAction(named: isLoupeEnabled ? "Turn loupe off" : "Show 1:1 loupe") {
+                isLoupeEnabled.toggle()
+            }
             // SwiftUI caches custom action names on the accessibility element.
             // Refresh its identity only for the VoiceOver toggle, never a hold.
-            .id(showsOriginal)
+            .id("\(showsOriginal)-\(isLoupeEnabled)")
         } else {
             content
         }
@@ -100,7 +104,7 @@ private struct CompareAccessibility: ViewModifier {
 }
 
 private struct EditorPreview: View {
-    enum State { case graded, original, empty, loading, error }
+    enum State { case graded, original, loupe, dragging, empty, loading, error }
     let state: State
     @SwiftUI.State private var model = EditorModel()
     @SwiftUI.State private var canvas: CanvasView.Content = .empty
@@ -108,7 +112,9 @@ private struct EditorPreview: View {
 
     var body: some View {
         EditorScreen(model: model, canvas: canvas, error: previewError, photo: .constant(nil),
-                     showPresets: {}, showContactSheet: {}, showExport: {}, accessibleBefore: state == .original)
+                     showPresets: {}, showContactSheet: {}, showExport: {},
+                     isLoupeEnabled: state == .loupe, accessibleBefore: state == .original,
+                     previewReadout: state == .dragging)
             .task {
                 switch state {
                 case .empty: canvas = .empty
@@ -116,7 +122,7 @@ private struct EditorPreview: View {
                 case .error:
                     canvas = .empty
                     previewError = "The photo could not be loaded."
-                case .graded, .original:
+                case .graded, .original, .loupe, .dragging:
                     do {
                         model.loadCatalogue()
                         model.selectedStock = "portra-400"
@@ -139,3 +145,7 @@ private struct EditorPreview: View {
 #Preview("Editor · loading") { EditorPreview(state: .loading).preferredColorScheme(.dark) }
 #Preview("Editor · error") { EditorPreview(state: .error).preferredColorScheme(.dark) }
 #Preview("Editor · empty · light surround") { EditorPreview(state: .empty).preferredColorScheme(.light) }
+
+#Preview("Editor · 1:1 loupe") { EditorPreview(state: .loupe).preferredColorScheme(.dark) }
+
+#Preview("Editor · fine drag") { EditorPreview(state: .dragging).preferredColorScheme(.dark) }

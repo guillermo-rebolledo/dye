@@ -1,5 +1,6 @@
 import SwiftUI
 import FilmEngine
+import UIKit.UIGestureRecognizerSubclass
 
 /// Presentation only; FilmCanvas continues to own the Metal and EDR path.
 struct CanvasView: View {
@@ -24,6 +25,17 @@ struct CanvasView: View {
 
     let content: Content
     var isComparing = false
+    var isLoupeEnabled = false
+    var parameter: Parameter?
+    var onCompare: (Bool) -> Void = { _ in }
+    var previewReadout: Bool = false
+    @State private var drag: FineDrag?
+    @State private var transientLoupe: FilmCanvas.Loupe?
+    @State private var savedLoupe = FilmCanvas.Loupe()
+
+    private var loupe: FilmCanvas.Loupe? {
+        transientLoupe ?? (isLoupeEnabled ? savedLoupe : nil)
+    }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -31,11 +43,34 @@ struct CanvasView: View {
             Group {
                 switch content {
                 case let .photo(pixels, before, milliseconds):
-                    FilmCanvas(image: isComparing ? before ?? pixels : pixels)
+                    FilmCanvas(image: isComparing ? before ?? pixels : pixels, loupe: loupe)
                         // Never inherit a crossfade from changes to the chrome.
                         .transaction { $0.animation = nil }
                         .aspectRatio(CGFloat(pixels.width) / CGFloat(pixels.height), contentMode: .fit)
-                        .overlay(alignment: .topLeading) { comparePill.padding(Tokens.Metrics.space10) }
+                        .overlay {
+                            CanvasGestureSurface(baseLoupe: isLoupeEnabled ? savedLoupe : nil,
+                                                 onCompare: onCompare,
+                                                 onDrag: { translation in fineDrag(translation, width: geometry.size.width) },
+                                                 onLoupe: { value in
+                                if let value { transientLoupe = value }
+                                else {
+                                    if isLoupeEnabled, let transientLoupe { savedLoupe = transientLoupe }
+                                    transientLoupe = nil
+                                }
+                            })
+                            .accessibilityHidden(true)
+                        }
+                        .overlay(alignment: .topLeading) {
+                            if drag == nil && !previewReadout {
+                                comparePill.padding(Tokens.Metrics.space10)
+                            }
+                        }
+                        .overlay(alignment: .top) {
+                            if let active = drag?.track.parameter ?? (previewReadout ? parameter : nil) {
+                                CanvasReadoutPill(name: active.name, value: active.readout)
+                                    .padding(.top, Tokens.Canvas.readoutTopInset)
+                            }
+                        }
                         .overlay(alignment: .bottomTrailing) {
                             if let milliseconds {
                                 RenderTimePill(milliseconds: milliseconds)
@@ -52,6 +87,38 @@ struct CanvasView: View {
             .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .background(Tokens.Palette.canvas)
+        .onChange(of: isLoupeEnabled) { savedLoupe = FilmCanvas.Loupe(); transientLoupe = nil }
+        .onChange(of: parameter?.id) { drag = nil }
+        .onDisappear { onCompare(false); drag = nil; transientLoupe = nil }
+    }
+
+    private struct FineDrag {
+        let track: Scrubber.TrackMap
+        let origin: CGFloat
+    }
+
+    private func fineDrag(_ translation: CGFloat?, width: CGFloat) {
+        guard let translation else { drag = nil; return }
+        guard let parameter else { return }
+        if drag == nil {
+            let trackWidth = parameter.control == .shutterDial
+                ? CGFloat(parameter.range.upperBound - parameter.range.lowerBound) * Tokens.Discrete.pointsPerStop
+                    + 2 * (Tokens.Track.indicatorEndInset + Tokens.Track.indicatorWidth / 2)
+                : width
+            let track = Scrubber.TrackMap(parameter: parameter, width: trackWidth)
+            drag = FineDrag(track: track, origin: track.origin(of: parameter.value.wrappedValue))
+            Haptics.prepare()
+        }
+        guard let drag else { return }
+        let direction: CGFloat = parameter.control == .shutterDial ? -1 : 1
+        let outcome = drag.track.resolve(drag.origin + translation * Tokens.Canvas.dragGain * direction)
+        let previous = parameter.value.wrappedValue
+        guard outcome.value != previous else { return }
+        parameter.value.wrappedValue = outcome.value
+        let crossed = parameter.detent.map { (previous - $0) * (outcome.value - $0) < 0 } ?? false
+        if outcome.isAtLimit && !drag.track.isAtLimit(previous) { Haptics.rangeLimit() }
+        else if (outcome.isAtDetent && !parameter.isAtDetent(previous)) || crossed { Haptics.detent() }
+        else { Haptics.step() }
     }
 
     private var comparePill: some View {
@@ -141,3 +208,179 @@ private struct RenderTimePill: View {
 
 #Preview("Canvas · empty") { CanvasView(content: .empty) }
 #Preview("Canvas · decoding") { CanvasView(content: .loading) }
+
+/// Screen 1k's transient readout; never intercepts the touch underneath it.
+private struct CanvasReadoutPill: View {
+    let name: String
+    let value: String
+
+    var body: some View {
+        HStack(spacing: Tokens.Canvas.readoutGap) {
+            Text(name).typeStyle(.chipName).foregroundStyle(Tokens.Canvas.compareText)
+            Text(value).typeStyle(.chipValue).monospacedDigit().foregroundStyle(Tokens.Canvas.readoutValue)
+        }
+        .lineLimit(1)
+        .padding(.horizontal, Tokens.Metrics.space10)
+        .frame(height: Tokens.Canvas.readoutHeight)
+        .background {
+            Capsule().fill(.ultraThinMaterial).environment(\.colorScheme, .dark)
+                .overlay(Capsule().fill(Tokens.Canvas.readoutFill))
+        }
+        .overlay(Capsule().strokeBorder(Tokens.Canvas.pillBorder, lineWidth: Tokens.Elevation.hairlineWidth))
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// A single recognizer owns arbitration. Separate SwiftUI gestures cannot observe
+/// the second finger while also guaranteeing that an engaged compare stays locked.
+private struct CanvasGestureSurface: UIViewRepresentable {
+    var baseLoupe: FilmCanvas.Loupe?
+    var onCompare: (Bool) -> Void
+    var onDrag: (CGFloat?) -> Void
+    var onLoupe: (FilmCanvas.Loupe?) -> Void
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isMultipleTouchEnabled = true
+        view.addGestureRecognizer(CanvasGestureRecognizer())
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        guard let gesture = view.gestureRecognizers?.first as? CanvasGestureRecognizer else { return }
+        gesture.baseLoupe = baseLoupe
+        gesture.onCompare = onCompare
+        gesture.onDrag = onDrag
+        gesture.onLoupe = onLoupe
+    }
+
+    static func dismantleUIView(_ view: UIView, coordinator: ()) {
+        (view.gestureRecognizers?.first as? CanvasGestureRecognizer)?.cancelInteraction()
+    }
+}
+
+private final class CanvasGestureRecognizer: UIGestureRecognizer {
+    enum Mode { case waiting, pinchWaiting, compare, drag, loupe, ignored }
+    var baseLoupe: FilmCanvas.Loupe?
+    var onCompare: (Bool) -> Void = { _ in }
+    var onDrag: (CGFloat?) -> Void = { _ in }
+    var onLoupe: (FilmCanvas.Loupe?) -> Void = { _ in }
+    private var mode = Mode.waiting
+    private var fingers: Set<UITouch> = []
+    private var origin = CGPoint.zero
+    private var pinchDistance: CGFloat = 0
+    private var startingLoupe: FilmCanvas.Loupe?
+    private var holdTask: Task<Void, Never>?
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        fingers.formUnion(touches)
+        guard mode == .waiting else { return }
+        startingLoupe = baseLoupe
+        if fingers.count > 1 {
+            holdTask?.cancel()
+            mode = .pinchWaiting
+            origin = centroid
+            pinchDistance = distance
+        } else {
+            origin = centroid
+            holdTask = Task { @MainActor [weak self] in
+                do { try await Task.sleep(for: .seconds(Tokens.Canvas.compareHoldDuration)) }
+                catch { return }
+                guard let self, self.mode == .waiting, self.fingers.count == 1 else { return }
+                self.mode = .compare
+                self.state = .began
+                self.onCompare(true)
+            }
+        }
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        let point = centroid
+        let dx = point.x - origin.x
+        let dy = point.y - origin.y
+        switch mode {
+        case .waiting:
+            guard hypot(dx, dy) >= Tokens.Canvas.dragThreshold else { return }
+            holdTask?.cancel()
+            if startingLoupe != nil { mode = .loupe }
+            else if abs(dx) >= abs(dy) { mode = .drag }
+            else { mode = .ignored }
+            state = .began
+        case .pinchWaiting:
+            guard abs(distance - pinchDistance) >= Tokens.Canvas.dragThreshold else { return }
+            mode = .loupe
+            state = .began
+        case .compare, .ignored: return
+        case .drag, .loupe: break
+        }
+        if mode == .drag {
+            // Additional fingers cannot turn an already claimed drag into a pinch.
+            guard fingers.count == 1 else { return }
+            onDrag(dx)
+        } else if mode == .loupe, let view, view.bounds.width > 0, view.bounds.height > 0 {
+            onLoupe(FilmCanvas.Loupe(
+                focus: startingLoupe?.focus ?? CGPoint(x: origin.x / view.bounds.width, y: origin.y / view.bounds.height),
+                translation: CGSize(width: (startingLoupe?.translation.width ?? 0) + dx / view.bounds.width,
+                                    height: (startingLoupe?.translation.height ?? 0) + dy / view.bounds.height)))
+        }
+        state = .changed
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        fingers.subtract(touches)
+        // The first lift ends inspection; remaining fingers never start a new mode.
+        finish()
+        mode = .ignored
+        if fingers.isEmpty { state = state == .possible ? .failed : .ended }
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        cancelInteraction()
+    }
+
+    func cancelInteraction() {
+        finish()
+        mode = .ignored
+        fingers.removeAll()
+        state = state == .possible ? .failed : .cancelled
+    }
+
+    override func reset() {
+        super.reset()
+        holdTask?.cancel()
+        holdTask = nil
+        fingers.removeAll()
+        mode = .waiting
+    }
+
+    private func finish() {
+        holdTask?.cancel()
+        switch mode {
+        case .compare: onCompare(false)
+        case .drag: onDrag(nil)
+        case .loupe: onLoupe(nil)
+        default: break
+        }
+    }
+
+    private var centroid: CGPoint {
+        guard !fingers.isEmpty else { return origin }
+        let sum = fingers.reduce(CGPoint.zero) { sum, touch in
+            let point = touch.location(in: view)
+            return CGPoint(x: sum.x + point.x, y: sum.y + point.y)
+        }
+        return CGPoint(x: sum.x / CGFloat(fingers.count), y: sum.y / CGFloat(fingers.count))
+    }
+
+    private var distance: CGFloat {
+        let points = fingers.map { $0.location(in: view) }
+        guard points.count == 2 else { return 0 }
+        return hypot(points[0].x - points[1].x, points[0].y - points[1].y)
+    }
+}
+
+#Preview("Canvas · fine drag readout") {
+    CanvasReadoutPill(name: "Exposure", value: "+0.7 EV")
+        .padding(Tokens.Metrics.space20).background(Tokens.Palette.canvas)
+}
