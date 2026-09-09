@@ -192,3 +192,18 @@ func aContrastFilterMovesTonalSeparationAndNotExposure(id: String) async throws 
     colour.monochrome = payload.metadata.monochrome
     #expect(throws: (any Error).self) { try Profile(metadata: colour, payloads: [:]) }
 }
+
+/// Kodak publishes a daylight filter factor table per film; Harman and Foma publish
+/// none. A Curve Set without one is honest about it rather than borrowing another
+/// manufacturer's table, and the validator reports no `filter-factor` stage at all.
+@Test func aStockWithNoPublishedFilterTableIsNotValidatedAgainstAnothersTable() throws {
+    let catalogue = try ProfileCatalogue.bundled()
+    let foma = try #require(catalogue.profiles.first { $0.id == "fomapan-100" })
+    let triX = try #require(catalogue.profiles.first { $0.id == "tri-x-400" })
+    // Both still derive the five Contrast Filters; only the evidence differs.
+    #expect(foma.metadata.monochrome?.contrastFilters?.count == 5)
+    #expect(foma.metadata.provenance["spectral.contrastFilters"] == .approximation)
+    #expect(triX.metadata.provenance["spectral.contrastFilters"] == .artistic)
+    #expect(foma.metadata.isApproximation)
+    #expect(!triX.metadata.isApproximation)
+}

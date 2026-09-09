@@ -207,3 +207,48 @@ private func correlationLength(_ field: [Double], width: Int, height: Int) -> Do
     #expect(first != reseeded)
     #expect(abs(deviation(reseeded) / deviation(first) - 1) < 0.1)
 }
+
+/// A dye cloud is wider and softer than a silver crystal, and clumps. The Export
+/// path is where a Stock's own Grain Model is honoured, so that is where the
+/// difference has to show: the same amplitude, spread over a longer correlation.
+@Test func theDyeCloudModelMottlesWhereTheCrystalModelSpeckles() async throws {
+    let renderer = try Renderer()
+    let image = try flat(width: 256, height: 256, value: 0.18)
+    func field(_ model: GrainModel) async throws -> [Double] {
+        var metadata = try graining(radiusMicrons: 0.8, rms: 0.05).metadata
+        metadata.grain = FilmProfile.Grain(model: model, rmsGranularity: metadata.grain.rmsGranularity,
+                                           grainRadiusMicrons: metadata.grain.grainRadiusMicrons,
+                                           densityResponse: metadata.grain.densityResponse,
+                                           channelCorrelation: metadata.grain.channelCorrelation,
+                                           channelRadiusScale: metadata.grain.channelRadiusScale)
+        let profile = try Profile(metadata: metadata, payloads: ["identity.lut3d": ColourCube.identity.payload])
+        var settings = RenderSettings(output: .workingSpace)
+        let grainy = try await renderer.exportedPixels(image: .linear(image), profile: profile, settings: settings)
+        settings.grainIntensity = 0
+        let plain = try await renderer.exportedPixels(image: .linear(image), profile: profile, settings: settings)
+        return (0..<(image.width * image.height)).map { Double(grainy.rgba[$0 * 4]) - Double(plain.rgba[$0 * 4]) }
+    }
+    func neighbourCorrelation(_ field: [Double]) -> Double {
+        let mean = field.reduce(0, +) / Double(field.count)
+        let centred = field.map { $0 - mean }
+        var product = 0.0, energy = 0.0
+        for row in 0..<256 {
+            for column in 0..<255 {
+                product += centred[row * 256 + column] * centred[row * 256 + column + 1]
+                energy += centred[row * 256 + column] * centred[row * 256 + column]
+            }
+        }
+        return product / energy
+    }
+    let crystal = try await field(.procedural)
+    let cloud = try await field(.dyeCloud)
+    // Neither model resolves a sub-micron crystal, so the crystal field is one
+    // independent sample per pixel and its neighbours share nothing.
+    #expect(neighbourCorrelation(crystal) < 0.05)
+    #expect(neighbourCorrelation(cloud) > 0.2)
+    // The clumping octave redistributes the fluctuation; it does not add any.
+    #expect(abs(deviation(cloud) / deviation(crystal) - 1) < 0.15)
+    // `stochastic` still has no kernel of its own and must not silently become one.
+    let stochastic = try await field(.stochastic)
+    #expect(stochastic == crystal)
+}

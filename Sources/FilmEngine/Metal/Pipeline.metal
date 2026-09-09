@@ -348,6 +348,54 @@ static float grainNoise(float2 position, float cell, uint channel, uint seed) {
     return mix(mix(n00, n10, s.x), mix(n01, n11, s.x), s.y) * GRAIN_NOISE_NORMALISATION;
 }
 
+// A dye cloud is not a silver crystal. Development leaves a cloud of dye around
+// each developed grain, an order of magnitude wider and with no hard edge, so two
+// things change and only these two. The field stays spatially correlated below the
+// sampling pitch, where the crystal model deliberately gives each pixel its own
+// independent sample: neighbouring pixels of an unresolved crystal share no
+// crystals, but they do share a cloud. And the clouds clump, so a coarser octave
+// rides on the first. Weights are variance-preserving, so `rmsGranularity` still
+// means the density sigma it names.
+constant float DYE_CLOUD_FINE = 0.8f;
+constant float DYE_CLOUD_COARSE = 0.6f;  // sqrt(1 - 0.8^2): a tuned share, not a measurement
+constant float DYE_CLOUD_CLUMP = 3.0f;
+
+/// The cloud's own field plus the clump it sits in. The clump is always wider than
+/// the sampling pitch, so it stays correlated across neighbouring pixels even where
+/// the cloud itself is far too small for the frame to resolve — which is the whole
+/// Catalogue at any practical output size, and is why this reads as mottling rather
+/// than as the crystal model at a different amplitude.
+static float dyeCloudNoise(float2 position, float cell, uint channel, uint seed) {
+    float fine = grainNoise(position, cell, channel, seed);
+    // A different lattice channel, so the clump is its own field rather than a
+    // rescaling of the one it rides on.
+    float coarse = grainNoise(position, max(cell, 1.0f) * DYE_CLOUD_CLUMP, channel + 4u, seed);
+    return DYE_CLOUD_FINE * fine + DYE_CLOUD_COARSE * coarse;
+}
+
+kernel void grainDyeCloud(texture2d<half, access::read> input [[texture(0)]],
+                          texture2d<half, access::write> output [[texture(1)]],
+                          constant GrainUniforms &grain [[buffer(11)]],
+                          constant float *densityResponse [[buffer(12)]],
+                          constant float4 &frame [[buffer(17)]],
+                          uint2 p [[thread_position_in_grid]]) {
+    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
+    half4 pixel = input.read(p);
+    float2 position = float2(p) + frame.xy + 0.5f;
+    float3 value = float3(pixel.rgb);
+    float shared = dyeCloudNoise(position, grain.mix.z, 3u, grain.seed.x);
+    float3 result;
+    for (uint c = 0; c < 3; ++c) {
+        float t = clamp((value[c] - grain.base[c]) * grain.scale[c], 0.0f, 1.0f) * 31.0f;
+        uint low = min(uint(t), 30u);
+        float amplitude = mix(densityResponse[low], densityResponse[low + 1], t - float(low));
+        float noise = grain.mix.x * dyeCloudNoise(position, grain.cell[c], c, grain.seed.x) + grain.mix.y * shared;
+        float density = grain.sigma[c] * amplitude * noise;
+        result[c] = grain.mix.w > 0.5f ? value[c] + density : value[c] * exp10(-density);
+    }
+    output.write(half4(half3(result), pixel.a), p);
+}
+
 kernel void grain(texture2d<half, access::read> input [[texture(0)]],
                   texture2d<half, access::write> output [[texture(1)]],
                   constant GrainUniforms &grain [[buffer(11)]],

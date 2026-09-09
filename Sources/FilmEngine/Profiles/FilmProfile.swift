@@ -22,7 +22,13 @@ public enum FilmFormat: String, Codable, Sendable {
     }
 }
 
-public enum Provenance: String, Codable, Sendable { case measured, artistic }
+/// Where a parameter's value came from. `measured` is supported by a cited source
+/// and `artistic` is a judgement made here. `approximation` is neither: the Stock
+/// publishes no usable measurement of this parameter at all, and the value stands
+/// in for one — a shape borrowed from a sibling Stock and adjusted, or a figure read
+/// off reference scans. A Profile carrying one is not a claim about that film's
+/// numbers, and the app says so rather than letting it pass as the other two.
+public enum Provenance: String, Codable, Sendable { case measured, artistic, approximation }
 
 /// A Contrast Filter: coloured glass on the lens, modelled as a spectral multiply
 /// applied before the Monochrome Collapse. Black & white only, and never a tint —
@@ -92,6 +98,10 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
     public var derivedFrom: String?
     /// Dotted schema paths, one marker per physical parameter (arrays count as one).
     public var provenance: [String: Provenance]
+
+    /// Whether any parameter stands in for a measurement the Stock never published.
+    /// The app says so wherever it names the Stock; see `Provenance.approximation`.
+    public var isApproximation: Bool { provenance.values.contains(.approximation) }
 
     public struct Colour: Codable, Equatable, Sendable {
         public var lutVariants: [Variant]

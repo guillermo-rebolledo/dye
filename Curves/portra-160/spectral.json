@@ -1,0 +1,52 @@
+{
+  "development": [
+    {
+      "contrast": 0.87,
+      "offset": -1,
+      "shadowLoss": 0
+    },
+    {
+      "contrast": 1,
+      "offset": 0,
+      "shadowLoss": 0
+    },
+    {
+      "contrast": 1.14,
+      "offset": 1,
+      "shadowLoss": 0.05
+    },
+    {
+      "contrast": 1.28,
+      "offset": 2,
+      "shadowLoss": 0.1
+    }
+  ],
+  "dirCouplers": [
+    [
+      0,
+      0.1,
+      0.07
+    ],
+    [
+      0.08,
+      0,
+      0.08
+    ],
+    [
+      0.05,
+      0.1,
+      0
+    ]
+  ],
+  "dyePeakNM": [
+    650,
+    550,
+    450
+  ],
+  "dyeWidthNM": [
+    55,
+    40,
+    40
+  ],
+  "scanGamma": 0.65
+}

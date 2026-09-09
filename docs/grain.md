@@ -24,8 +24,35 @@ scaled per channel by `channelRadiusScale`. `densityResponse` is the 32-entry
 **Density Response**, sampled from the Stock's base density to twice its mid-grey
 density. `channelCorrelation` sits near zero for colour negative, where the three
 Emulsion layers grain independently, and near one for a black & white silver
-Stock, which has one layer. `model` is not yet read at render time: `procedural`
-is what ships, and the `dye-cloud` and `stochastic` models are later work.
+Stock, which has one layer. `model` is read at render time on the Export path
+only: `procedural` is what a Preview always renders, and `stochastic` is still
+later work that resolves to it. `dye-cloud` has a kernel of its own — see
+[The dye-cloud model](#the-dye-cloud-model).
+
+## The dye-cloud model
+
+A chromogenic Stock has no developed silver left in it. What carries the image is a
+cloud of dye grown around each developed crystal and then bleached away from it:
+wider than the crystal, soft-edged, and clustered, because neighbouring crystals
+grow into one another's clouds. `grainDyeCloud` is the crystal kernel with one
+addition — a second, coarser octave of the same lattice, three times the cell,
+carrying 36 per cent of the variance.
+
+That share is a tuned judgement, not a measurement. What it buys is the part that
+cannot be reached by changing `rmsGranularity`, `grainRadiusMicrons` or
+`channelCorrelation`: every Stock in the Catalogue is far below the sampling pitch,
+where the crystal model gives each pixel its own independent sample, and
+neighbouring pixels of an unresolved crystal genuinely share no crystals. They do
+share a clump. The clump's cell is always wider than the pitch, so the field stays
+correlated across pixels and reads as mottling rather than as speckle at a different
+amplitude. The two weights preserve variance, so `rmsGranularity` still means the
+density sigma it names.
+
+Only XP2 Super among the black & white Stocks is chromogenic, and it is the reason
+this exists. Portra 400, Portra 160 and Cinestill 800T are chromogenic too and have
+declared `dye-cloud` since before it had a kernel, so an Export of those three
+changes with it. A Preview does not: `Renderer.grainModel` renders `procedural`
+there whatever the Stock declares.
 
 ## The pass
 

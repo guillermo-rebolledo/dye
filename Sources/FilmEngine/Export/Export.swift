@@ -120,12 +120,12 @@ extension Renderer {
     /// asking for the expensive model there makes the Export both slower and hotter:
     /// the engine gives the model up instead and finishes.
     ///
-    /// Only the `procedural` tier has a kernel today. `stochastic` — silver halide as
-    /// a Poisson point process, integrated per pixel — and `dye-cloud` are MEM-239's
-    /// phase 7, so every Stock currently renders procedurally and this decides nothing
-    /// visible yet. It is wired now because the Export path is where the choice has to
-    /// be made, and because the degradation is a property of the path rather than of
-    /// the model that eventually lands behind it.
+    /// `dye-cloud` now has a kernel of its own, so a Stock that declares it renders
+    /// differently on the Export path: the clumping octave stays correlated across
+    /// pixels where the crystal model gives each its own sample. `stochastic` — silver
+    /// halide as a Poisson point process, integrated per pixel — is still MEM-239's
+    /// phase 7 and resolves to the procedural kernel. The degradation below is a
+    /// property of the path rather than of the model behind it.
     public static func grainModel(_ profile: Profile, path: RenderPath,
                                   thermalState: ProcessInfo.ThermalState) -> GrainModel {
         guard path == .export, !thermalState.isThrottling else { return .procedural }

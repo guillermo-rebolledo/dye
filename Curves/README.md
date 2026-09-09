@@ -9,10 +9,17 @@ accurate emulations. Their Display Names say so and all Provenance is artistic.
 They exercise every Process and the entire authoring/loading/rendering path.
 `portra-400` is the first measured Curve Set, using the spectral Baker path; see
 [its sources](portra-400/SOURCES.md) and the [model contract](../docs/spectral-model.md)
-for its measured inputs and explicitly artistic assumptions. `provia-100f` and
+for its measured inputs and explicitly artistic assumptions. `portra-160` is the
+second, from the same family's E-4051 sheet; its digitiser calibrates each chart
+from the chart's own plot box and checks that box against the printed tick labels
+before writing, and reads channel assignment off the chart's B/G/R and layer
+labels rather than PDF drawing order. See [its sources](portra-160/SOURCES.md). `provia-100f` and
 `velvia-50` are the first reversal ones; see [the reversal branch](../docs/reversal.md).
 `tri-x-400` and `t-max-100` are the first measured black & white ones; see
-[the black & white branch](../docs/monochrome.md). `vision3-50d`, `vision3-250d`,
+[the black & white branch](../docs/monochrome.md). `fomapan-100` is the first
+**Approximation**: Foma prints no vertical scale on its wedge spectrogram, so the
+Profile's spectral sensitivity carries an assumed one and the app labels the Stock.
+See [its sources](fomapan-100/SOURCES.md). `vision3-50d`, `vision3-250d`,
 `vision3-200t` and `vision3-500t` are the ECN-2 ones, two daylight-balanced and
 two tungsten; see [the ECN-2 branch and the Print](../docs/print.md).
 
@@ -145,7 +152,10 @@ and no Colour Cube. Alongside `density.csv` it supplies `sensitivity.csv`
 (`wavelengthNM,sensitivity` — one curve, not three), `observer.csv`, `mtf.csv`
 (`cyclesPerMM,response`), `rms-granularity.csv` and `filter-factors.csv`
 (`filter,daylightFactor`, one row per Contrast Filter, transcribed from the
-datasheet's daylight column). The three spectral tables must share the observer's
+datasheet's daylight column). **Omit that last file when the manufacturer
+publishes no such table**, and mark `spectral.contrastFilters` an approximation:
+validating derived weights against another manufacturer's film would test that
+film. Kodak publishes one per film; Harman and Foma publish none. The three spectral tables must share the observer's
 uniform 400…700 nm grid, and `Curves/contrast-filters/transmittance.csv` must too.
 
 `stock.json` carries `monochrome.densityCurve` and an `inputShaper`, and must

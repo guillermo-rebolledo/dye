@@ -64,6 +64,14 @@ struct CurveSet {
     /// copy of it from a sibling directory, exactly as the Contrast Filters work.
     var printPaperDirectory: URL { directory.deletingLastPathComponent().appendingPathComponent("ra4-paper") }
 
+    /// Whether this Stock publishes daylight filter factors at all. Kodak does, per
+    /// film; Harman and Foma publish none, and a Curve Set whose Contrast Filters are
+    /// an Approximation says so in its Provenance and omits the file rather than
+    /// borrowing another manufacturer's table and validating against it.
+    var hasPublishedFilterFactors: Bool {
+        FileManager.default.fileExists(atPath: directory.appendingPathComponent("filter-factors.csv").path)
+    }
+
     /// The Stock's published daylight filter factors, which the validator compares the
     /// derived Contrast Filter Spectral Weights against.
     func publishedFilterFactors() throws -> [ContrastFilter: Double] {
@@ -141,8 +149,8 @@ struct CurveSet {
             // own list. A Stock cannot change branch without changing its fingerprint.
             var sources = metadata.process.isMonochrome
                 ? [directory.appendingPathComponent("density.csv"),
-                   contrastFilterDirectory.appendingPathComponent("transmittance.csv"),
-                   directory.appendingPathComponent("filter-factors.csv")]
+                   contrastFilterDirectory.appendingPathComponent("transmittance.csv")]
+                  + (hasPublishedFilterFactors ? [directory.appendingPathComponent("filter-factors.csv")] : [])
                 : ["spectral.json", "neutral.red.csv", "neutral.green.csv", "neutral.blue.csv", "dye-density.csv"]
                     .map(directory.appendingPathComponent)
             sources += ["stock.json", "sensitivity.csv", "observer.csv", "mtf.csv", "rms-granularity.csv"]
