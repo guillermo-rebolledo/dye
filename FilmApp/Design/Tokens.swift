@@ -714,3 +714,190 @@ extension Tokens.TypeStyle {
     static let filmControls = Self(size: 12, weight: .semibold, isMono: false, lineHeight: 12)
     static let filmProvenance = Self(size: 10, weight: .regular, isMono: false, lineHeight: 12)
 }
+
+// MARK: - Sheet chrome (handoff §9 / screens 1l–1p)
+
+extension Tokens {
+    /// What every secondary surface is built from. The three sheets differ in what
+    /// they hold, not in how they are dressed, so the grabber, the header, the
+    /// segmented troughs and the two button weights are described once here.
+    enum Sheet {
+        /// The detent the three sheets open at, leaving the photo visible above.
+        static let detentHeight: CGFloat = 500
+        static let topPadding: CGFloat = 8
+        /// Between the major blocks of a sheet. The Export idle state has room for
+        /// the wider one; the states that carry a record use the tighter.
+        static let sectionGap: CGFloat = 18
+        static let rowGap: CGFloat = 16
+        static let labelGap: CGFloat = 8
+
+        static let grabberWidth: CGFloat = 36
+        static let grabberHeight: CGFloat = 5
+        static let grabberRadius: CGFloat = 3
+        static let grabber = Colour.hex(0xFFFFFF, alpha: 0.22).color
+
+        static let segmentedHeight: CGFloat = 36
+        static let segmentedRadius: CGFloat = 10
+        static let segmentedPadding: CGFloat = 3
+        static let segmentHeight: CGFloat = 30
+
+        /// A full-width action. The primary one wears the accent; everything else
+        /// is the same raised face the deck uses.
+        static let actionHeight: CGFloat = 50
+        /// `Export another` and its kind: a real target with no face at all.
+        static let quietActionHeight: CGFloat = 44
+        static let primaryFace = LinearGradient(colors: [Colour.oklch(0.78, 0.15, 55).color,
+                                                         Colour.oklch(0.68, 0.15, 55).color],
+                                                startPoint: .top, endPoint: .bottom)
+        static let primaryFacePressed = LinearGradient(colors: [Colour.oklch(0.68, 0.15, 55).color,
+                                                                Colour.oklch(0.58, 0.15, 55).color],
+                                                       startPoint: .top, endPoint: .bottom)
+        /// Ink on the accent. Near-black with the accent's own hue in it, so the
+        /// label reads as printed on the face rather than punched through it.
+        static let primaryInk = Colour.hex(0x1A_10_08).color
+        static let primaryHighlight = Colour.hex(0xFFFFFF, alpha: 0.3).color
+
+        /// A recessed card: the tile grid, the finished record, the Preset list.
+        static let cardRadius: CGFloat = 14
+        static let cardPadding: CGFloat = 14
+        static let cardGap: CGFloat = 12
+        /// A raised chip carrying a single line of information, such as the
+        /// thermal notice.
+        static let noticeRadius: CGFloat = 12
+        static let noticePaddingVertical: CGFloat = 10
+        static let noticePaddingHorizontal: CGFloat = 12
+        static let noticeGap: CGFloat = 10
+        static let noticeDot: CGFloat = 8
+        static let noticeDotGlow: CGFloat = 3
+
+        static let hairline = Colour.hex(0xFFFFFF, alpha: 0.08).color
+        static let hairlineHeight: CGFloat = 0.5
+        static let rowSeparator = Colour.hex(0xFFFFFF, alpha: 0.07).color
+        static let frameEdge = Colour.hex(0xFFFFFF, alpha: 0.15).color
+        /// What a control fades to once the render has locked it.
+        static let lockedOpacity: Double = 0.45
+    }
+}
+
+extension Tokens.TypeStyle {
+    /// A sheet's title, beside its `Done`.
+    static let sheetTitle = Self(size: 20, weight: .semibold, isMono: false)
+    static let sheetAction = Self(size: 15, weight: .medium, isMono: false)
+    /// `FORMAT`, `COLOUR`: the mono label over a group.
+    static let sectionLabel = Self(size: 11, weight: .medium, isMono: true, tracking: 0.88, textCase: .uppercase)
+    static let primaryAction = Self(size: 16, weight: .semibold, isMono: false)
+    static let quietAction = Self(size: 15, weight: .medium, isMono: false)
+    /// The body of the thermal notice, which is prose rather than a caption.
+    static let notice = Self(size: 12, weight: .regular, isMono: false, lineHeight: 16)
+}
+
+// MARK: - Export sheet (handoff §9 / screens 1l, 1m, 1n)
+
+extension Tokens {
+    enum Export {
+        /// The tile grid is laid out for whatever count the plan reports, so this
+        /// is the shape it aims for rather than a fixed 6×4: columns are chosen to
+        /// keep the grid about half again as wide as it is tall, and capped so a
+        /// finely tiled frame does not draw tiles a point across.
+        static let gridAspect: Double = 1.5
+        static let maximumColumns = 12
+        static let tileGap: CGFloat = 3
+        static let tileRadius: CGFloat = 2
+        /// The tile being rendered right now.
+        static let currentTile = Palette.accentColour.opacity(0.5).color
+        static let pendingTile = Colour.hex(0xFFFFFF, alpha: 0.08).color
+
+        static let thumbnailWidth: CGFloat = 64
+        static let thumbnailHeight: CGFloat = 48
+        static let thumbnailRadius: CGFloat = 4
+        static let recordGap: CGFloat = 4
+    }
+}
+
+extension Tokens.TypeStyle {
+    /// `tile 7 of 24`, tabular so the number cannot shift the words around it.
+    static let tileReadout = Self(size: 15, weight: .medium, isMono: true)
+    /// The exported file's name.
+    static let recordName = Self(size: 14, weight: .semibold, isMono: true)
+    /// The dimensions, the gamut, the size, the tiles and the seconds.
+    static let recordDetail = Self(size: 11, weight: .regular, isMono: true)
+}
+
+// MARK: - Presets sheet (handoff §9 / screen 1o)
+
+extension Tokens {
+    enum Presets {
+        static let rowHeight: CGFloat = 60
+        static let rowPadding: CGFloat = 14
+        static let rowGap: CGFloat = 12
+        static let nameGap: CGFloat = 4
+        static let thumbnailWidth: CGFloat = 44
+        static let thumbnailHeight: CGFloat = 34
+        static let thumbnailRadius: CGFloat = 3
+        static let fieldHeight: CGFloat = 44
+        static let fieldRadius: CGFloat = 11
+        static let fieldPadding: CGFloat = 12
+        static let savePadding: CGFloat = 16
+        static let listRadius: CGFloat = 14
+        /// The dimensions the Preset scheduler renders into. Larger than the
+        /// 44×34 it draws so the thumbnail survives a Retina scale factor.
+        static let thumbnailRenderWidth = 192
+    }
+}
+
+extension Tokens.TypeStyle {
+    static let presetName = Self(size: 14, weight: .semibold, isMono: false)
+    /// `Portra 400 · +0.3 EV · 5200 K · Print`.
+    static let presetSummary = Self(size: 11, weight: .regular, isMono: true)
+}
+
+// MARK: - Contact sheet (handoff §9 / screen 1p)
+
+extension Tokens {
+    enum ContactSheet {
+        /// Behind the paper. Darker than the deck and lighter than the canvas: it
+        /// is a table, not a lightbox.
+        static let backdrop = Colour.hex(0x0A_0A_0B).color
+        /// The paper the frames are printed on.
+        static let paper = Colour.hex(0x11_11_13).color
+        static let paperEdge = Colour.hex(0xFFFFFF, alpha: 0.06).color
+        static let paperPaddingVertical: CGFloat = 12
+        static let paperPaddingHorizontal: CGFloat = 12
+        static let screenPadding: CGFloat = 16
+        static let headerHeight: CGFloat = 32
+        static let closeDiameter: CGFloat = 30
+
+        static let columns = 3
+        static let columnGap: CGFloat = 10
+        static let rowGap: CGFloat = 14
+        static let captionGap: CGFloat = 5
+        static let frameAspect: CGFloat = 4 / 3
+        static let frameEdge = Colour.hex(0xFFFFFF, alpha: 0.1).color
+
+        static let sprocketHeight: CGFloat = 6
+        static let sprocketGap: CGFloat = 8
+        static let sprocketWidth: CGFloat = 10
+        static let sprocketPitch: CGFloat = 28
+
+        /// The grease-pencil mark. A hand does not close a circle exactly, so the
+        /// stroke overshoots its start and its radius wanders; a geometric ring
+        /// would read as a selection state rather than as a mark someone made.
+        static let markWidth: CGFloat = 2
+        static let markOvershoot: Double = 0.14
+        static let markWobble: Double = 0.045
+        static let markInset: CGFloat = -6
+        static let markRotation: Double = -3
+        static let markOpacity: Double = 0.9
+        static let labelRotation: Double = -6
+        static let labelGap: CGFloat = 6
+    }
+}
+
+extension Tokens.TypeStyle {
+    static let contactHeader = Self(size: 11, weight: .medium, isMono: true, tracking: 0.44)
+    static let contactName = Self(size: 9.5, weight: .medium, isMono: false)
+    static let contactIndex = Self(size: 9, weight: .medium, isMono: true)
+    static let contactFooter = Self(size: 9, weight: .regular, isMono: true, lineHeight: 12)
+    /// `this one`, hand-set beside the mark.
+    static let greasePencil = Self(size: 11, weight: .medium, isMono: true)
+}

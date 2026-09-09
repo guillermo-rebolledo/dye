@@ -16,7 +16,7 @@ struct EditorView: View {
             .preferredColorScheme(.dark)
             .sheet(isPresented: $showsPresets) { PresetSheet(model: model) }
             .sheet(isPresented: $showsContactSheet) { ContactSheetView() }
-            .sheet(isPresented: $isExporting) { ExportSheet(model: model) }
+            .sheet(isPresented: $isExporting) { ExportSheet(model: model).filmSheet() }
             .task { model.loadCatalogue() }
             .task { await model.watchThermalState() }
             .task(id: photo) {
