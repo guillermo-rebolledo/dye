@@ -21,7 +21,7 @@ struct StageSelector: View {
                 } label: {
                     Text(stage.displayName)
                         .typeStyle(selection.stage == stage ? .stageName : .controlName)
-                        .foregroundStyle(selection.stage == stage ? Tokens.Palette.textPrimary : Tokens.Palette.textTertiary)
+                        .foregroundStyle(Tokens.Palette.textPrimary)
                         .frame(maxWidth: .infinity)
                         .frame(height: Tokens.Deck.segmentHeight)
                         .background {

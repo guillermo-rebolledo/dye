@@ -130,8 +130,8 @@ struct CanvasView: View {
         guard outcome.value != previous else { return }
         parameter.value.wrappedValue = outcome.value
         let crossed = parameter.detent.map { (previous - $0) * (outcome.value - $0) < 0 } ?? false
-        if outcome.isAtLimit && !drag.track.isAtLimit(previous) { Haptics.rangeLimit() }
-        else if (outcome.isAtDetent && !parameter.isAtDetent(previous)) || crossed { Haptics.detent() }
+        if (outcome.isAtDetent && !parameter.isAtDetent(previous)) || crossed { Haptics.detent() }
+        else if outcome.isAtLimit && !drag.track.isAtLimit(previous) { Haptics.rangeLimit() }
         else { Haptics.step() }
     }
 

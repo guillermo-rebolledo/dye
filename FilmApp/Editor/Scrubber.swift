@@ -90,10 +90,10 @@ struct Scrubber: View {
         // The three speak in order of how much they mean, and only one of them
         // speaks: arriving at the wall is a step too, and arriving at the detent
         // is a step too, and firing both would say each thing twice.
-        if outcome.isAtLimit, !state.wasAtLimit {
-            Haptics.rangeLimit()
-        } else if (outcome.isAtDetent && !state.wasAtDetent) || crossedDetent {
+        if (outcome.isAtDetent && !state.wasAtDetent) || crossedDetent {
             Haptics.detent()
+        } else if outcome.isAtLimit, !state.wasAtLimit {
+            Haptics.rangeLimit()
         } else if moved {
             Haptics.step()
         }
@@ -110,13 +110,16 @@ struct Scrubber: View {
         guard isEnabled else { return }
         let current = parameter.value.wrappedValue
         let step = direction == .increment ? parameter.step : -parameter.step
-        let next = TrackMap.settle(current + step, for: parameter)
+        var next = TrackMap.settle(current + step, for: parameter)
+        if let detent = parameter.detent, (current - detent) * (next - detent) < 0 {
+            next = detent
+        }
         guard next != current else { return }
         parameter.value.wrappedValue = next
-        if next <= parameter.range.lowerBound || next >= parameter.range.upperBound {
-            Haptics.rangeLimit()
-        } else if parameter.isAtDetent(next) {
+        if parameter.isAtDetent(next) && !parameter.isAtDetent(current) {
             Haptics.detent()
+        } else if next <= parameter.range.lowerBound || next >= parameter.range.upperBound {
+            Haptics.rangeLimit()
         } else {
             Haptics.step()
         }
