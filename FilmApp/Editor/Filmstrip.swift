@@ -18,7 +18,7 @@ struct Filmstrip: View {
         guard let parentID = selectedProfile.metadata.derivedFrom else { return nil }
         let parent = catalogue.first { $0.id == parentID }?.metadata.displayName ?? parentID
         if selectedProfile.id == "cinestill-800t" {
-            return "The same emulsion as \(parent), modelled without its remjet backing."
+            return "Same emulsion as \(parent); no remjet."
         }
         return "Derived from \(parent)."
     }
@@ -31,14 +31,10 @@ struct Filmstrip: View {
                     legend
                         .frame(height: Tokens.Filmstrip.footerLineHeight)
                     if let provenance {
-                        // A horizontally readable caption keeps both the legend
-                        // and the full provenance available in the fixed footer.
-                        ScrollView(.horizontal) {
-                            Text(provenance).typeStyle(.filmProvenance)
-                                .foregroundStyle(Tokens.Deck.captionInk)
-                                .fixedSize()
-                        }
-                        .scrollIndicators(.hidden)
+                        Text(provenance).typeStyle(.filmProvenance)
+                            .foregroundStyle(Tokens.Deck.captionInk)
+                            .lineLimit(1).truncationMode(.tail)
+                            .accessibilityLabel(provenance)
                         .frame(height: Tokens.Filmstrip.footerLineHeight)
                     }
                 }
