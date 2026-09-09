@@ -667,3 +667,42 @@ extension Tokens.TypeStyle {
     static let emptyTitle = Self(size: 17, weight: .semibold, isMono: false, lineHeight: 20)
     static let emptyCaption = Self(size: 13, weight: .regular, isMono: false, lineHeight: 16)
 }
+
+// MARK: - Stock filmstrip (handoff §8 / screen 1c)
+
+extension Tokens {
+    enum Filmstrip {
+        static let height: CGFloat = 156
+        static let stripHeight: CGFloat = 124
+        static let footerGap: CGFloat = 8
+        static let footerHeight: CGFloat = 24
+        static let cellWidth: CGFloat = 100
+        static let cellHeight: CGFloat = 80
+        static let processEdge: CGFloat = 3
+        static let selectionRing: CGFloat = 1.5
+        static let selectionHalo: CGFloat = 4
+        static let rebateHeight: CGFloat = 6
+        static let rebateInset: CGFloat = 3
+        static let sprocketWidth: CGFloat = 8
+        static let sprocketPitch: CGFloat = 22
+        static let hatchWidth: CGFloat = 6
+        static let developingInset: CGFloat = 8
+        static let controlsPadding: CGFloat = 12
+        static let fadeStart: CGFloat = 0.88
+        static let indexShadowRadius: CGFloat = 1.5
+        static let base = Colour.hex(0x0B0B0D).color
+        static let sprocket = Colour.hex(0x1E1E22).color
+        static let hatchBase = Colour.hex(0x17171A).color
+        static let hatchStripe = Colour.hex(0x1C1C20).color
+        static let indexInk = Colour.hex(0xFFFFFF, alpha: 0.75).color
+        static let indexShadow = Colour.hex(0x000000, alpha: 0.8).color
+    }
+}
+
+extension Tokens.TypeStyle {
+    static let filmIndex = Self(size: 9, weight: .medium, isMono: true, lineHeight: 9, tracking: 0.45)
+    static let filmName = Self(size: 11, weight: .medium, isMono: false, lineHeight: 12)
+    static let filmLegend = Self(size: 10, weight: .medium, isMono: true, lineHeight: 10, tracking: 0.6)
+    static let filmControls = Self(size: 12, weight: .semibold, isMono: false, lineHeight: 12)
+    static let filmProvenance = Self(size: 10, weight: .regular, isMono: false, lineHeight: 12)
+}
