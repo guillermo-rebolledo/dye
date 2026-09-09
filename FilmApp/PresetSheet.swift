@@ -32,9 +32,12 @@ struct PresetSheet: View {
     @State private var name = ""
     @State private var error: String?
 
-    private var rows: [PresetRow] { presets.map { PresetRow($0, catalogue: model.catalogue) } }
+    private var rows: [PresetRow] {
+        presets.map { PresetRow($0, catalogue: model.catalogueWithIdentity) }
+    }
 
     var body: some View {
+        let rows = rows
         SheetSurface(title: "Presets", done: { dismiss() }) {
             VStack(alignment: .leading, spacing: Tokens.Sheet.rowGap) {
                 saveLine
@@ -42,7 +45,7 @@ struct PresetSheet: View {
                 if let error {
                     Text(error).typeStyle(.caption).foregroundStyle(Tokens.Palette.destructive)
                 }
-                list
+                list(rows)
             }
             .padding(.bottom, Tokens.Metrics.space20)
         }
@@ -83,15 +86,18 @@ struct PresetSheet: View {
         } catch { self.error = error.localizedDescription }
     }
 
-    /// Named from the Stock and settings on screen, so it says what will actually be
-    /// kept rather than describing Presets in general.
+    /// Named from the Stock and the Output Stage on screen, so it says what will
+    /// actually be kept rather than describing Presets in general. It stops there:
+    /// listing the parameters would name the same settings the clause after it has
+    /// already promised to keep.
     private var helper: String {
-        "Saves \(PresetRow.look(model.profile, settings: model.settings)) and every setting as they are now."
+        let stage = model.settings.outputStage == OutputStage.print ? " · \(OutputStage.print.displayName)" : ""
+        return "Saves \(model.profile.metadata.displayName)\(stage) and every setting as they are now."
     }
 
     // MARK: - Rows
 
-    @ViewBuilder private var list: some View {
+    @ViewBuilder private func list(_ rows: [PresetRow]) -> some View {
         if rows.isEmpty {
             Text("No presets yet. Name the current look above to keep it.")
                 .typeStyle(.caption)
@@ -169,10 +175,9 @@ struct PresetRow: Identifiable, Equatable {
         return Self.look(profile, settings: settings, fallbackStockName: preset.stockID)
     }
 
-    /// The error the row shows beside its summary when its Stock has gone.
-    var unavailable: String? {
-        profile == nil ? "This Preset's Stock is no longer available" : nil
-    }
+    /// The error the row shows beside its summary when its Stock has gone. These are
+    /// the words `applyPreset` throws, not a copy of them.
+    var unavailable: String? { profile == nil ? EditorModel.stockUnavailable : nil }
 
     static func == (lhs: PresetRow, rhs: PresetRow) -> Bool {
         lhs.id == rhs.id && lhs.settings == rhs.settings && lhs.preset.name == rhs.preset.name

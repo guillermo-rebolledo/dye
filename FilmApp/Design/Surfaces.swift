@@ -476,7 +476,7 @@ extension View {
     /// The detent, the surface and the corner radius §9 gives every sheet. The
     /// system's own drag indicator is hidden because the sheet draws its own.
     func filmSheet() -> some View {
-        presentationDetents([.height(Tokens.Sheet.detentHeight), .large])
+        presentationDetents([.height(Tokens.Sheet.detentHeight)])
             .presentationDragIndicator(.hidden)
             .presentationBackground(Tokens.Palette.sheet)
             .presentationCornerRadius(Tokens.Metrics.sheetRadius)
@@ -504,6 +504,12 @@ private struct SheetCatalogue: View {
                 Button("Export photo") {}.buttonStyle(SheetActionStyle(kind: .primary)).disabled(true)
                 Text("A card the sheets share.").typeStyle(.caption)
                     .foregroundStyle(Tokens.Palette.textTertiary).sheetCard()
+                HStack(spacing: Tokens.Metrics.space10) {
+                    DevelopingFrame().frame(width: Tokens.Filmstrip.cellWidth,
+                                            height: Tokens.Filmstrip.cellHeight)
+                    DevelopingFrame(showsCaption: false)
+                        .frame(width: Tokens.Presets.thumbnailWidth, height: Tokens.Presets.thumbnailHeight)
+                }
             }
         }
     }

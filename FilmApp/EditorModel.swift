@@ -33,6 +33,12 @@ import FilmEngine
     private var needsRender = false
 
     var profile: Profile { catalogue.first { $0.id == selectedStock } ?? .identity }
+
+    /// The Catalogue as every surface that renders it shows it: the Identity Profile
+    /// first, then the bundled order. Identity is not a Stock and is not in the
+    /// Catalogue, but it is a cell in the filmstrip, a row on the contact sheet and a
+    /// Preset a photograph can be saved at.
+    var catalogueWithIdentity: [Profile] { [.identity] + catalogue }
     var isIdentity: Bool { selectedStock == "identity" }
 
     /// The Profile this Stock derives from, when it models another's Emulsion.
@@ -183,34 +189,16 @@ import FilmEngine
     /// SDR white — so a Preset's look reads as a look rather than as a grey square.
     func schedulePresetThumbnails(_ presets: [PresetRender]) {
         presetThumbnailTask?.cancel()
+        // A deleted Preset's render is a picture of nothing anyone can ask for again.
+        let live = Set(presets.map(\.id))
+        presetThumbnails = presetThumbnails.filter { live.contains($0.key) }
         guard !presets.isEmpty else { return }
-        let input = thumbnailInput
-        let profiles = [Profile.identity] + catalogue
-        presetThumbnailTask = Task {
-            do {
-                try await Task.sleep(for: .milliseconds(200))
-                let source = try input ?? ContactSheetReference.image()
-                let renderer = try Renderer()
-                for preset in presets {
-                    try Task.checkCancellation()
-                    guard let profile = profiles.first(where: { $0.id == preset.stockID }) else { continue }
-                    // The same cross-Stock clamping `stockChanged()` applies: a
-                    // Contrast Filter or a Print does not survive a change of Stock,
-                    // and a Profile refuses the render outright rather than ignoring
-                    // the setting.
-                    var adjusted = preset.settings
-                    adjusted.developmentOffset = Self.developmentOffset(adjusted.developmentOffset, for: profile)
-                    adjusted.contrastFilter = Self.contrastFilter(adjusted.contrastFilter, for: profile)
-                    adjusted.outputStage = Self.outputStage(adjusted.outputStage, for: profile)
-                    // One Preset that will not render leaves its own row developing;
-                    // it does not stop the rows after it from arriving.
-                    guard let result = try? await renderer.render(image: .linear(source), profile: profile,
-                                                                  settings: adjusted) else { continue }
-                    try Task.checkCancellation()
-                    presetThumbnails[preset.id] = result
-                }
-            } catch is CancellationError { }
-            catch { self.error = error.localizedDescription }
+        let profiles = catalogueWithIdentity
+        presetThumbnailTask = scheduleThumbnails(presets) { preset in
+            guard let profile = profiles.first(where: { $0.id == preset.stockID }) else { return nil }
+            return (preset.id, profile, preset.settings)
+        } store: { [weak self] id, pixels in
+            self?.presetThumbnails[id] = pixels
         }
     }
 
@@ -372,9 +360,13 @@ import FilmEngine
         return url
     }
 
+    /// Why a Preset cannot be applied. `applyPreset` throws exactly these words, so a
+    /// Preset row can show them beside its summary without trying and failing first.
+    nonisolated static let stockUnavailable = "This Preset's Stock is no longer available"
+
     func applyPreset(stockID: String, settings: RenderSettings) throws {
-        guard stockID == "identity" || catalogue.contains(where: { $0.id == stockID }) else {
-            throw FilmError.invalid("This Preset's Stock is no longer available")
+        guard catalogueWithIdentity.contains(where: { $0.id == stockID }) else {
+            throw FilmError.invalid(Self.stockUnavailable)
         }
         try settings.validate()
         selectedStock = stockID
@@ -407,22 +399,50 @@ import FilmEngine
 
     private func scheduleThumbnails() {
         thumbnailTask?.cancel()
-        guard let thumbnailInput else { return }
+        guard thumbnailInput != nil else { return }
         let settings = settings
-        let profiles = [Profile.identity] + catalogue
-        thumbnailTask = Task {
+        thumbnailTask = scheduleThumbnails(catalogueWithIdentity) { profile in
+            (profile.id, profile, settings)
+        } store: { [weak self] id, pixels in
+            self?.thumbnails[id] = pixels
+        }
+    }
+
+    /// The render loop both thumbnail schedulers run: debounce, render each item in
+    /// order at whatever settings it asks for, and publish as each one lands. The two
+    /// differ only in what they are keyed by and where their settings come from — the
+    /// Stock strip renders every Profile at the settings on screen, a Preset row
+    /// renders one Profile at its own — so the loop itself is written once.
+    ///
+    /// `plan` names the key, the Profile and the settings for an item, or nil when
+    /// there is nothing to render for it. Its settings are clamped across the Stock
+    /// the same way `stockChanged()` clamps them, because a Contrast Filter or a Print
+    /// does not survive a change of Stock and a Profile refuses the render outright
+    /// rather than ignoring the setting.
+    private func scheduleThumbnails<Item, Key>(
+        _ items: [Item],
+        plan: @escaping (Item) -> (key: Key, profile: Profile, settings: RenderSettings)?,
+        store: @escaping @MainActor (Key, RenderedPixels) -> Void
+    ) -> Task<Void, Never> {
+        let input = thumbnailInput
+        return Task {
             do {
                 try await Task.sleep(for: .milliseconds(200))
+                let source = try input ?? ContactSheetReference.image()
                 let renderer = try Renderer()
-                for profile in profiles {
+                for item in items {
                     try Task.checkCancellation()
+                    guard let (key, profile, settings) = plan(item) else { continue }
                     var adjusted = settings
                     adjusted.developmentOffset = Self.developmentOffset(settings.developmentOffset, for: profile)
                     adjusted.contrastFilter = Self.contrastFilter(settings.contrastFilter, for: profile)
                     adjusted.outputStage = Self.outputStage(settings.outputStage, for: profile)
-                    let result = try await renderer.render(image: .linear(thumbnailInput), profile: profile, settings: adjusted)
+                    // One item that will not render leaves its own cell developing; it
+                    // does not stop the items after it from arriving.
+                    guard let result = try? await renderer.render(image: .linear(source), profile: profile,
+                                                                  settings: adjusted) else { continue }
                     try Task.checkCancellation()
-                    thumbnails[profile.id] = result
+                    store(key, result)
                 }
             } catch is CancellationError { }
             catch { self.error = error.localizedDescription }

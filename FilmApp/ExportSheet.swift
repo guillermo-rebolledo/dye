@@ -12,6 +12,10 @@ import FilmEngine
 struct ExportSheet: View {
     @Bindable var model: EditorModel
     @Environment(\.dismiss) private var dismiss
+    /// The frame the export was launched from. Editing continues behind the sheet, so
+    /// the preview on screen when the record appears may no longer be the file — this
+    /// is the one that is.
+    @State private var launchedFrom: RenderedPixels?
 
     var body: some View {
         SheetSurface(title: "Export", isDoneEnabled: !model.isExporting, done: { model.dismissExport(); dismiss() }) {
@@ -25,13 +29,12 @@ struct ExportSheet: View {
                         Button("Cancel") { model.cancelExport() }
                             .buttonStyle(SheetActionStyle(kind: .destructive))
                     case .finished(let record)?:
-                        ExportFinished(record: record, thumbnail: model.pixels) { model.dismissExport() }
+                        ExportFinished(record: record, thumbnail: launchedFrom) { model.dismissExport() }
                     case .failed(let message)?:
                         choices
                         Text(message).typeStyle(.caption).foregroundStyle(Tokens.Palette.destructive)
                         actions
                     case nil:
-                        if model.isThrottled { ThermalNotice(model: model) }
                         choices
                         actions
                     }
@@ -91,10 +94,11 @@ struct ExportSheet: View {
 
     private var actions: some View {
         VStack(alignment: .leading, spacing: Tokens.Metrics.space10) {
-            Button("Export photo") { model.exportImage() }
+            Button("Export photo") { launchedFrom = model.pixels; model.exportImage() }
                 .buttonStyle(SheetActionStyle(kind: .primary))
                 .disabled(!model.canExport)
-            Button("Export LUT (.cube)") { model.exportLUT() }
+            // A LUT is a mapping rather than a frame, so its record has no thumbnail.
+            Button("Export LUT (.cube)") { launchedFrom = nil; model.exportLUT() }
                 .buttonStyle(SheetActionStyle(kind: .standard))
                 .disabled(!model.canExport)
             lutFootnote.typeStyle(.caption).foregroundStyle(Tokens.Palette.textTertiary)
@@ -228,9 +232,9 @@ private struct ThermalNotice: View {
     /// than prose.
     private var note: Text {
         Text("The device is running hot, so this export uses the ")
-            + Text(model.exportGrainModel.rawValue).font(Tokens.TypeStyle.presetSummary.font)
+            + Text(model.exportGrainModel.rawValue).font(Tokens.TypeStyle.identifier.font)
             + Text(" grain model rather than ")
-            + Text(model.profile.metadata.grain.model.rawValue).font(Tokens.TypeStyle.presetSummary.font)
+            + Text(model.profile.metadata.grain.model.rawValue).font(Tokens.TypeStyle.identifier.font)
             + Text(". Continuing to ask for the expensive one while the system is throttling "
                    + "would make the export slower and the phone hotter both.")
     }
@@ -282,18 +286,17 @@ private struct ExportFinished: View {
 
     /// The raster line is absent for a LUT, which has no pixels and no gamut.
     private var lines: [String] {
-        var lines: [String] = []
+        var parts: [String] = []
         if let width = record.pixelWidth, let height = record.pixelHeight, let megapixels = record.megapixels {
-            var parts = ["\(width) × \(height)", String(format: "%.0f MP", megapixels)]
-            if let output = record.output { parts.append(output.displayName) }
-            parts.append(size)
-            lines.append(parts.joined(separator: " · "))
-        } else {
-            lines.append(size)
+            // 8064 × 6048 is 48.8 MP and reads as 48: a megapixel count is what the
+            // sensor is sold as, and rounding it up claims pixels that are not there.
+            parts += ["\(width) × \(height)", "\(Int(megapixels)) MP"]
         }
-        lines.append("\(record.tileCount) \(record.tileCount == 1 ? "tile" : "tiles") · "
-                     + String(format: "%.1f s", record.elapsedSeconds))
-        return lines
+        if let output = record.output { parts.append(output.displayName) }
+        parts.append(size)
+        return [parts.joined(separator: " · "),
+                "\(record.tileCount) \(record.tileCount == 1 ? "tile" : "tiles") · "
+                + String(format: "%.1f s", record.elapsedSeconds)]
     }
 
     private var size: String {

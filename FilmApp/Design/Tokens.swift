@@ -770,8 +770,6 @@ extension Tokens {
         static let noticeDot: CGFloat = 8
         static let noticeDotGlow: CGFloat = 3
 
-        static let hairline = Colour.hex(0xFFFFFF, alpha: 0.08).color
-        static let hairlineHeight: CGFloat = 0.5
         static let rowSeparator = Colour.hex(0xFFFFFF, alpha: 0.07).color
         static let frameEdge = Colour.hex(0xFFFFFF, alpha: 0.15).color
         /// What a control fades to once the render has locked it.
@@ -789,6 +787,9 @@ extension Tokens.TypeStyle {
     static let quietAction = Self(size: 15, weight: .medium, isMono: false)
     /// The body of the thermal notice, which is prose rather than a caption.
     static let notice = Self(size: 12, weight: .regular, isMono: false, lineHeight: 16)
+    /// An identifier set inside prose — a grain model's name, a file's — which is
+    /// mono because it is a value the engine uses rather than a word.
+    static let identifier = Self(size: 12, weight: .regular, isMono: true, lineHeight: 16)
 }
 
 // MARK: - Export sheet (handoff §9 / screens 1l, 1m, 1n)
@@ -837,7 +838,6 @@ extension Tokens {
         static let fieldHeight: CGFloat = 44
         static let fieldRadius: CGFloat = 11
         static let fieldPadding: CGFloat = 12
-        static let savePadding: CGFloat = 16
         static let listRadius: CGFloat = 14
     }
 }
@@ -882,6 +882,10 @@ extension Tokens {
         static let markWidth: CGFloat = 2
         static let markOvershoot: Double = 0.14
         static let markWobble: Double = 0.045
+        static let markSteps = 96
+        /// Where the stroke starts, so its overshoot crosses at the upper left
+        /// rather than square on an edge.
+        static let markStart: Double = -0.8 * .pi
         static let markInset: CGFloat = -6
         static let markRotation: Double = -3
         static let markOpacity: Double = 0.9

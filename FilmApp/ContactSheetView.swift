@@ -117,7 +117,7 @@ struct ContactSheetPaper: View {
                     FilmCanvas(image: image)
                         .aspectRatio(CGFloat(image.width) / CGFloat(image.height), contentMode: .fill)
                 } else {
-                    DevelopingFrame(showsCaption: false)
+                    DevelopingFrame()
                 }
             }
             .aspectRatio(Tokens.ContactSheet.frameAspect, contentMode: .fit)
@@ -132,8 +132,9 @@ struct ContactSheetPaper: View {
                 Spacer(minLength: 0)
                 Text(String(format: "%02d", index))
                     .typeStyle(.contactIndex)
-                    .foregroundStyle(profile.id == "identity" ? Tokens.Palette.textTertiary
-                                                              : Tokens.Palette.process(profile.metadata.process))
+                    .foregroundStyle(profile.id == Profile.identity.id
+                                     ? Tokens.Palette.textTertiary
+                                     : Tokens.Palette.process(profile.metadata.process))
             }
         }
         .accessibilityElement(children: .combine)
@@ -145,7 +146,7 @@ struct ContactSheetPaper: View {
     /// What the sheet is, in the margin, where a printed proof sheet says it. The
     /// size is read off a render rather than asserted, so it cannot go stale.
     private var legend: some View {
-        let processes = Set(profiles.filter { $0.id != "identity" }.map(\.metadata.process)).count
+        let processes = Set(profiles.filter { $0.id != Profile.identity.id }.map(\.metadata.process)).count
         let width = images.values.first.map { "\nrendered at \($0.width) px" } ?? ""
         return Text("\(profiles.count) stocks · \(processes) processes" + width)
             .typeStyle(.contactFooter)
@@ -193,9 +194,9 @@ private struct GreasePencilStroke: Shape {
         let centre = CGPoint(x: rect.midX, y: rect.midY)
         let radius = CGSize(width: rect.width / 2, height: rect.height / 2)
         let sweep = (1 + Tokens.ContactSheet.markOvershoot) * 2 * .pi
-        let steps = 96
+        let steps = Tokens.ContactSheet.markSteps
         for step in 0...steps {
-            let angle = Double(step) / Double(steps) * sweep - .pi * 0.8
+            let angle = Double(step) / Double(steps) * sweep + Tokens.ContactSheet.markStart
             let wobble = 1 + Tokens.ContactSheet.markWobble * (sin(angle * 3 + 0.7) + 0.6 * cos(angle * 2 - 1.1))
             let point = CGPoint(x: centre.x + cos(angle) * radius.width * wobble,
                                 y: centre.y + sin(angle) * radius.height * wobble)
