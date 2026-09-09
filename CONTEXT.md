@@ -134,8 +134,17 @@ _Avoid_: push, pull, development (unqualified — collides with the chemical pro
 pushStops in prose
 
 **Provenance**:
-A per-parameter marker recording whether a value was measured from a datasheet or
-tuned by eye. Halation strength is published by nobody and is always the latter.
+A per-parameter marker recording whether a value was measured from a datasheet,
+tuned by eye, or is an **Approximation**. Halation strength is published by nobody
+and is always tuned.
+
+**Approximation**:
+A parameter whose Stock publishes no usable measurement of it at all, so the value
+stands in for one: a shape borrowed from a sibling Stock and adjusted, or a figure
+read off reference scans. Distinct from a tuned value, which sits on top of the
+Stock's own measured curves. A Profile carrying any Approximation is an
+approximation, and the app labels it as one wherever it names the Stock.
+_Avoid_: estimate, guess, empirical
 
 **Bake**:
 To run the spectral model over a Curve Set and emit a Profile.
@@ -376,7 +385,11 @@ carries the same modelled lens and both its parameters are artistic. If the
 Catalogue ever wants to distinguish lenses, `bloom` is where that belongs, and it
 should stop living in the Profile at that point. **Resolved, but note the seam.**
 
-**"Approximation" is not yet a term.** Foma and Kentmere profiles will be materially
-less rigorous than Kodak ones, and the decision on whether to ship them labelled as
-approximations or hold them back is still open. If they ship, this file needs a term
-for that status.
+**"Approximation" is now a term.** It was open whether Foma and Kentmere would ship
+labelled or be held back. They ship, labelled: `Provenance` has a third case and the
+picker, the film subtitle and a line under the picker all say so. The decision was
+forced by what the datasheets actually contain rather than by preference — Kentmere
+publishes no characteristic curve and no spectral sensitivity at all, so its Profiles
+borrow FP4 Plus's and HP5 Plus's shapes, while Foma's sheets turned out to publish
+more than expected, including RMS granularity and a Schwarzschild table.
+**Resolved.**

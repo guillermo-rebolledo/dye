@@ -1,0 +1,11 @@
+# Foma FOMAPAN 100 Classic datasheet, page 1, modelled from 110 lines/mm resolving power; NOT a published MTF. See SOURCES.md.
+cyclesPerMM,response
+3.000000,0.998289
+5.000000,0.995254
+10.000000,0.981150
+20.000000,0.926706
+30.000000,0.842597
+40.000000,0.737511
+50.000000,0.621425
+60.000000,0.504057
+70.000000,0.393588

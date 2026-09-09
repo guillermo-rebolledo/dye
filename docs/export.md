@@ -108,11 +108,11 @@ asking for the expensive Grain Model there makes the Export both slower and hott
 `procedural`, an Export at rest renders the Stock's own model, and an Export under
 thermal pressure falls back to `procedural`.
 
-Only the `procedural` tier has a kernel today. `stochastic` — silver halide as a
-Poisson point process, integrated per pixel — and `dye-cloud` are MEM-239's phase 7,
-"behind a flag, compared side by side before committing". The policy is wired now
-because the Export path is where the choice has to be made, not because the model
-behind it has landed.
+`dye-cloud` now has a kernel of its own, so an Export of a Stock that declares it —
+Portra 400, Portra 160, Cinestill 800T and XP2 Super — differs from its Preview by
+more than resolution. `stochastic`, silver halide as a Poisson point process
+integrated per pixel, is still MEM-239's phase 7 and resolves to the procedural
+kernel. See [the dye-cloud model](grain.md#the-dye-cloud-model).
 
 ## Writers
 

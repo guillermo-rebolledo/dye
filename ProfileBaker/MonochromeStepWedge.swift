@@ -36,10 +36,15 @@ func monochromeStepWedge(curves: CurveSet, profile: Profile) async throws -> [St
     }
     // Compared in stops rather than as a bare ratio: a filter factor is an exposure
     // correction, and half a stop means the same thing at 1.5 as it does at 8.
-    let published = try curves.publishedFilterFactors()
     guard let monochrome = profile.metadata.monochrome else {
         throw FilmError.invalid("Profile \(profile.id) has no Monochrome Collapse to filter")
     }
+    // A Stock that publishes no table has nothing to check the integration against,
+    // and comparing the derived weights to another manufacturer's film would test
+    // that film rather than this one. The report says the stage is absent by leaving
+    // it out; the Curve Set's Provenance says why.
+    guard curves.hasPublishedFilterFactors else { return rows }
+    let published = try curves.publishedFilterFactors()
     for (index, filter) in MonochromeSpectralModel.contrastFilters.enumerated() {
         guard let derived = monochrome.filterFactorStops(filter), let reference = published[filter] else {
             throw FilmError.invalid("Profile \(profile.id) has no \(filter.rawValue) Contrast Filter")

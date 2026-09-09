@@ -186,12 +186,19 @@ struct EditorView: View {
                 ForEach(FilmProcess.allCases, id: \.self) { process in
                     Section(process.displayName) {
                         ForEach(model.catalogue.filter { $0.metadata.process == process }) { profile in
-                            Text(profile.metadata.displayName).tag(profile.id)
+                            Text(profile.metadata.isApproximation
+                                 ? "\(profile.metadata.displayName) (approximation)"
+                                 : profile.metadata.displayName).tag(profile.id)
                         }
                     }
                 }
             }
             .pickerStyle(.menu)
+            if !model.isIdentity && model.profile.metadata.isApproximation {
+                Text("An approximation: this stock publishes no usable curves, so its shape is "
+                     + "borrowed from a sibling stock and adjusted. Not a claim about its numbers.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if let parent = model.derivedFrom {
                 Text("The same emulsion as \(parent.metadata.displayName), modelled without its remjet backing.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -262,7 +269,8 @@ struct EditorView: View {
     private var filmSubtitle: String {
         if model.isIdentity { return "No film: the Working Space passes straight through" }
         let metadata = model.profile.metadata
-        return "\(metadata.displayName) · \(metadata.process.displayName) · balanced for \(Int(metadata.balance)) K"
+        let approximation = metadata.isApproximation ? " · approximation" : ""
+        return "\(metadata.displayName) · \(metadata.process.displayName) · balanced for \(Int(metadata.balance)) K\(approximation)"
     }
 
     private var balanceHint: String {

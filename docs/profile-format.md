@@ -21,12 +21,17 @@ reason a spectral scan's are — the print is the final image. A Profile without
 has no Print, and the renderer says so rather than substituting the scan. See
 [the Print Output Stage](print.md).
 
-Every physical parameter has a `provenance` marker (`measured` or `artistic`) keyed
+Every physical parameter has a `provenance` marker (`measured`, `artistic` or
+`approximation`) keyed
 by dotted JSON path. A vector or curve is one parameter. Paths include all fields
 of colour, grain, halation, MTF and reciprocity, plus nominalISO, trueISO, balance,
 format and, when present, monochrome. Identity fields are not physical parameters.
 A missing required marker is an error. Measured means supported by a cited source;
 all bundled study Profiles are synthetic and mark every parameter artistic.
+`approximation` is stronger than artistic: it says the Stock publishes no usable
+measurement of that parameter, so the value stands in for one. Any Profile carrying
+one answers `metadata.isApproximation`, and the app labels it in the picker, in the
+film subtitle and in a line beneath the picker.
 
 All radii remain in film-plane microns. At render time the conversion is
 `radiusMicrons / (format.frameWidthMM * 1000) * max(imageWidth, imageHeight)`:

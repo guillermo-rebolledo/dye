@@ -112,7 +112,7 @@ asserts that a render that says nothing about the Output Stage is the scan.
 
 The control appears for a negative Stock whose Profile carries a Print, which is
 every C-41 and ECN-2 Stock in the Catalogue except the two synthetic studies:
-Portra 400, Cinestill 800T and the four Vision3 stocks.
+Portra 400, Portra 160, Cinestill 800T and the four Vision3 stocks.
 
 - Reversal Stocks have no Output Stage at all. Asking one for a print cannot add
   one any more than asking it for a scan can, and both render the Transparency.

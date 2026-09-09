@@ -45,9 +45,9 @@ private func baker(_ arguments: [String]) throws -> (Int32, String) {
 #endif
 
 #if os(macOS)
-@Test(arguments: ["study-c41", "study-e6", "study-bw-silver", "study-bw-chromogenic", "study-ecn2", "portra-400",
+@Test(arguments: ["study-c41", "study-e6", "study-bw-silver", "study-bw-chromogenic", "study-ecn2", "portra-400", "portra-160",
                   "vision3-50d", "vision3-250d", "vision3-200t", "vision3-500t", "cinestill-800t",
-                  "tri-x-400", "t-max-100"])
+                  "tri-x-400", "t-max-100", "fomapan-100"])
 func everyCurveSetBakesDeterministicallyAndMatchesReference(stock: String) throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -303,7 +303,7 @@ private func monochromeCurveSets(_ stock: String, in directory: URL) throws -> U
     return curves
 }
 
-@Test(arguments: ["tri-x-400", "t-max-100"])
+@Test(arguments: ["tri-x-400", "t-max-100", "fomapan-100"])
 func aMonochromeCurveSetDerivesItsCollapseAndRefusesAnAuthoredOne(stock: String) throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

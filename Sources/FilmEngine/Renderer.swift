@@ -49,7 +49,7 @@ public actor Renderer {
         for name in ["passthrough", "whiteBalance", "exposure", "reciprocity", "filmResponse", "monochromeResponse", "scanOutput", "outputTransform",
                      "scatterThreshold", "scatterDownsample", "scatterBlurHorizontal", "scatterBlurVertical",
                      "scatterScale", "scatterUpsample", "scatterComposite",
-                     "mtfBlur", "mtfCombine", "grain", "geometry"] {
+                     "mtfBlur", "mtfCombine", "grain", "grainDyeCloud", "geometry"] {
             guard let function = library.makeFunction(name: name) else { throw FilmError.invalid("Missing shader \(name)") }
             pipelines[name] = try device.makeComputePipelineState(function: function)
         }
@@ -729,9 +729,10 @@ public actor Renderer {
     private func encodeGrain(_ grain: Grain, frame: inout SIMD4<Float>, command: any MTLCommandBuffer,
                              source: any MTLTexture, destination: any MTLTexture) throws {
         var uniforms = grain.uniforms
-        // Only the procedural tier has a kernel today; `stochastic` and `dye-cloud`
-        // are MEM-239's phase 7 and resolve here to the one that exists.
-        try dispatch("grain", label: "\(Pass.grain.rawValue).\(grain.model.rawValue)",
+        // `dye-cloud` has its own kernel; `stochastic` is still MEM-239's phase 7 and
+        // resolves here to the procedural one that exists.
+        try dispatch(grain.model == .dyeCloud ? "grainDyeCloud" : "grain",
+                     label: "\(Pass.grain.rawValue).\(grain.model.rawValue)",
                      textures: [(source, 0), (destination, 1)],
                      command: command, grid: destination) {
             $0.setBytes(&uniforms, length: MemoryLayout<GrainUniforms>.stride, index: 11)

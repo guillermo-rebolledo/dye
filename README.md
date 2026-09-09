@@ -104,10 +104,11 @@ loading. The five synthetic studies are intentionally not claims of stock accura
 The offline macOS `ProfileBaker` converts version-controlled CSV Curve Sets into
 loadable Profiles and validates them through the renderer using numerical Step
 Wedges. See [contributor instructions](Curves/README.md) to add a Stock, bake the
-Catalogue, and inspect CSV/SVG validation reports. The Portra 400 Curve Set now uses an independent 31-band spectral model with
-DIR interactions and four Development Offsets. Its measured density gate and
+Catalogue, and inspect CSV/SVG validation reports. The Portra 400 and Portra 160 Curve Sets use an independent 31-band spectral model with
+DIR interactions and four Development Offsets. Their measured density gates and
 baked scan checks run in CI. See [the model and integration contract](docs/spectral-model.md)
-and [measurement sources and assumptions](Curves/portra-400/SOURCES.md).
+and measurement sources and assumptions for [Portra 400](Curves/portra-400/SOURCES.md)
+and [Portra 160](Curves/portra-160/SOURCES.md).
 Kodak publishes Print Grain Index rather than RMS; RMS and unmeasured model
 parameters are explicitly artistic.
 
@@ -166,7 +167,7 @@ that end at paper white instead of rolling off. **Scan stays the default**,
 because most people's mental image of a Stock is a scan and a correct print reads
 as wrong the first time. See [the ECN-2 branch and the Print](docs/print.md).
 
-Portra 400, Cinestill 800T and the four Vision3 Stocks render in the app with
+Portra 400, Portra 160, Cinestill 800T and the four Vision3 Stocks render in the app with
 exposure, white balance, development, bloom, halation and grain controls, the
 scan-or-print choice, and the vignette, gate weave and frame border of the
 Geometry Pass. Bloom is the taking lens rather than the film, so every Stock
