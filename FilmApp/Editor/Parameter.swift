@@ -182,6 +182,21 @@ extension Parameter {
         }
     }
 
+    /// Presentation runs belong with the formatter, so views never need to
+    /// know how a parameter spells its unit. The combined legacy readout stays
+    /// unchanged for chips and accessibility.
+    var readoutParts: (number: String, unit: String) {
+        let text = readout
+        if id == .contrastFilter, let split = text.range(of: "  ") {
+            return (String(text[..<split.lowerBound]), String(text[split.upperBound...]))
+        }
+        if text.hasSuffix("%") { return (String(text.dropLast()), "%") }
+        if let space = text.lastIndex(of: " "), text.first?.isNumber == true || text.first == "+" || text.first == "-" {
+            return (String(text[..<space]), String(text[text.index(after: space)...]))
+        }
+        return (text, "")
+    }
+
     var isModified: Bool { abs(value.wrappedValue - defaultValue) > 0.000001 }
 }
 
@@ -483,6 +498,14 @@ extension EditorModel {
 
     /// A Stock with no Output Stage is not offered a disabled scan-or-print choice;
     /// the copy says why there is nothing to choose and moves on to the geometry.
+    func outputCardDescription(for stage: OutputStage) -> String {
+        switch stage {
+        case .scan: return "Densities are inverted and auto-balanced so mid-grey comes back neutral."
+        case .print: return "Contrast rises, shadows close and the highlights end at paper white."
+        case .none: return "Reversal film is the final image."
+        }
+    }
+
     var outputDescription: String { outputDescription(for: outputStage) }
 
     func outputDescription(for stage: OutputStage) -> String {

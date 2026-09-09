@@ -2,10 +2,21 @@ import SwiftUI
 
 /// A moving stops-space ruler under a stationary hairline. Its binding and its
 /// formatter are the Parameter's; this view never converts settings to seconds.
-struct ShutterDial: View {
+struct ShutterDial: View, Animatable {
     let parameter: Parameter
     var isEnabled = true
+    var displayedValue: Double
+    nonisolated var animatableData: Double {
+        get { displayedValue }
+        set { displayedValue = newValue }
+    }
     @State private var origin: CGFloat?
+
+    init(parameter: Parameter, isEnabled: Bool = true) {
+        self.parameter = parameter
+        self.isEnabled = isEnabled
+        displayedValue = parameter.value.wrappedValue
+    }
 
     private var mapping: Scrubber.TrackMap {
         Scrubber.TrackMap(parameter: parameter,
@@ -17,7 +28,7 @@ struct ShutterDial: View {
     var body: some View {
         GeometryReader { proxy in
             Canvas { context, size in
-                let current = parameter.value.wrappedValue
+                let current = displayedValue
                 let halfSpan = Double(size.width / Tokens.Discrete.pointsPerStop / 2)
                 let lower = max(parameter.range.lowerBound, current - halfSpan)
                 let upper = min(parameter.range.upperBound, current + halfSpan)
@@ -40,7 +51,7 @@ struct ShutterDial: View {
                         }
                     }
                 }
-                if let detent = parameter.detent {
+                if isEnabled, let detent = parameter.detent {
                     let x = size.width / 2 + CGFloat(detent - current) * Tokens.Discrete.pointsPerStop
                     context.fill(Path(CGRect(x: x - Tokens.Track.anchorWidth / 2, y: 0,
                         width: Tokens.Track.anchorWidth, height: size.height)), with: .color(Tokens.Palette.accent))
@@ -53,8 +64,10 @@ struct ShutterDial: View {
                                         .init(color: .clear, location: 1)],
                                  startPoint: .leading, endPoint: .trailing))
             .overlay {
-                Rectangle().fill(Tokens.Palette.textPrimary)
-                    .frame(width: Tokens.Discrete.hairline, height: Tokens.Track.height)
+                if isEnabled {
+                    Rectangle().fill(Tokens.Palette.textPrimary)
+                        .frame(width: Tokens.Discrete.hairline, height: Tokens.Track.height)
+                }
             }
             .frame(width: proxy.size.width, height: Tokens.Metrics.minimumHitTarget)
             .contentShape(Rectangle())

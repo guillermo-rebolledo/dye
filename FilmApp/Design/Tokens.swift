@@ -628,3 +628,7 @@ extension Tokens {
         }
     }
 }
+
+extension Tokens.TypeStyle {
+    static let cardCaption = Self(size: 10.5, weight: .regular, isMono: false, lineHeight: 13)
+}

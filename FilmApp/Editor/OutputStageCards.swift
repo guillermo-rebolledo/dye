@@ -18,9 +18,9 @@ struct OutputStageCards: View {
                     VStack(alignment: .leading, spacing: Tokens.Metrics.space4) {
                         Text(stage.displayName).typeStyle(.chipName)
                             .foregroundStyle(Tokens.Palette.textPrimary)
-                        Text(description(stage)).typeStyle(.caption)
+                        Text(model.outputCardDescription(for: stage)).typeStyle(.cardCaption)
                             .foregroundStyle(Tokens.Deck.captionInk)
-                            .lineLimit(2)
+                            .lineLimit(3)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, Tokens.Metrics.space10)
@@ -42,13 +42,7 @@ struct OutputStageCards: View {
         .opacity(isEnabled ? 1 : Tokens.Deck.unavailableOpacity)
     }
 
-    private func description(_ stage: OutputStage) -> String {
-        // The first sentence of the existing copy; the complete explanation is
-        // available to VoiceOver and in the active control's caption.
-        let copy = model.outputDescription(for: stage)
-        guard let end = copy.firstIndex(of: ".") else { return copy }
-        return String(copy[...end])
-    }
+
 }
 
 private struct OutputStagePreview: View {

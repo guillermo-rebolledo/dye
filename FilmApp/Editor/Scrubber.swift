@@ -280,9 +280,13 @@ extension Scrubber {
 /// The track and everything on it, with no gesture of its own. Splitting the
 /// drawing from the drag is what lets the `#Preview` show mid-drag and every
 /// other state as a still, without the view carrying a hook it only needs there.
-struct ScrubberTrack: View {
+struct ScrubberTrack: View, Animatable {
     let parameter: Parameter
-    let value: Double
+    var value: Double
+    nonisolated var animatableData: Double {
+        get { value }
+        set { value = newValue }
+    }
     var isDragging: Bool = false
     /// Whether the drag has run into an end. Not derived from the value, because
     /// three of the Lab parameters rest at zero, which *is* their lower bound,
@@ -318,8 +322,6 @@ struct ScrubberTrack: View {
         }
         .frame(height: Tokens.Track.height)
         .opacity(isEnabled ? 1 : Tokens.Track.disabledOpacity)
-        .animation(Tokens.Motion.ease(Tokens.Motion.tick, reduceMotion: reduceMotion),
-                   value: parameter.isAtDetent(value))
     }
 
     // MARK: Ticks and fill
@@ -367,6 +369,7 @@ struct ScrubberTrack: View {
                 .shadow(color: onDetent ? Tokens.Palette.trackAnchorGlow : .clear,
                         radius: Tokens.Track.anchorGlowRadius)
                 .position(x: track.x(fraction: fraction), y: Tokens.Track.height / 2)
+                .animation(Tokens.Motion.ease(Tokens.Motion.tick, reduceMotion: reduceMotion), value: onDetent)
         }
     }
 

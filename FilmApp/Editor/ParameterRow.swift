@@ -143,6 +143,7 @@ struct ParameterChip: View {
                                  : parameter.isModified ? Tokens.Deck.modifiedInk : Tokens.Deck.captionInk)
             HStack(spacing: Tokens.Metrics.space5) {
                 Text(isEnabled ? parameter.readout : "—").typeStyle(.chipValue).lineLimit(1)
+                    .contentTransition(reduceMotion ? .identity : .numericText(value: parameter.value.wrappedValue))
                     .foregroundStyle(isActive ? Tokens.Palette.accent
                                      : parameter.isModified ? Tokens.Palette.textPrimary : Tokens.Deck.captionInk)
                 if parameter.isModified && isEnabled {

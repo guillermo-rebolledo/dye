@@ -40,8 +40,9 @@ struct ActiveControl: View {
             catch { return }
             switchingCaption = false
         }
-        .onChange(of: parameter?.value.wrappedValue) { old, new in
-            guard isEnabled, let parameter, let old, let new,
+        .onChange(of: observedValue) { previous, current in
+            guard previous.id == current.id, isEnabled, let parameter,
+                  let old = previous.value, let new = current.value,
                   parameter.id == .temperature || parameter.id == .exposureTime,
                   let threshold = parameter.detent else { return }
             let crossed: Bool
@@ -53,6 +54,15 @@ struct ActiveControl: View {
             }
             if crossed { Haptics.thresholdCrossing() }
         }
+    }
+
+    private struct ObservedValue: Equatable {
+        let id: Parameter.Identity?
+        let value: Double?
+    }
+
+    private var observedValue: ObservedValue {
+        ObservedValue(id: parameter?.id, value: parameter?.value.wrappedValue)
     }
 
     private var header: some View {
@@ -75,10 +85,11 @@ struct ActiveControl: View {
 
     @ViewBuilder private var readout: some View {
         if let parameter {
-            let parts = readoutParts(parameter)
+            let parts = parameter.readoutParts
             HStack(alignment: .firstTextBaseline, spacing: Tokens.Metrics.space6) {
                 Text(isEnabled ? parts.number : "—")
                     .typeStyle(.readout)
+                    .contentTransition(reduceMotion ? .identity : .numericText(value: parameter.value.wrappedValue))
                     .foregroundStyle(parameter.tag == .off ? Tokens.Deck.quietInk : Tokens.Palette.textPrimary)
                     .lineLimit(1).minimumScaleFactor(0.5)
                     .frame(width: parts.unit.isEmpty || parameter.id == .contrastFilter ? nil : Tokens.Deck.readoutNumberWidth,
@@ -93,18 +104,6 @@ struct ActiveControl: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(isEnabled ? parameter.readout : "Unavailable")
         } else { Color.clear }
-    }
-
-    private func readoutParts(_ parameter: Parameter) -> (number: String, unit: String) {
-        let text = parameter.readout
-        if parameter.id == .contrastFilter, let split = text.range(of: "  ") {
-            return (String(text[..<split.lowerBound]), String(text[split.upperBound...]))
-        }
-        if text.hasSuffix("%") { return (String(text.dropLast()), "%") }
-        if let space = text.lastIndex(of: " "), text.first?.isNumber == true || text.first == "+" || text.first == "-" {
-            return (String(text[..<space]), String(text[text.index(after: space)...]))
-        }
-        return (text, "")
     }
 
     @ViewBuilder private var track: some View {

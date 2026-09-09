@@ -83,6 +83,7 @@ struct DeckPreview: View {
     @State private var sheet: String?
     var stock = "portra-400"
     var stage: EditorStage = .film
+    var photoLoaded = true
 
     var body: some View {
         VStack(spacing: Tokens.Metrics.space16) {
@@ -107,7 +108,7 @@ struct DeckPreview: View {
         .sheet(isPresented: Binding(get: { sheet != nil }, set: { if !$0 { sheet = nil } })) {
             Text(sheet ?? "")
         }
-        .task { model.loadCatalogue(); model.selectedStock = stock; selection.select(stage) }
+        .task { model.loadCatalogue(); model.selectedStock = stock; selection.select(stage); hasPhoto = photoLoaded }
     }
 }
 
@@ -115,3 +116,5 @@ struct DeckPreview: View {
 #Preview("316 pt · Tri-X · Film") { DeckPreview(stock: "tri-x-400").preferredColorScheme(.dark) }
 #Preview("316 pt · Velvia · Lab") { DeckPreview(stock: "velvia-50", stage: .lab).preferredColorScheme(.dark) }
 #Preview("316 pt · Identity · Lab") { DeckPreview(stock: "identity", stage: .lab).preferredColorScheme(.dark) }
+
+#Preview("316 pt · No photo") { DeckPreview(photoLoaded: false).preferredColorScheme(.dark) }
