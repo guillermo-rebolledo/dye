@@ -268,3 +268,286 @@ private struct SurfaceCatalogue: View {
 #Preview("Surfaces · light") {
     SurfaceCatalogue().preferredColorScheme(.light)
 }
+
+// MARK: - Sheet chrome
+
+/// The four weights a full-width action in a sheet can carry.
+///
+/// `destructive` is red *text* on the standard face rather than a red slab: Cancel
+/// is the only destructive control in the Export sheet and a red slab there would
+/// read as the primary action. The slab is reserved for swipe-to-delete, which is
+/// system-conventional and belongs to the Presets list.
+enum SheetActionKind: Sendable {
+    case primary, standard, destructive, quiet
+
+    var height: CGFloat {
+        self == .quiet ? Tokens.Sheet.quietActionHeight : Tokens.Sheet.actionHeight
+    }
+
+    var typeStyle: Tokens.TypeStyle {
+        self == .quiet ? .quietAction : .primaryAction
+    }
+
+    func ink(enabled: Bool) -> Color {
+        guard enabled else { return Tokens.Palette.textDisabled }
+        switch self {
+        case .primary: return Tokens.Sheet.primaryInk
+        case .standard: return Tokens.Palette.textPrimary
+        case .destructive: return Tokens.Palette.destructive
+        case .quiet: return Tokens.Palette.textSecondary
+        }
+    }
+}
+
+/// A full-width sheet action. Pressing it travels the same millimetre every other
+/// pressable in the app does.
+struct SheetActionStyle: ButtonStyle {
+    var kind: SheetActionKind = .standard
+
+    func makeBody(configuration: Configuration) -> some View {
+        SheetActionFace(kind: kind, pressed: configuration.isPressed, label: configuration.label)
+            .onChange(of: configuration.isPressed) { _, pressed in
+                if pressed { Haptics.buttonPress() }
+            }
+    }
+}
+
+private struct SheetActionFace<Label: View>: View {
+    let kind: SheetActionKind
+    let pressed: Bool
+    let label: Label
+    @Environment(\.isEnabled) private var isEnabled
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: Tokens.Metrics.buttonRadius, style: .continuous)
+    }
+
+    var body: some View {
+        label
+            .typeStyle(kind.typeStyle)
+            .foregroundStyle(kind.ink(enabled: isEnabled))
+            .frame(maxWidth: .infinity)
+            .frame(height: kind.height)
+            .modifier(SheetActionBackground(kind: kind, pressed: pressed, isEnabled: isEnabled, shape: shape))
+            .contentShape(Rectangle())
+    }
+}
+
+private struct SheetActionBackground: ViewModifier {
+    let kind: SheetActionKind
+    let pressed: Bool
+    let isEnabled: Bool
+    let shape: RoundedRectangle
+
+    @ViewBuilder func body(content: Content) -> some View {
+        switch kind {
+        case .quiet:
+            content
+        case .primary where isEnabled:
+            content
+                .background(shape.fill(pressed ? Tokens.Sheet.primaryFacePressed : Tokens.Sheet.primaryFace))
+                .overlay(shape.strokeBorder(LinearGradient(colors: [Tokens.Sheet.primaryHighlight, .clear],
+                                                           startPoint: .top, endPoint: .bottom),
+                                            lineWidth: Tokens.Elevation.highlightWidth))
+                .compositingGroup()
+                .shadow(color: Tokens.Palette.shade(Tokens.Elevation.castShade),
+                        radius: Tokens.Elevation.castBlur, y: Tokens.Elevation.castOffset)
+                .offset(y: pressed ? Tokens.Motion.pressDepth : 0)
+        case .primary:
+            content.background(shape.fill(Tokens.Palette.chip))
+        case .standard, .destructive:
+            if isEnabled {
+                content.raisedSurface(shape, pressed: pressed)
+            } else {
+                content.background(shape.fill(Tokens.Palette.chip))
+            }
+        }
+    }
+}
+
+/// The mono label over a group in a sheet: `FORMAT`, `COLOUR`, `STATE`.
+struct SheetSectionLabel: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .typeStyle(.sectionLabel)
+            .foregroundStyle(Tokens.Palette.textQuaternary)
+            .accessibilityHidden(true)
+    }
+}
+
+/// One choice in a sheet's segmented control.
+struct SheetSegment<Value: Hashable>: Identifiable {
+    let value: Value
+    let name: String
+    var id: Value { value }
+
+    init(_ value: Value, _ name: String) {
+        self.value = value
+        self.name = name
+    }
+}
+
+/// A segmented control in the deck's milled style: a trough with the chosen
+/// segment raised out of it.
+struct SheetSegmented<Value: Hashable>: View {
+    let label: String
+    let segments: [SheetSegment<Value>]
+    @Binding var selection: Value
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(segments) { segment in
+                let selected = segment.value == selection
+                Button {
+                    guard !selected else { return }
+                    Haptics.stageSwitch()
+                    selection = segment.value
+                } label: {
+                    Text(segment.name)
+                        .typeStyle(selected ? .stageName : .controlName)
+                        .foregroundStyle(selected ? Tokens.Palette.textPrimary : Tokens.Palette.textTertiary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: Tokens.Sheet.segmentHeight)
+                        .background {
+                            if selected {
+                                Color.clear.raisedSurface(cornerRadius: Tokens.Metrics.trackRadius)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(Tokens.Sheet.segmentedPadding)
+        .frame(height: Tokens.Sheet.segmentedHeight)
+        .recessedSurface(cornerRadius: Tokens.Sheet.segmentedRadius)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(label)
+    }
+}
+
+/// The chrome every detented sheet wears: the grabber, the title and its `Done`,
+/// and the 20 pt gutter everything inside sits in.
+struct SheetSurface<Content: View>: View {
+    let title: String
+    var isDoneEnabled = true
+    let done: () -> Void
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Tokens.Sheet.rowGap) {
+            RoundedRectangle(cornerRadius: Tokens.Sheet.grabberRadius, style: .continuous)
+                .fill(Tokens.Sheet.grabber)
+                .frame(width: Tokens.Sheet.grabberWidth, height: Tokens.Sheet.grabberHeight)
+                .frame(maxWidth: .infinity)
+                .accessibilityHidden(true)
+            HStack {
+                Text(title).typeStyle(.sheetTitle).foregroundStyle(Tokens.Palette.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: Tokens.Metrics.space16)
+                Button("Done") { Haptics.buttonPress(); done() }
+                    .typeStyle(.sheetAction)
+                    .foregroundStyle(isDoneEnabled ? Tokens.Palette.accent : Tokens.Palette.textDisabled)
+                    .disabled(!isDoneEnabled)
+            }
+            content
+        }
+        .padding(.top, Tokens.Sheet.topPadding)
+        .padding(.horizontal, Tokens.Metrics.space20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Tokens.Palette.sheet)
+    }
+}
+
+extension View {
+    /// A recessed card: the tile grid, the finished record, the Preset list.
+    func sheetCard(padding: CGFloat = Tokens.Sheet.cardPadding) -> some View {
+        self.padding(padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .recessedSurface(cornerRadius: Tokens.Sheet.cardRadius)
+    }
+
+    /// The detent, the surface and the corner radius §9 gives every sheet. The
+    /// system's own drag indicator is hidden because the sheet draws its own.
+    func filmSheet() -> some View {
+        presentationDetents([.height(Tokens.Sheet.detentHeight)])
+            .presentationDragIndicator(.hidden)
+            .presentationBackground(Tokens.Palette.sheet)
+            .presentationCornerRadius(Tokens.Metrics.sheetRadius)
+            .preferredColorScheme(.dark)
+    }
+}
+
+private struct SheetCatalogue: View {
+    @State private var format = "HEIF"
+
+    var body: some View {
+        SheetSurface(title: "Export", done: {}) {
+            VStack(alignment: .leading, spacing: Tokens.Sheet.sectionGap) {
+                VStack(alignment: .leading, spacing: Tokens.Sheet.labelGap) {
+                    SheetSectionLabel("Format")
+                    SheetSegmented(label: "Format",
+                                   segments: [SheetSegment("HEIF", "HEIF"), SheetSegment("JPEG", "JPEG"),
+                                              SheetSegment("TIFF", "16-bit TIFF")],
+                                   selection: $format)
+                }
+                Button("Export photo") {}.buttonStyle(SheetActionStyle(kind: .primary))
+                Button("Export LUT (.cube)") {}.buttonStyle(SheetActionStyle(kind: .standard))
+                Button("Cancel") {}.buttonStyle(SheetActionStyle(kind: .destructive))
+                Button("Export another") {}.buttonStyle(SheetActionStyle(kind: .quiet))
+                Button("Export photo") {}.buttonStyle(SheetActionStyle(kind: .primary)).disabled(true)
+                Text("A card the sheets share.").typeStyle(.caption)
+                    .foregroundStyle(Tokens.Palette.textTertiary).sheetCard()
+                HStack(spacing: Tokens.Metrics.space10) {
+                    DevelopingFrame().frame(width: Tokens.Filmstrip.cellWidth,
+                                            height: Tokens.Filmstrip.cellHeight)
+                    DevelopingFrame(showsCaption: false)
+                        .frame(width: Tokens.Presets.thumbnailWidth, height: Tokens.Presets.thumbnailHeight)
+                }
+            }
+        }
+    }
+}
+
+#Preview("Sheet chrome · actions and segments") {
+    SheetCatalogue().preferredColorScheme(.dark)
+}
+
+// MARK: - Developing
+
+/// A frame whose render has not arrived yet, hatched rather than spun. Every
+/// surface that renders film into a cell — the filmstrip, the Preset rows, the
+/// contact sheet — waits the same way, and never with a spinner: these are sheets
+/// about looking at film.
+struct DevelopingFrame: View {
+    /// Off for a cell too small to set the word in.
+    var showsCaption = true
+
+    var body: some View {
+        Canvas { context, size in
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Tokens.Filmstrip.hatchBase))
+            for x in stride(from: -size.height, to: size.width, by: Tokens.Filmstrip.hatchWidth * 2) {
+                var path = Path()
+                path.move(to: CGPoint(x: x, y: size.height))
+                path.addLine(to: CGPoint(x: x + size.height, y: 0))
+                path.addLine(to: CGPoint(x: x + size.height + Tokens.Filmstrip.hatchWidth, y: 0))
+                path.addLine(to: CGPoint(x: x + Tokens.Filmstrip.hatchWidth, y: size.height))
+                path.closeSubpath()
+                context.fill(path, with: .color(Tokens.Filmstrip.hatchStripe))
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if showsCaption {
+                Text("developing…").typeStyle(.filmIndex).foregroundStyle(Tokens.Deck.captionInk)
+                    .padding(.bottom, Tokens.Filmstrip.developingInset)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}

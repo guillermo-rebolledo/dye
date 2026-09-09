@@ -134,7 +134,7 @@ struct Filmstrip: View {
                     .frame(width: Tokens.Filmstrip.cellWidth, height: Tokens.Filmstrip.cellHeight)
                     .clipped()
             } else {
-                developing
+                DevelopingFrame()
             }
             if profile.id != "identity" {
                 Tokens.Palette.process(profile.metadata.process).frame(height: Tokens.Filmstrip.processEdge)
@@ -149,25 +149,6 @@ struct Filmstrip: View {
                 .padding(.top, Tokens.Filmstrip.rebateInset)
         }
         .clipShape(RoundedRectangle(cornerRadius: Tokens.Metrics.filmstripCellRadius))
-    }
-
-    private var developing: some View {
-        Canvas { context, size in
-            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Tokens.Filmstrip.hatchBase))
-            for x in stride(from: -size.height, to: size.width, by: Tokens.Filmstrip.hatchWidth * 2) {
-                var path = Path()
-                path.move(to: CGPoint(x: x, y: size.height))
-                path.addLine(to: CGPoint(x: x + size.height, y: 0))
-                path.addLine(to: CGPoint(x: x + size.height + Tokens.Filmstrip.hatchWidth, y: 0))
-                path.addLine(to: CGPoint(x: x + Tokens.Filmstrip.hatchWidth, y: size.height))
-                path.closeSubpath()
-                context.fill(path, with: .color(Tokens.Filmstrip.hatchStripe))
-            }
-        }
-        .overlay(alignment: .bottom) {
-            Text("developing…").typeStyle(.filmIndex).foregroundStyle(Tokens.Deck.captionInk)
-                .padding(.bottom, Tokens.Filmstrip.developingInset)
-        }
     }
 
     private var sprockets: some View {
