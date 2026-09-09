@@ -66,7 +66,7 @@ struct Parameter: Identifiable {
     /// Which control draws the parameter. Not everything is a scrubber, and the
     /// active-control area keeps its height while changing what fills the track.
     enum Control {
-        case scrubber
+        case dial
         case shutterDial
         case contrastFilterDiscs
         case outputStageCards
@@ -102,7 +102,7 @@ struct Parameter: Identifiable {
 
     init(id: Identity, name: String, stage: EditorStage, value: Binding<Double>,
          range: ClosedRange<Double>, step: Double, detent: Double? = nil,
-         control: Control = .scrubber, format: @escaping (Double) -> String,
+         control: Control = .dial, format: @escaping (Double) -> String,
          caption: (() -> String)? = nil, readsOffAtZero: Bool = false) {
         self.id = id
         self.name = name
@@ -336,7 +336,7 @@ extension EditorModel {
         if !outputStages.isEmpty {
             let stages = outputStages
             parameters.append(
-                Parameter(id: .outputStage, name: "Read the negative by", stage: .lab,
+                Parameter(id: .outputStage, name: "Output", stage: .lab,
                           value: outputStageBinding,
                           range: 0...Double(stages.count - 1), step: 1,
                           control: .outputStageCards,
@@ -577,7 +577,14 @@ private struct ParameterCatalogue: View {
                         parameter.range.lowerBound, parameter.range.upperBound, parameter.step,
                         parameter.detent.map { String(format: "%.4g", $0) } ?? "—"))
                 .font(.caption2.monospaced()).foregroundStyle(.secondary)
-            Slider(value: parameter.value, in: parameter.range, step: parameter.step)
+            switch parameter.control {
+            case .dial, .shutterDial:
+                ParameterDial(parameter: parameter)
+            case .contrastFilterDiscs:
+                ContrastFilterDiscs(parameter: parameter, filters: model.contrastFilters)
+            case .outputStageCards:
+                OutputStageCards(model: model)
+            }
             if let caption = parameter.captionText {
                 Text(caption).font(.caption).foregroundStyle(.secondary)
             }

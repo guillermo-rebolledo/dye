@@ -135,21 +135,13 @@ struct ParameterChip: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let layout = compact ? AnyLayout(VStackLayout(spacing: 0))
-                             : AnyLayout(HStackLayout(spacing: Tokens.Metrics.space5))
-        layout {
+        HStack(spacing: Tokens.Metrics.space5) {
             Text(parameter.name).typeStyle(.chipName).lineLimit(1)
-                .foregroundStyle(Tokens.Palette.textPrimary)
-            HStack(spacing: Tokens.Metrics.space5) {
-                Text(parameter.readoutWidthReference).hidden()
-                    .overlay(alignment: .leading) { Text(isEnabled ? parameter.readout : "—") }
-                    .typeStyle(.chipValue).lineLimit(1)
-                    .contentTransition(reduceMotion ? .identity : .numericText(value: parameter.value.wrappedValue))
-                    .foregroundStyle(isActive ? Tokens.Palette.accent
-                                     : parameter.isModified ? Tokens.Palette.textPrimary : Tokens.Deck.captionInk)
+                .foregroundStyle(isActive ? Tokens.Palette.accent : Tokens.Palette.textPrimary)
+            if parameter.isModified && isEnabled {
                 Circle().fill(Tokens.Palette.accent)
                     .frame(width: Tokens.Deck.modifiedDot, height: Tokens.Deck.modifiedDot)
-                    .opacity(parameter.isModified && isEnabled ? 1 : 0)
+                    .accessibilityHidden(true)
             }
         }
         .padding(.horizontal, Tokens.Deck.chipPadding)

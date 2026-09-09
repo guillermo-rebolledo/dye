@@ -65,22 +65,23 @@ struct ExportSheet: View {
                                segments: [SheetSegment(RenderSettings.Output.displayP3, "Display P3"),
                                           SheetSegment(RenderSettings.Output.sRGB, "sRGB")],
                                selection: $model.exportOutput)
-                Text(photoFooter).typeStyle(.caption).foregroundStyle(Tokens.Palette.textTertiary)
             }
             VStack(alignment: .leading, spacing: Tokens.Sheet.labelGap) {
                 SheetSectionLabel("Photo date")
                 SheetSegmented(label: "Photo date",
                                segments: ExportDate.allCases.map { SheetSegment($0, $0.displayName) },
                                selection: $model.exportDate)
-                Text(dateFooter).typeStyle(.caption).foregroundStyle(Tokens.Palette.textTertiary)
+                if model.exportDate == .original {
+                    Text(dateFooter).typeStyle(.caption).foregroundStyle(Tokens.Palette.textTertiary)
+                }
             }
         }
     }
 
     private var dateFooter: String {
         guard model.exportDate == .original else { return "Saves to Photos with today’s date." }
-        guard let date = model.originalDate else { return "No original date found. Today’s date will be used." }
-        return "Saves to Photos dated \(date.formatted(date: .abbreviated, time: .omitted))."
+        guard let date = model.originalDate else { return "No original date · Using today" }
+        return "\(date.formatted(date: .abbreviated, time: .omitted))"
     }
 
     /// While the render runs, choices collapse to what they were fixed at.
@@ -111,109 +112,43 @@ struct ExportSheet: View {
 
     private var actions: some View {
         VStack(alignment: .leading, spacing: Tokens.Metrics.space10) {
-            Button("Save photo to Photos") { launchedFrom = model.pixels; model.exportImage() }
+            Button("Save to Photos") { launchedFrom = model.pixels; model.exportImage() }
                 .buttonStyle(SheetActionStyle(kind: .primary))
                 .disabled(!model.canExport)
             // A LUT is a mapping rather than a frame, so its record has no thumbnail.
             Button("Export LUT (.cube)") { launchedFrom = nil; model.exportLUT() }
                 .buttonStyle(SheetActionStyle(kind: .standard))
                 .disabled(!model.canExport)
-            lutFootnote.typeStyle(.caption).foregroundStyle(Tokens.Palette.textTertiary)
+            Text("Colour only").typeStyle(.caption).foregroundStyle(Tokens.Palette.textTertiary)
         }
-    }
-
-    /// One bolded clause, no warning icon: the caveat is delivered in the same plain
-    /// voice as the parameter captions.
-    private var lutFootnote: Text {
-        Text("A LUT is a colour mapping, one pixel at a time. This one carries the "
-             + "stock's response, your exposure, white balance and development, and nothing else: ")
-            + Text("no grain, no halation, no bloom, no micro-contrast and no vignette")
-            .bold().foregroundColor(Tokens.Palette.textSecondary)
-            + Text(", because none of those is a function of a single pixel's colour. It will look "
-                   + "flatter than the app does, and that is the LUT being honest rather than wrong.")
     }
 
     private func formatName(_ format: ExportFormat) -> String {
         format == .tiff ? "16-bit TIFF" : format.displayName
     }
 
-    private var photoFooter: String {
-        let encoding = model.exportOutput == .sRGB
-            ? "sRGB is the safe choice for anything that may strip the profile."
-            : "Display P3 keeps the wider gamut the render works in; the file is tagged, so anything colour-managed will read it correctly."
-        let depth = model.exportFormat == .tiff
-            ? " TIFF is written at sixteen bits per channel."
-            : " \(model.exportFormat.displayName) is written at eight bits per channel."
-        return encoding + depth
-    }
+
 }
 
 // MARK: - Rendering
 
-/// Progress drawn as what it actually is: the frame's Tiles, filled in render order.
-///
-/// The count comes from the plan the renderer made and is whatever that plan says,
-/// so the grid lays out for an arbitrary number rather than the mock's 6×4. Until
-/// the first Tile reports there is no count at all, and a one-Tile export is the LUT
-/// — neither draws a grid, because a grid of one square says nothing.
+/// A compact progress indicator backed by completed render tiles.
 struct ExportTileGrid: View {
     let progress: ExportProgress
 
-    private var columns: Int {
-        guard progress.tileCount > 1 else { return 1 }
-        let wide = (Double(progress.tileCount) * Tokens.Export.gridAspect).squareRoot().rounded()
-        return min(max(Int(wide), 1), min(progress.tileCount, Tokens.Export.maximumColumns))
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: Tokens.Sheet.cardGap) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Rendering").typeStyle(.controlName).foregroundStyle(Tokens.Palette.textSecondary)
-                Spacer(minLength: Tokens.Metrics.space10)
-                readout
-            }
-            if progress.tileCount > 1 { grid }
-            Text("The frame is rendered a tile at a time so a 48 MP photo fits in memory. "
-                 + "You can keep editing while it runs.")
-                .typeStyle(.caption).foregroundStyle(Tokens.Palette.textTertiary)
-        }
-        .sheetCard()
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Export progress")
-        .accessibilityValue(progress.tileCount > 0
-                            ? "Tile \(progress.completedTiles) of \(progress.tileCount)"
-                            : "Planning tiles")
-    }
-
-    @ViewBuilder private var readout: some View {
-        if progress.tileCount > 0 {
-            (Text("tile ")
-             + Text("\(progress.completedTiles)").foregroundColor(Tokens.Palette.accent)
-             + Text(" of \(progress.tileCount)"))
-                .typeStyle(.tileReadout)
-                .foregroundStyle(Tokens.Palette.textPrimary)
-        } else {
-            Text("planning").typeStyle(.tileReadout).foregroundStyle(Tokens.Palette.textTertiary)
-        }
-    }
-
-    private var grid: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Tokens.Export.tileGap),
-                                 count: columns),
-                  spacing: Tokens.Export.tileGap) {
-            ForEach(0..<progress.tileCount, id: \.self) { index in
-                RoundedRectangle(cornerRadius: Tokens.Export.tileRadius, style: .continuous)
-                    .fill(fill(index))
-                    .aspectRatio(1, contentMode: .fit)
+        Group {
+            if progress.tileCount > 0 {
+                ProgressView(value: Double(progress.completedTiles), total: Double(progress.tileCount)) {
+                    Text("Rendering")
+                }
+            } else {
+                ProgressView("Preparing…")
             }
         }
-        .accessibilityHidden(true)
-    }
-
-    private func fill(_ index: Int) -> Color {
-        if index < progress.completedTiles { return Tokens.Palette.accent }
-        if index == progress.completedTiles { return Tokens.Export.currentTile }
-        return Tokens.Export.pendingTile
+        .tint(Tokens.Palette.accent)
+        .foregroundStyle(Tokens.Palette.textSecondary)
+        .padding(.vertical, Tokens.Metrics.space10)
     }
 }
 
@@ -248,12 +183,7 @@ private struct ThermalNotice: View {
     /// The two grain models are named in mono, because they are identifiers rather
     /// than prose.
     private var note: Text {
-        Text("The device is running hot, so this export uses the ")
-            + Text(model.exportGrainModel.rawValue).font(Tokens.TypeStyle.identifier.font)
-            + Text(" grain model rather than ")
-            + Text(model.profile.metadata.grain.model.rawValue).font(Tokens.TypeStyle.identifier.font)
-            + Text(". Continuing to ask for the expensive one while the system is throttling "
-                   + "would make the export slower and the phone hotter both.")
+        Text("Device warm · Using \(model.exportGrainModel.rawValue) grain")
     }
 }
 
@@ -315,9 +245,7 @@ private struct ExportFinished: View {
         }
         if let output = record.output { parts.append(output.displayName) }
         parts.append(size)
-        return [parts.joined(separator: " · "),
-                "\(record.tileCount) \(record.tileCount == 1 ? "tile" : "tiles") · "
-                + String(format: "%.1f s", record.elapsedSeconds)]
+        return [parts.joined(separator: " · ")]
     }
 
     private var size: String {

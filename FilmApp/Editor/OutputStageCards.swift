@@ -18,9 +18,7 @@ struct OutputStageCards: View {
                     VStack(alignment: .leading, spacing: Tokens.Metrics.space4) {
                         Text(stage.displayName).typeStyle(.chipName)
                             .foregroundStyle(Tokens.Palette.textPrimary)
-                        Text(model.outputCardDescription(for: stage)).typeStyle(.cardCaption)
-                            .foregroundStyle(Tokens.Deck.captionInk)
-                            .lineLimit(3)
+
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, Tokens.Metrics.space10)
