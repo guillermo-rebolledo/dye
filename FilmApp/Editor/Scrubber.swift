@@ -26,14 +26,15 @@ struct Scrubber: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let geometry = Geometry(parameter: parameter, width: proxy.size.width)
+            let track = TrackMap(parameter: parameter, width: proxy.size.width)
             ScrubberTrack(parameter: parameter,
                           value: parameter.value.wrappedValue,
                           isDragging: drag != nil,
+                          isAtLimit: drag?.wasAtLimit ?? false,
                           isEnabled: isEnabled)
                 .frame(maxHeight: .infinity)
                 .contentShape(Rectangle())
-                .gesture(gesture(geometry), including: isEnabled ? .all : .none)
+                .gesture(gesture(track), including: isEnabled ? .all : .none)
         }
         .frame(height: Tokens.Metrics.minimumHitTarget)
         .accessibilityElement()
@@ -53,41 +54,48 @@ struct Scrubber: View {
         var wasAtLimit: Bool
     }
 
-    private func gesture(_ geometry: Geometry) -> some Gesture {
+    private func gesture(_ track: TrackMap) -> some Gesture {
         // Zero minimum distance, so the first movement of a finger already
         // resting on the deck counts rather than being spent reaching a threshold.
         DragGesture(minimumDistance: 0)
             .onChanged { change in
-                var state = drag ?? begin(geometry)
-                let outcome = geometry.resolve(state.origin + change.translation.width)
+                var state = drag ?? begin(track)
+                let outcome = track.resolve(state.origin + change.translation.width)
                 commit(outcome, from: &state)
                 drag = state
             }
             .onEnded { _ in drag = nil }
     }
 
-    private func begin(_ geometry: Geometry) -> Drag {
+    private func begin(_ track: TrackMap) -> Drag {
         Haptics.prepare()
         let value = parameter.value.wrappedValue
-        return Drag(origin: geometry.origin(of: value),
+        return Drag(origin: track.origin(of: value),
                     value: value,
                     wasAtDetent: parameter.isAtDetent(value),
-                    wasAtLimit: geometry.isAtLimit(value))
+                    wasAtLimit: track.isAtLimit(value))
     }
 
-    private func commit(_ outcome: Geometry.Outcome, from state: inout Drag) {
-        if outcome.value != state.value {
-            parameter.value.wrappedValue = outcome.value
-            // Arriving at the detent is the louder event, so it speaks instead of
-            // the step it also is, never on top of it.
-            if outcome.isAtDetent, !state.wasAtDetent {
-                Haptics.detent()
-            } else {
-                Haptics.step()
-            }
+    private func commit(_ outcome: TrackMap.Outcome, from state: inout Drag) {
+        let moved = outcome.value != state.value
+        if moved { parameter.value.wrappedValue = outcome.value }
+        // A fast flick can carry the finger across the whole sticky band between
+        // two gesture events, landing on the far side without ever sitting on the
+        // detent. It was still crossed, so it is still felt.
+        let crossedDetent = parameter.detent.map {
+            (state.value - $0) * (outcome.value - $0) < 0
+        } ?? false
+
+        // The three speak in order of how much they mean, and only one of them
+        // speaks: arriving at the wall is a step too, and arriving at the detent
+        // is a step too, and firing both would say each thing twice.
+        if outcome.isAtLimit, !state.wasAtLimit {
+            Haptics.rangeLimit()
+        } else if (outcome.isAtDetent && !state.wasAtDetent) || crossedDetent {
+            Haptics.detent()
+        } else if moved {
+            Haptics.step()
         }
-        // Once on arrival, and not again while a finger keeps pushing at the wall.
-        if outcome.isAtLimit, !state.wasAtLimit { Haptics.rangeLimit() }
         state.value = outcome.value
         state.wasAtDetent = outcome.isAtDetent
         state.wasAtLimit = outcome.isAtLimit
@@ -95,29 +103,39 @@ struct Scrubber: View {
 
     /// VoiceOver moves by one step, which is a sixth of a stop on Exposure. The
     /// haptics are the drag's, because arriving at a detent means the same thing
-    /// however the value got there.
+    /// however the value got there — including the wall, which fires on arrival
+    /// and then stays quiet however many more times the increment is refused.
     private func adjust(_ direction: AccessibilityAdjustmentDirection) {
-        let step = direction == .increment ? parameter.step : -parameter.step
         let current = parameter.value.wrappedValue
-        let next = min(max(current + step, parameter.range.lowerBound), parameter.range.upperBound)
-        guard next != current else { return Haptics.rangeLimit() }
+        let step = direction == .increment ? parameter.step : -parameter.step
+        let next = TrackMap.settle(current + step, for: parameter)
+        guard next != current else { return }
         parameter.value.wrappedValue = next
-        parameter.isAtDetent(next) ? Haptics.detent() : Haptics.step()
+        if next <= parameter.range.lowerBound || next >= parameter.range.upperBound {
+            Haptics.rangeLimit()
+        } else if parameter.isAtDetent(next) {
+            Haptics.detent()
+        } else {
+            Haptics.step()
+        }
     }
+
 }
 
-// MARK: - Geometry
+// MARK: - The track map
 
 extension Scrubber {
     /// The map between a value and a position on the track, and the only place
-    /// that knows about the detent's stickiness.
+    /// that knows about the detent's stickiness. It is `TrackMap` rather than
+    /// `Geometry` because `CONTEXT.md` gives Geometry to the Pass that draws the
+    /// Vignette, the Gate Weave and the Frame Border.
     ///
     /// Two spaces meet here. A **point** is where something is drawn. A **raw**
     /// position is where the finger is, and the two differ by the 6 pt the
     /// indicator spends held at a detent: `resolve` collapses that band to the
     /// detent and `origin` reverses it, so a drag that starts beside a detent
     /// does not jump on first touch.
-    struct Geometry {
+    struct TrackMap {
         let parameter: Parameter
         let width: CGFloat
 
@@ -129,6 +147,11 @@ extension Scrubber {
         var travel: CGFloat { max(width - 2 * lead, 1) }
         var span: Double { parameter.range.upperBound - parameter.range.lowerBound }
 
+        /// How far past the detent the finger goes before the indicator lets go,
+        /// which is the reading `Tokens.Motion.detentStick` documents: 6 pt from
+        /// the detent, in either direction. Approached from one side and carried
+        /// through, that is 12 pt of finger travel spent held — the release
+        /// threshold is the 6 pt, not the width of the band.
         private var stick: CGFloat { Tokens.Motion.detentStick }
 
         func x(fraction: Double) -> CGFloat { lead + travel * CGFloat(fraction) }
@@ -136,10 +159,22 @@ extension Scrubber {
 
         var detentX: CGFloat? { parameter.detentFraction.map(x(fraction:)) }
 
-        /// The fill runs from here: the detent on a bipolar parameter, the left
-        /// end on a unipolar one — which is the same rule, because a unipolar
-        /// parameter's detent *is* its left end.
-        var anchorFraction: Double { parameter.detentFraction ?? 0 }
+        /// The fill runs from here: zero on a bipolar parameter, where the value
+        /// departs in a direction, and the left end on a unipolar one, where
+        /// there is only one direction to depart in.
+        ///
+        /// This is deliberately not the detent. Grain runs 0…200 % with its
+        /// detent at 100 %, and `1q` fills it from the left; only the anchor
+        /// *line* marks the detent.
+        var fillOrigin: Double {
+            isBipolar ? parameter.fraction(of: 0) : 0
+        }
+
+        /// A parameter whose range crosses zero. Exposure, Tint and the
+        /// Development Offset; nothing else the deck offers.
+        var isBipolar: Bool {
+            parameter.range.lowerBound < 0 && parameter.range.upperBound > 0
+        }
 
         /// Whether a value has run into an end of the range. A value that arrived
         /// from a Preset outside the editor's clamp reads as at the limit and
@@ -173,15 +208,22 @@ extension Scrubber {
         }
 
         private func stepped(at point: CGFloat) -> Outcome {
+            let raw = parameter.range.lowerBound + Double((point - lead) / travel) * span
+            let value = Self.settle(raw, for: parameter)
+            return Outcome(value: value,
+                           isAtDetent: parameter.isAtDetent(value),
+                           isAtLimit: isAtLimit(value))
+        }
+
+        /// A value on the parameter's step grid and inside its range. The one
+        /// place that quantises, so the drag and VoiceOver cannot land on
+        /// different grids.
+        static func settle(_ raw: Double, for parameter: Parameter) -> Double {
             let lower = parameter.range.lowerBound
-            let raw = lower + Double((point - lead) / travel) * span
             let value = parameter.step > 0
                 ? lower + ((raw - lower) / parameter.step).rounded() * parameter.step
                 : raw
-            let clamped = min(max(value, lower), parameter.range.upperBound)
-            return Outcome(value: clamped,
-                           isAtDetent: parameter.isAtDetent(clamped),
-                           isAtLimit: isAtLimit(clamped))
+            return min(max(value, lower), parameter.range.upperBound)
         }
 
         struct Outcome {
@@ -242,6 +284,10 @@ struct ScrubberTrack: View {
     let parameter: Parameter
     let value: Double
     var isDragging: Bool = false
+    /// Whether the drag has run into an end. Not derived from the value, because
+    /// three of the Lab parameters rest at zero, which *is* their lower bound,
+    /// and a wall lit before anyone touched the control says nothing happened.
+    var isAtLimit: Bool = false
     var isEnabled: Bool = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -252,14 +298,14 @@ struct ScrubberTrack: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let geometry = Scrubber.Geometry(parameter: parameter, width: proxy.size.width)
+            let track = Scrubber.TrackMap(parameter: parameter, width: proxy.size.width)
             ZStack(alignment: .topLeading) {
                 Canvas(rendersAsynchronously: false) { context, size in
-                    draw(in: context, size: size, geometry: geometry)
+                    draw(in: context, size: size, track: track)
                 }
                 if isEnabled {
-                    anchor(geometry)
-                    wall(geometry)
+                    anchor(track)
+                    wall(track)
                 }
             }
             .clipShape(shape)
@@ -267,7 +313,7 @@ struct ScrubberTrack: View {
             // The indicator stands proud of the track top and bottom, so it sits
             // outside the clip rather than inside it.
             .overlay(alignment: .topLeading) {
-                if isEnabled { indicator(geometry) }
+                if isEnabled { indicator(track) }
             }
         }
         .frame(height: Tokens.Track.height)
@@ -278,31 +324,32 @@ struct ScrubberTrack: View {
 
     // MARK: Ticks and fill
 
-    private func draw(in context: GraphicsContext, size: CGSize, geometry: Scrubber.Geometry) {
-        if isEnabled { fill(in: context, size: size, geometry: geometry) }
-        ticks(in: context, size: size, geometry: geometry,
-              interval: geometry.minorInterval, origin: parameter.range.lowerBound,
+    private func draw(in context: GraphicsContext, size: CGSize, track: Scrubber.TrackMap) {
+        ticks(in: context, size: size, track: track,
+              interval: track.minorInterval, origin: parameter.range.lowerBound,
               inset: Tokens.Track.tickInsetMinor, colour: Tokens.Palette.tickMinor)
-        ticks(in: context, size: size, geometry: geometry,
-              interval: geometry.majorInterval, origin: 0,
+        ticks(in: context, size: size, track: track,
+              interval: track.majorInterval, origin: 0,
               inset: Tokens.Track.tickInsetMajor, colour: Tokens.Palette.tickMajor)
+        // The fill goes on last, over the ticks, the way `1q` layers them.
+        if isEnabled { fill(in: context, size: size, track: track) }
     }
 
-    private func ticks(in context: GraphicsContext, size: CGSize, geometry: Scrubber.Geometry,
+    private func ticks(in context: GraphicsContext, size: CGSize, track: Scrubber.TrackMap,
                        interval: Double, origin: Double, inset: CGFloat, colour: Color) {
         var path = Path()
-        for mark in geometry.marks(every: interval, from: origin) {
-            let x = geometry.x(fraction: parameter.fraction(of: mark)) - Tokens.Track.tickWidth / 2
+        for mark in track.marks(every: interval, from: origin) {
+            let x = track.x(fraction: parameter.fraction(of: mark)) - Tokens.Track.tickWidth / 2
             path.addRect(CGRect(x: x, y: inset,
                                 width: Tokens.Track.tickWidth, height: size.height - inset * 2))
         }
         context.fill(path, with: .color(colour))
     }
 
-    private func fill(in context: GraphicsContext, size: CGSize, geometry: Scrubber.Geometry) {
-        let anchor = geometry.x(fraction: geometry.anchorFraction)
-        let head = geometry.x(of: value)
-        let rect = CGRect(x: min(anchor, head), y: 0, width: abs(head - anchor), height: size.height)
+    private func fill(in context: GraphicsContext, size: CGSize, track: Scrubber.TrackMap) {
+        let origin = track.x(fraction: track.fillOrigin)
+        let head = track.x(of: value)
+        let rect = CGRect(x: min(origin, head), y: 0, width: abs(head - origin), height: size.height)
         context.fill(Path(rect), with: .color(Tokens.Palette.trackFill))
     }
 
@@ -311,47 +358,39 @@ struct ScrubberTrack: View {
     /// The line the fill runs from. A unipolar parameter anchors at its own left
     /// wall, where a line would only draw over the end of the track, so it has
     /// none. On the detent the line becomes accent and lights.
-    @ViewBuilder private func anchor(_ geometry: Scrubber.Geometry) -> some View {
+    @ViewBuilder private func anchor(_ track: Scrubber.TrackMap) -> some View {
         if let fraction = parameter.detentFraction, fraction > 0 {
             let onDetent = parameter.isAtDetent(value)
             Rectangle()
                 .fill(onDetent ? Tokens.Palette.trackAnchorActive : Tokens.Palette.trackAnchor)
                 .frame(width: Tokens.Track.anchorWidth, height: Tokens.Track.height)
                 .shadow(color: onDetent ? Tokens.Palette.trackAnchorGlow : .clear,
-                        radius: Tokens.Track.anchorGlow)
-                .position(x: geometry.x(fraction: fraction), y: Tokens.Track.height / 2)
+                        radius: Tokens.Track.anchorGlowRadius)
+                .position(x: track.x(fraction: fraction), y: Tokens.Track.height / 2)
         }
     }
 
     /// The end the value has run into. No rubber-band and no bounce: the wall
     /// lights and that is the whole of the feedback.
-    @ViewBuilder private func wall(_ geometry: Scrubber.Geometry) -> some View {
-        if geometry.isAtLimit(value) {
+    @ViewBuilder private func wall(_ track: Scrubber.TrackMap) -> some View {
+        if isAtLimit {
             let atUpper = value >= parameter.range.upperBound
             Rectangle()
                 .fill(Tokens.Palette.trackWall)
                 .frame(width: Tokens.Track.wallWidth, height: Tokens.Track.height)
-                .position(x: atUpper ? geometry.width - Tokens.Track.wallWidth / 2 : Tokens.Track.wallWidth / 2,
+                .position(x: atUpper ? track.width - Tokens.Track.wallWidth / 2 : Tokens.Track.wallWidth / 2,
                           y: Tokens.Track.height / 2)
         }
     }
 
-    private func indicator(_ geometry: Scrubber.Geometry) -> some View {
-        RoundedRectangle(cornerRadius: Tokens.Track.indicatorRadius, style: .continuous)
+    private func indicator(_ track: Scrubber.TrackMap) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Tokens.Track.indicatorRadius, style: .continuous)
+        return shape
             .fill(isDragging ? Tokens.Palette.indicatorFaceDragging : Tokens.Palette.indicatorFace)
-            .overlay(
-                RoundedRectangle(cornerRadius: Tokens.Track.indicatorRadius, style: .continuous)
-                    .strokeBorder(Tokens.Palette.shade(Tokens.Elevation.indicatorShade),
-                                  lineWidth: Tokens.Elevation.indicatorHairlineWidth))
-            .compositingGroup()
-            .shadow(color: Tokens.Palette.shade(Tokens.Elevation.indicatorShade),
-                    radius: Tokens.Elevation.indicatorCastBlur,
-                    y: Tokens.Elevation.indicatorCastOffset)
-            .shadow(color: isDragging ? Tokens.Palette.indicatorGlow : .clear,
-                    radius: Tokens.Track.indicatorGlow)
+            .indicatorSurface(shape, glow: isDragging ? Tokens.Palette.indicatorGlow : .clear)
             .frame(width: Tokens.Track.indicatorWidth,
                    height: Tokens.Track.height + Tokens.Track.indicatorOverhang * 2)
-            .position(x: geometry.x(of: value), y: Tokens.Track.height / 2)
+            .position(x: track.x(of: value), y: Tokens.Track.height / 2)
     }
 }
 
@@ -367,25 +406,25 @@ private struct ScrubberCatalogue: View {
 
     /// Sample values, not the deck: a Stock is not loaded here. The ranges, steps
     /// and detents are the ones `Parameter.swift` gives these same controls.
-    private func sample(_ name: String, _ value: Binding<Double>,
+    private func sample(_ id: Parameter.Identity, _ name: String, _ value: Binding<Double>,
                         _ range: ClosedRange<Double>, step: Double, detent: Double?,
                         format: @escaping (Double) -> String) -> Parameter {
-        Parameter(id: .exposure, name: name, stage: .light, value: value,
+        Parameter(id: id, name: name, stage: .light, value: value,
                   range: range, step: step, detent: detent, format: format)
     }
 
     private var exposureParameter: Parameter {
-        sample("Exposure", $exposure, EditorRange.exposure, step: 1 / 6, detent: 0,
+        sample(.exposure, "Exposure", $exposure, EditorRange.exposure, step: 1 / 6, detent: 0,
                format: { String(format: "%+.1f EV", $0) })
     }
 
     private func grainParameter(_ value: Binding<Double>) -> Parameter {
-        sample("Grain", value, RenderSettings.grainRange, step: 0.05, detent: 1,
+        sample(.grain, "Grain", value, RenderSettings.grainRange, step: 0.05, detent: 1,
                format: { String(format: "%.0f%%", $0 * 100) })
     }
 
     private func temperature(_ value: Double) -> Parameter {
-        sample("Temperature", .constant(value), EditorRange.temperature, step: 50, detent: 5500,
+        sample(.temperature, "Temperature", .constant(value), EditorRange.temperature, step: 50, detent: 5500,
                format: { String(format: "%.0f K", $0) })
     }
 
@@ -395,7 +434,7 @@ private struct ScrubberCatalogue: View {
                 still("rest", grainParameter(.constant(0.76)), value: 0.76)
                 still("mid-drag", grainParameter(.constant(1.16)), value: 1.16, isDragging: true)
                 still("at detent", grainParameter(.constant(1)), value: 1)
-                still("at range limit", grainParameter(.constant(2)), value: 2)
+                still("at range limit", grainParameter(.constant(2)), value: 2, isAtLimit: true)
                 still("disabled", grainParameter(.constant(0.76)), value: 0.76, isEnabled: false)
                 still("bipolar · exposure", exposureParameter, value: -1)
                 still("dense steps · temperature", temperature(6200), value: 6200)
@@ -411,11 +450,12 @@ private struct ScrubberCatalogue: View {
     }
 
     private func still(_ title: String, _ parameter: Parameter, value: Double,
-                       isDragging: Bool = false, isEnabled: Bool = true) -> some View {
+                       isDragging: Bool = false, isAtLimit: Bool = false,
+                       isEnabled: Bool = true) -> some View {
         VStack(alignment: .leading, spacing: Tokens.Metrics.space6) {
             header(title, parameter, value: value)
-            ScrubberTrack(parameter: parameter, value: value,
-                          isDragging: isDragging, isEnabled: isEnabled)
+            ScrubberTrack(parameter: parameter, value: value, isDragging: isDragging,
+                          isAtLimit: isAtLimit, isEnabled: isEnabled)
         }
     }
 

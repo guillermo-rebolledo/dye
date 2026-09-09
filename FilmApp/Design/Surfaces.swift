@@ -113,6 +113,29 @@ struct Recessed<S: InsettableShape>: ViewModifier {
     }
 }
 
+// MARK: - Indicator
+
+/// The scrubber's indicator. It is neither raised nor recessed: it rides over the
+/// track rather than sitting in the deck, so it gets a hairline hard against its
+/// own edge to separate it from a light fill, a short cast below, and the accent
+/// glow it gains while a finger is on it.
+struct Indicator<S: InsettableShape>: ViewModifier {
+    let shape: S
+    /// `.clear` at rest. Mid-drag, the accent.
+    let glow: Color
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(shape.strokeBorder(Tokens.Palette.shade(Tokens.Elevation.indicatorShade),
+                                        lineWidth: Tokens.Elevation.indicatorHairlineWidth))
+            .compositingGroup()
+            .shadow(color: Tokens.Palette.shade(Tokens.Elevation.indicatorShade),
+                    radius: Tokens.Elevation.indicatorCastBlur,
+                    y: Tokens.Elevation.indicatorCastOffset)
+            .shadow(color: glow, radius: Tokens.Track.indicatorGlowRadius)
+    }
+}
+
 // MARK: - Use
 
 extension View {
@@ -127,6 +150,11 @@ extension View {
                        face: Surfaces.Face = .standard) -> some View {
         raisedSurface(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous),
                       pressed: pressed, face: face)
+    }
+
+    /// The scrubber's indicator, riding over the track.
+    func indicatorSurface<S: InsettableShape>(_ shape: S, glow: Color = .clear) -> some View {
+        modifier(Indicator(shape: shape, glow: glow))
     }
 
     /// A trough or a track: light falls in and does not come back out.

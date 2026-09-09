@@ -328,10 +328,10 @@ extension Tokens {
         static let chipRadius: CGFloat = 9
         static let segmentRadius: CGFloat = 8
         /// A segmented trough.
-        static let troughRadius: CGFloat = 7
+        static let troughRadius: CGFloat = 11
         /// The scrubber track. §4 of the handoff gives the track `radius 7` and
         /// §2 gives the segmented trough `radius 11`; §10's "trough/track 7 · 11"
-        /// is the pair, written in the other order.
+        /// is that pair, written in the other order.
         static let trackRadius: CGFloat = 7
         static let buttonRadius: CGFloat = 12
         static let sheetRadius: CGFloat = 22
@@ -346,9 +346,10 @@ extension Tokens {
 // MARK: - Track
 
 extension Tokens {
-    /// The scrubber's own geometry, from §4 of the handoff. It is separate from
-    /// `Metrics` because every number here belongs to one component and nothing
-    /// else should reach for them.
+    /// The scrubber's own dimensions, from §4 of the handoff. They sit apart from
+    /// `Metrics` because each one belongs to this one component, where a spacing
+    /// step or a hit target belongs to all of them. The track's corner radius is
+    /// the exception and stays in `Metrics` with the other radii.
     enum Track {
         static let height: CGFloat = 28
         /// A tick, an anchor and an end wall, in the widths the handoff gives.
@@ -375,9 +376,10 @@ extension Tokens {
         static let indicatorEndInset: CGFloat = 2
 
         /// The glow around an anchor the value is sitting on, and around the
-        /// indicator while a finger is on it.
-        static let anchorGlow: CGFloat = 8
-        static let indicatorGlow: CGFloat = 12
+        /// indicator while a finger is on it. The handoff writes these as 8 px
+        /// and 12 px, halved here like every other blur in this file.
+        static let anchorGlowRadius: CGFloat = 4
+        static let indicatorGlowRadius: CGFloat = 6
         /// What a disabled track fades to.
         static let disabledOpacity: Double = 0.4
     }
