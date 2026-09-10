@@ -13,11 +13,18 @@ extension Renderer {
     public func export(image: RenderImage, profile: Profile, settings: RenderSettings = .init(),
                        format: ExportFormat = .heif, options: ExportOptions = .init(),
                        progress: (@Sendable (ExportProgress) -> Void)? = nil) async throws -> Data {
-        let source = try texture(for: image)
-        let writer = try ImageWriter(format: format, output: settings.output,
+        // The decoded frame is the Export's largest single allocation — 372MB at 48MP —
+        // and the last Tile is the last thing that needs it. Encoding inside its scope
+        // would hold it alongside the assembled output frame for no reason, so the
+        // scope ends before the encoder starts.
+        let writer: ImageWriter
+        do {
+            let source = try texture(for: image)
+            writer = try ImageWriter(format: format, output: settings.output,
                                      width: source.width, height: source.height)
-        try await renderTiles(source, profile: profile, settings: settings, options: options, progress: progress) {
-            writer.write($1, x: $0.x, y: $0.y, width: $0.width, height: $0.height)
+            try await renderTiles(source, profile: profile, settings: settings, options: options, progress: progress) {
+                writer.write($1, x: $0.x, y: $0.y, width: $0.width, height: $0.height)
+            }
         }
         return try writer.encode(quality: options.quality, creationDate: options.creationDate)
     }

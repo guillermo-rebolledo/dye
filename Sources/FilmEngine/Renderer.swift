@@ -50,7 +50,10 @@ public actor Renderer {
     ///   8KB and 65MB. The default holds a whole Catalogue sweep at default settings,
     ///   which is what stops a filmstrip or a Contact Sheet evicting its own earlier
     ///   reads and paying the full sweep again on the next open.
-    public init(responseCacheBudgetBytes: Int = 96 << 20) throws {
+    /// - Parameter decodeBandBytes: how much staging buffer a colour-managed decode
+    ///   may hold at once. A full-resolution decode writes the destination texture a
+    ///   band of rows at a time rather than materialising the whole frame twice over.
+    public init(responseCacheBudgetBytes: Int = 96 << 20, decodeBandBytes: Int = 32 << 20) throws {
         guard responseCacheBudgetBytes >= 16 << 20 else {
             throw FilmError.invalid("The Colour Cube budget must be at least 16MB")
         }
@@ -63,7 +66,7 @@ public actor Renderer {
         self.queue = queue
         self.exportQueue = exportQueue
         exportQueue.label = "FilmEngine.export"
-        decoder = try ImageDecoder(device: device)
+        decoder = try ImageDecoder(device: device, bandBytes: decodeBandBytes)
         let url = Bundle.module.url(forResource: "Pipeline", withExtension: "metal", subdirectory: "Metal")!
         let options = MTLCompileOptions()
         if #available(macOS 15, iOS 18, *) { options.mathMode = .safe }
