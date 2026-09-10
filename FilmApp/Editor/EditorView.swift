@@ -37,6 +37,7 @@ struct EditorView: View {
             .task(id: photo) {
                 guard let photo else { return }
                 await model.open(photo)
+                if !Task.isCancelled, model.error != nil { self.photo = nil }
             }
     }
 
@@ -71,6 +72,25 @@ private struct EditorScreen: View {
     private var isComparing: Bool { canvas.hasPhoto && (holdingBefore || accessibleBefore) }
 
     var body: some View {
+        Group {
+            if canvas.hasPhoto || model.beforePixels != nil {
+                editor
+            } else {
+                PhotoWelcomeScreen(photo: $photo, isLoading: isLoading, error: error)
+            }
+        }
+        .background(Tokens.Palette.canvas.ignoresSafeArea())
+        .onChange(of: isComparing) { Haptics.compare() }
+        .onChange(of: photo) { accessibleBefore = false; isLoupeEnabled = false; holdingBefore = false }
+        .onChange(of: canvas.hasPhoto) { if !canvas.hasPhoto { accessibleBefore = false; isLoupeEnabled = false; holdingBefore = false } }
+    }
+
+    private var isLoading: Bool {
+        if case .loading = canvas { return true }
+        return false
+    }
+
+    private var editor: some View {
         GeometryReader { geometry in
             if geometry.size.width > geometry.size.height {
                 HStack(spacing: 0) {
@@ -87,10 +107,6 @@ private struct EditorScreen: View {
                 }
             }
         }
-        .background(Tokens.Palette.canvas.ignoresSafeArea())
-        .onChange(of: isComparing) { Haptics.compare() }
-        .onChange(of: photo) { accessibleBefore = false; isLoupeEnabled = false; holdingBefore = false }
-        .onChange(of: canvas.hasPhoto) { if !canvas.hasPhoto { accessibleBefore = false; isLoupeEnabled = false; holdingBefore = false } }
     }
 
     private var photoCanvas: some View {
@@ -123,6 +139,65 @@ private struct EditorScreen: View {
         }
     }
 
+}
+
+/// The first photo starts here; the editing deck appears once an image is ready.
+private struct PhotoWelcomeScreen: View {
+    @Binding var photo: PhotosPickerItem?
+    let isLoading: Bool
+    let error: String?
+
+    var body: some View {
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: Tokens.Metrics.space20) {
+                    Image(systemName: "photo.badge.plus")
+                        .font(.largeTitle)
+                        .foregroundStyle(Tokens.Palette.accent)
+                        .accessibilityHidden(true)
+
+                    VStack(spacing: Tokens.Metrics.space10) {
+                        Text("Start with a photo")
+                            .font(.title2.weight(.semibold))
+                            .accessibilityAddTraits(.isHeader)
+                        Text("Choose a picture to explore film stocks and make it your own.")
+                            .font(.body)
+                            .foregroundStyle(Tokens.Palette.inkOnCanvas(0.7))
+                    }
+
+                    if isLoading {
+                        ProgressView("Loading photo…")
+                            .tint(Tokens.Palette.accent)
+                    } else {
+                        PhotosPicker(selection: $photo, matching: .images, preferredItemEncoding: .current) {
+                            Label("Select a photo", systemImage: "plus")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .frame(minHeight: Tokens.Metrics.minimumHitTarget)
+                                .padding(.horizontal, Tokens.Metrics.space16)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Tokens.Palette.accent)
+                        .foregroundStyle(Tokens.Palette.canvas)
+                        .accessibilityHint("Opens your photo library")
+                    }
+
+                    if let error {
+                        Text(error)
+                            .font(.callout)
+                            .foregroundStyle(Tokens.Palette.destructive)
+                            .accessibilityLabel("Error: \(error)")
+                    }
+                }
+                .multilineTextAlignment(.center)
+                .foregroundStyle(Tokens.Palette.inkOnCanvas)
+                .frame(maxWidth: Tokens.Welcome.contentWidth)
+                .padding(Tokens.Metrics.space20)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: geometry.size.height)
+            }
+        }
+    }
 }
 
 private struct CanvasAccessibility: ViewModifier {

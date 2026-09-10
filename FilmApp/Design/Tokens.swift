@@ -900,3 +900,11 @@ extension Tokens.TypeStyle {
     /// `this one`, hand-set beside the mark.
     static let greasePencil = Self(size: 11, weight: .medium, isMono: true)
 }
+
+// MARK: - Photo welcome
+
+extension Tokens {
+    enum Welcome {
+        static let contentWidth: CGFloat = 360
+    }
+}
