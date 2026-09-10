@@ -1,6 +1,8 @@
 import SwiftUI
 import PhotosUI
 
+/// Editing commands share one glass surface. They present transient tools, so
+/// they don't retain a tab-style selection after a tool is dismissed.
 struct ActionRow: View {
     @Binding var photo: PhotosPickerItem?
     let hasPhoto: Bool
@@ -10,93 +12,90 @@ struct ActionRow: View {
     let showExport: () -> Void
     @Binding var isLoupeEnabled: Bool
 
-    @State private var selectedAction = "Photo"
-    @State private var showsPhotoPicker = false
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Namespace private var glassNamespace
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    @ViewBuilder var body: some View {
-        if #available(iOS 26.0, *) {
-            GlassEffectContainer { bar }
-        } else { bar }
+    var body: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                HStack(spacing: 12) {
+                    photoPicker
+                    Menu {
+                        Button("Presets", systemImage: "slider.horizontal.3", action: showPresets)
+                            .disabled(!hasPhoto)
+                        Button("Contact Sheet", systemImage: "square.grid.3x3", action: showContactSheet)
+                        Toggle("Loupe", systemImage: "magnifyingglass", isOn: $isLoupeEnabled)
+                            .disabled(!hasPhoto)
+                        Button("Export", systemImage: "square.and.arrow.up", action: showExport)
+                            .disabled(!hasPhoto || !canExport)
+                    } label: {
+                        DeckActionLabel(name: "More", symbol: "ellipsis")
+                    }
+                    .accessibilityHint("Presets, Contact Sheet, Loupe, and Export")
+                }
+                .buttonStyle(DeckActionPress())
+            } else {
+                actions
+            }
+        }
+        .padding(6)
+        .modifier(EditorGlass())
+        .accessibilityIdentifier("photo-tools")
     }
 
-    private var bar: some View {
-        HStack(spacing: Tokens.Metrics.space5) {
-            PhotosPicker(selection: $photo, matching: .images, preferredItemEncoding: .current) {
-                DeckActionLabel(name: "Photo", symbol: "photo")
-            }
-            .background { selectionLens("Photo") }
-            .help("Photo")
-            .contextMenu {
-                Button("Choose photo", systemImage: "photo") { select("Photo"); showsPhotoPicker = true }
-            }
-            Button { select("Presets"); showPresets() } label: {
-                actionLabel("Presets", "slider.horizontal.3", enabled: hasPhoto)
+    private var photoPicker: some View {
+        PhotosPicker(selection: $photo, matching: .images, preferredItemEncoding: .current) {
+            DeckActionLabel(name: "Photo", symbol: "photo")
+        }
+        .accessibilityHint("Choose a photo from your library")
+    }
+
+    private var actions: some View {
+        HStack(spacing: 0) {
+            photoPicker
+
+            Button(action: showPresets) {
+                DeckActionLabel(name: "Presets", symbol: "slider.horizontal.3")
             }
             .disabled(!hasPhoto)
-            .contextMenu { Button("Presets", action: showPresets) }
-            Button { select("Contact Sheet"); showContactSheet() } label: {
-                actionLabel("Contact Sheet", "square.grid.3x3")
+
+            Button(action: showContactSheet) {
+                DeckActionLabel(name: "Contact Sheet", symbol: "square.grid.3x3")
             }
             .contextMenu {
                 Button("Contact Sheet", action: showContactSheet)
                 Toggle("Loupe", isOn: $isLoupeEnabled).disabled(!hasPhoto)
             }
-            Button { select("Export"); showExport() } label: {
-                actionLabel("Export", "square.and.arrow.up", enabled: hasPhoto && canExport)
+
+            Button(action: showExport) {
+                DeckActionLabel(name: "Export", symbol: "square.and.arrow.up")
             }
             .disabled(!hasPhoto || !canExport)
-            .contextMenu { Button("Export", action: showExport) }
         }
         .buttonStyle(DeckActionPress())
-        .frame(height: Tokens.Deck.actionHeight)
-        .modifier(EditorGlass())
-        .onChange(of: photo) { select("Photo") }
-        .photosPicker(isPresented: $showsPhotoPicker, selection: $photo, matching: .images, preferredItemEncoding: .current)
     }
-
-    private func actionLabel(_ name: String, _ symbol: String, enabled: Bool = true) -> some View {
-        DeckActionLabel(name: name, symbol: symbol, enabled: enabled)
-            .background { if enabled { selectionLens(name) } }
-            .help(name)
-    }
-
-    @ViewBuilder private func selectionLens(_ name: String) -> some View {
-        if selectedAction == name {
-            if #available(iOS 26.0, *), !reduceTransparency {
-                Capsule().fill(.clear).frame(width: 52, height: 40)
-                    .glassEffect(.regular, in: .capsule)
-                    .glassEffectID("selected-action", in: glassNamespace)
-            } else {
-                Capsule().fill(.white.opacity(0.12)).frame(width: 52, height: 40)
-            }
-        }
-    }
-
-    private func select(_ name: String) {
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) { selectedAction = name }
-    }
-
 }
 
 private struct DeckActionLabel: View {
     let name: String
     let symbol: String
-    var enabled = true
+    @Environment(\.isEnabled) private var isEnabled
+    @ScaledMetric(relativeTo: .caption2) private var labelLineHeight: CGFloat = 14
 
     var body: some View {
-        VStack(spacing: Tokens.Metrics.space4) {
-            Image(systemName: symbol).font(.system(size: 20))
-                .foregroundStyle(Tokens.Palette.textPrimary)
-                .frame(width: Tokens.Deck.actionIconWidth, height: Tokens.Deck.actionIconHeight)
-
+        VStack(spacing: 3) {
+            Image(systemName: symbol)
+                .font(.system(size: 21, weight: .regular))
+                .frame(height: 25)
+            Text(name)
+                .font(.caption2.weight(.medium))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .opacity(enabled ? 1 : Tokens.Deck.unavailableOpacity)
-        .frame(maxWidth: .infinity)
-        .frame(height: Tokens.Metrics.minimumHitTarget)
-        .contentShape(Rectangle())
+        .foregroundStyle(isEnabled ? Tokens.Palette.textPrimary : Tokens.Palette.textDisabled)
+        .padding(.horizontal, 4)
+        .frame(minWidth: 64, maxWidth: .infinity)
+        .frame(minHeight: max(56, labelLineHeight + 40))
+        .contentShape(Capsule())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(name)
     }
@@ -105,11 +104,7 @@ private struct DeckActionLabel: View {
 private struct DeckActionPress: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.94 : 1)
             .background(configuration.isPressed ? .white.opacity(0.12) : .clear, in: Capsule())
-            .onChange(of: configuration.isPressed) { _, pressed in
-                if pressed { Haptics.buttonPress() }
-            }
     }
 }
 
@@ -121,4 +116,11 @@ private struct DeckActionPress: ButtonStyle {
                   showPresets: {}, showContactSheet: {}, showExport: {}, isLoupeEnabled: .constant(false))
     }
     .padding(Tokens.Metrics.space16).background(Tokens.Palette.deck).preferredColorScheme(.dark)
+}
+
+#Preview("Actions · largest text") {
+    ActionRow(photo: .constant(nil), hasPhoto: true, canExport: true,
+              showPresets: {}, showContactSheet: {}, showExport: {}, isLoupeEnabled: .constant(false))
+        .dynamicTypeSize(.accessibility5)
+        .padding().background(Tokens.Palette.deck).preferredColorScheme(.dark)
 }

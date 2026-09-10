@@ -11,24 +11,21 @@ struct EditorView: View {
     @State private var showsContactSheet = false
 
     var body: some View {
-        EditorScreen(model: model, canvas: canvas, error: model.error, photo: $photo,
-                     showPresets: { showsPresets = true }, showContactSheet: { showsContactSheet = true },
-                     showExport: { isExporting = true })
-            .overlay(alignment: .topTrailing) {
-                Button { showsSettings = true } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 16))
-                        .frame(width: 34, height: 34)
-                        .modifier(EditorGlass())
-                        .frame(width: 44, height: 44)
+        NavigationStack {
+            EditorScreen(model: model, canvas: canvas, error: model.error, photo: $photo,
+                         showPresets: { showsPresets = true }, showContactSheet: { showsContactSheet = true },
+                         showExport: { isExporting = true })
+                .navigationTitle("Dye")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Settings", systemImage: "gearshape") { showsSettings = true }
+                    }
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(Tokens.Palette.textPrimary)
-                .accessibilityLabel("Settings")
-                .padding(.trailing, Tokens.Metrics.space16)
-            }
-            .sheet(isPresented: $showsSettings) { SettingsView(model: model) }
+        }
+            .tint(Tokens.Palette.textPrimary)
             .preferredColorScheme(.dark)
+            .sheet(isPresented: $showsSettings) { SettingsView(model: model) }
             .sheet(isPresented: $showsPresets) { PresetSheet(model: model).filmSheet() }
             .fullScreenCover(isPresented: $showsContactSheet) { ContactSheetView(selectedStock: model.selectedStock) }
             .sheet(isPresented: $isExporting) { ExportSheet(model: model).filmSheet() }
@@ -53,7 +50,7 @@ struct EditorView: View {
 }
 
 /// Shared by the running editor and the acceptance previews, so each state uses
-/// exactly the same canvas allocation and fixed deck frame.
+/// exactly the same canvas allocation and adaptive deck layout.
 private struct EditorScreen: View {
     let model: EditorModel
     let canvas: CanvasView.Content
@@ -95,7 +92,7 @@ private struct EditorScreen: View {
             if geometry.size.width > geometry.size.height {
                 HStack(spacing: 0) {
                     photoCanvas
-                    controls.frame(width: min(393, geometry.size.width * 0.46))
+                    ScrollView { controls.fixedSize(horizontal: false, vertical: true) }.frame(width: min(393, geometry.size.width * 0.46))
                         .frame(maxHeight: .infinity, alignment: .bottom)
                         .background(Tokens.Palette.deck)
                 }
@@ -103,6 +100,7 @@ private struct EditorScreen: View {
                 VStack(spacing: 0) {
                     photoCanvas
                     controls.frame(maxWidth: 560)
+                        .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity).background(Tokens.Palette.deck)
                 }
             }
