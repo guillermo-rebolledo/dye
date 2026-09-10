@@ -1,0 +1,49 @@
+name: Film profile candidates
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: film-candidates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  candidates:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'profile-candidates')
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the native Baker
+        run: |
+          swift build -c release --product ProfileBaker
+          echo "PROFILE_BAKER_EXECUTABLE=$(swift build -c release --show-bin-path)/ProfileBaker" >> "$GITHUB_ENV"
+      - name: Bake review candidates
+        run: Scripts/bake-catalogue.sh
+      # These are review artifacts, not accepted baselines. The normal CI job
+      # continues to enforce the committed Catalogue and golden-image bytes.
+      - name: Render candidate contact sheets and verify determinism
+        run: |
+          DYE_RECORD_GOLDENS=1 swift test --filter catalogueRendersMatchGoldenImages
+          swift test --skip-build --filter catalogueRendersMatchGoldenImages
+      - name: Validate candidates through the renderer
+        run: |
+          mkdir -p .build/accuracy-reports
+          for stock in Curves/*; do
+            [ -f "$stock/stock.json" ] || continue
+            id="$(basename "$stock")"
+            "$PROFILE_BAKER_EXECUTABLE" validate "$stock" "Sources/FilmEngine/Catalogue/$id.filmprofile" ".build/accuracy-reports/$id" 0.03
+          done
+      - name: Test candidate profiles
+        run: swift test --skip previewRenderAndStockSwitchStayWithinInteractiveBudgets
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: film-profile-candidates
+          path: |
+            Sources/FilmEngine/Catalogue
+            Tests/FilmEngineTests/Fixtures/GoldenImages
+            .build/accuracy-reports

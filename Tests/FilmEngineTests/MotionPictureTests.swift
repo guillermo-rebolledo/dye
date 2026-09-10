@@ -162,9 +162,11 @@ private func average(_ pixels: RenderedPixels, _ index: Int) -> Double {
         #expect(profile.metadata.process == .c41 || profile.metadata.process == .ecn2)
         #expect(colour.outputStage == .scan)
         // Both Output Stages read the same negative, so both cover the same
-        // Development Offsets and neither borrows the other's payload.
+        // Development Offsets. Film-density payloads are shared; observations differ.
         #expect(colour.printVariants!.map(\.pushStops).sorted() == colour.lutVariants.map(\.pushStops).sorted())
-        #expect(Set(colour.printVariants!.map(\.lut)).isDisjoint(with: Set(colour.lutVariants.map(\.lut))))
+        let observation = try #require(colour.densityOutput)
+        #expect(colour.printVariants == colour.lutVariants)
+        #expect(Set(observation.printVariants!.map(\.lut)).isDisjoint(with: Set(observation.lutVariants.map(\.lut))))
     }
     // Scan is the default: a render that says nothing about the Output Stage is the
     // Profile's own, and the Profile's own is the scan.

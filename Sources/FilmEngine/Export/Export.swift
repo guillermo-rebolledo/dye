@@ -128,7 +128,9 @@ extension Renderer {
     /// property of the path rather than of the model behind it.
     public static func grainModel(_ profile: Profile, path: RenderPath,
                                   thermalState: ProcessInfo.ThermalState) -> GrainModel {
-        guard path == .export, !thermalState.isThrottling else { return .procedural }
-        return profile.metadata.grain.model
+        // Temperature and Render Path may affect scheduling/resolution, not the
+        // physical grain model. Stochastic remains an explicitly unsupported
+        // authoring choice and retains the existing procedural fallback.
+        profile.metadata.grain.model == .stochastic ? .procedural : profile.metadata.grain.model
     }
 }

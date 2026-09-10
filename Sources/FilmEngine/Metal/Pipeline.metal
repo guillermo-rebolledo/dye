@@ -211,12 +211,15 @@ kernel void mtfCombine(texture2d<half, access::read> input [[texture(0)]],
                        texture2d<half, access::write> output [[texture(1)]],
                        texture2d<half, access::read> fine [[texture(4)]],
                        texture2d<half, access::read> coarse [[texture(5)]],
-                       constant float4 &coefficients [[buffer(14)]],
+                       constant float4 *coefficients [[buffer(14)]],
                        uint2 p [[thread_position_in_grid]]) {
     if (p.x >= output.get_width() || p.y >= output.get_height()) return;
     half4 pixel = input.read(p);
-    float3 value = float3(pixel.rgb) * coefficients.x
-        + float3(fine.read(p).rgb) * coefficients.y + float3(coarse.read(p).rgb) * coefficients.z;
+    float3 value;
+    for (uint c = 0; c < 3; ++c) {
+        value[c] = float(pixel[c]) * coefficients[c].x
+            + float(fine.read(p)[c]) * coefficients[c].y + float(coarse.read(p)[c]) * coefficients[c].z;
+    }
     output.write(half4(half3(value), pixel.a), p);
 }
 
@@ -264,6 +267,24 @@ kernel void filmResponse(texture2d<half, access::read> input [[texture(0)]],
     output.write(half4(half3(value), pixel.a), p);
 }
 
+// Observe the developed density AFTER Grain. The output cube includes the
+// scanner, paper or viewing light; density noise is never multiplied onto a scan.
+kernel void densityOutput(texture2d<half, access::read> input [[texture(0)]],
+                          texture2d<half, access::write> output [[texture(1)]],
+                          texture3d<half, access::read> lower [[texture(2)]],
+                          texture3d<half, access::read> upper [[texture(3)]],
+                          constant float &blend [[buffer(5)]],
+                          constant float4 &minimum [[buffer(18)]],
+                          constant float4 &inverseSpan [[buffer(19)]],
+                          uint2 p [[thread_position_in_grid]]) {
+    if (p.x >= output.get_width() || p.y >= output.get_height()) return;
+    half4 pixel = input.read(p);
+    float3 coordinate = clamp((float3(pixel.rgb) - minimum.xyz) * inverseSpan.xyz, 0.0f, 1.0f);
+    float3 value = tetrahedral(lower, coordinate);
+    if (blend > 0) value = mix(value, tetrahedral(upper, coordinate), blend);
+    output.write(half4(half3(value), pixel.a), p);
+}
+
 // Pass 8 for a black & white Stock: the Monochrome Collapse, then the Density Curve.
 // No Colour Cube is sampled and none is bound — a spectral sensitivity collapsing to
 // one channel is both cheaper and closer to what the film does than a 3D lookup.
@@ -278,10 +299,18 @@ kernel void monochromeResponse(texture2d<half, access::read> input [[texture(0)]
                                texture1d<half, access::read> densityCurve [[texture(2)]],
                                constant float4 &spectralWeight [[buffer(1)]],
                                constant float4 &shaper [[buffer(4)]],
+                               constant uint &bandCount [[buffer(20)]],
+                               constant float4 *contributions [[buffer(21)]],
                                uint2 p [[thread_position_in_grid]]) {
     if (p.x >= output.get_width() || p.y >= output.get_height()) return;
     half4 pixel = input.read(p);
     float gray = dot(float3(pixel.rgb), spectralWeight.xyz);
+    if (bandCount > 0) {
+        gray = 0;
+        for (uint i = 0; i < bandCount; ++i) {
+            gray += max(0.0f, dot(float3(pixel.rgb), contributions[i].xyz));
+        }
+    }
     if (shaper.x != 0) {
         float logH = log10(max(gray, 1e-6f) / 0.18f) + shaper.w;
         gray = (logH - shaper.y) * shaper.z;
@@ -388,7 +417,7 @@ kernel void grainDyeCloud(texture2d<half, access::read> input [[texture(0)]],
     for (uint c = 0; c < 3; ++c) {
         float t = clamp((value[c] - grain.base[c]) * grain.scale[c], 0.0f, 1.0f) * 31.0f;
         uint low = min(uint(t), 30u);
-        float amplitude = mix(densityResponse[low], densityResponse[low + 1], t - float(low));
+        float amplitude = mix(densityResponse[c * 32 + low], densityResponse[c * 32 + low + 1], t - float(low));
         float noise = grain.mix.x * dyeCloudNoise(position, grain.cell[c], c, grain.seed.x) + grain.mix.y * shared;
         float density = grain.sigma[c] * amplitude * noise;
         result[c] = grain.mix.w > 0.5f ? value[c] + density : value[c] * exp10(-density);
@@ -416,7 +445,7 @@ kernel void grain(texture2d<half, access::read> input [[texture(0)]],
         // which is what separates emulsion from noise added to the whole frame.
         float t = clamp((value[c] - grain.base[c]) * grain.scale[c], 0.0f, 1.0f) * 31.0f;
         uint low = min(uint(t), 30u);
-        float amplitude = mix(densityResponse[low], densityResponse[low + 1], t - float(low));
+        float amplitude = mix(densityResponse[c * 32 + low], densityResponse[c * 32 + low + 1], t - float(low));
         float noise = grain.mix.x * grainNoise(position, grain.cell[c], c, grain.seed.x) + grain.mix.y * shared;
         float density = grain.sigma[c] * amplitude * noise;
         // A Density Space signal takes the fluctuation directly. A Colour Cube that

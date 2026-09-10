@@ -86,7 +86,7 @@ func profileCodecRoundTripsEveryProcess(_ process: FilmProcess) throws {
     invalid.colour.inputShaper = nil
     #expect(throws: (any Error).self) { try Profile(metadata: invalid, payloads: payloads) }
     invalid = original.metadata
-    invalid.colour.cubeOutput = .density
+    invalid.colour.cubeOutput = .displayLinearRec2020
     #expect(throws: (any Error).self) { try Profile(metadata: invalid, payloads: payloads) }
     invalid = original.metadata
     invalid.provenance.removeValue(forKey: "colour.inputShaper")
@@ -97,9 +97,13 @@ func profileCodecRoundTripsEveryProcess(_ process: FilmProcess) throws {
     let original = try #require(ProfileCatalogue.bundled().profiles.first { $0.id == "vision3-250d" })
     let decoded = try ProfileContainer.decode(ProfileContainer.encode(original))
     #expect(decoded.metadata.colour.printVariants == original.metadata.colour.printVariants)
-    let cube = ColourCube.identity.payload
     func payloads(_ metadata: FilmProfile) -> [String: Data] {
-        Dictionary(uniqueKeysWithValues: metadata.payloadNames.map { ($0, cube) })
+        let output = metadata.colour.densityOutput
+        let outputNames = Set(((output?.lutVariants ?? []) + (output?.printVariants ?? [])).map(\.lut))
+        return Dictionary(uniqueKeysWithValues: metadata.payloadNames.map { name in
+            let size = outputNames.contains(name) ? output!.lutSize : metadata.colour.lutSize
+            return (name, Data(repeating: 0, count: size * size * size * 8))
+        })
     }
     #expect(throws: Never.self) { try Profile(metadata: original.metadata, payloads: payloads(original.metadata)) }
     // A Print that covers different Development Offsets from the scan, one that
@@ -109,7 +113,7 @@ func profileCodecRoundTripsEveryProcess(_ process: FilmProcess) throws {
     invalid.colour.printVariants?.removeLast()
     #expect(throws: (any Error).self) { try Profile(metadata: invalid, payloads: payloads(invalid)) }
     invalid = original.metadata
-    invalid.colour.printVariants?[0].lut = try #require(invalid.colour.lutVariants.first).lut
+    invalid.colour.densityOutput?.printVariants?[0].lut = try #require(invalid.colour.lutVariants.first).lut
     #expect(throws: (any Error).self) { try Profile(metadata: invalid, payloads: payloads(invalid)) }
     invalid = original.metadata
     invalid.provenance.removeValue(forKey: "colour.printVariants")

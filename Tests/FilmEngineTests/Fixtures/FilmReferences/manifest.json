@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "referenceWorkflow": "Pending controlled film captures; no photographic match claimed",
+  "inputTransform": "Record the locked RAW conversion, or identify rendered-photo input separately",
+  "outputTransform": "Record the locked scan inversion and RGB-to-Lab conversion",
+  "referenceWhite": "Record the comparison white and chromatic adaptation",
+  "usageRights": "Record permissions for each contributed reference capture",
+  "captures": []
+}

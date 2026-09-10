@@ -169,7 +169,7 @@
     "spectral.characteristicCurves": "measured",
     "spectral.development": "artistic",
     "spectral.dirCouplers": "artistic",
-    "spectral.dyeDensity": "artistic",
+    "spectral.dyeDensity": "approximation",
     "spectral.dyePeakNM": "artistic",
     "spectral.dyeSeparation": "artistic",
     "spectral.dyeWidthNM": "artistic",
@@ -179,7 +179,7 @@
     "spectral.reconstruction": "artistic",
     "spectral.scan": "artistic",
     "spectral.scanGamma": "artistic",
-    "spectral.sensitivity": "artistic",
+    "spectral.sensitivity": "approximation",
     "trueISO": "measured"
   },
   "reciprocity": {

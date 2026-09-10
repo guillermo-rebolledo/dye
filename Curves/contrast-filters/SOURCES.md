@@ -1,81 +1,113 @@
 # Contrast Filters
 
-`transmittance.csv` is the shared spectral transmittance of the five Contrast
-Filters, on the same 400…700 nm 10 nm grid every spectral table uses. It is not a
-Curve Set: a filter is glass on the lens rather than a Stock, so it lives here
-once and every monochrome Curve Set reads it. Directories with no `stock.json`
-are skipped by `Scripts/bake-catalogue.sh` and by CI for that reason.
+`transmittance.csv` contains shared spectral transmittance for five Kodak
+WRATTEN 2 filters at 400–700 nm in 10 nm increments. It replaces the previous
+artistic logistic-edge table. This directory is not a stock Curve Set.
 
-## What this file is
+## Primary sources
 
-**It is a model, and it is artistic.** The Kodak Wratten transmittance
-measurements are published in *Kodak Filters for Scientific and Technical Uses*
-(publication B-3), which is a printed handbook and not a downloadable dataset,
-so nothing here is digitised from a measurement the way the Stocks' Curve Sets
-are. `Scripts/model-contrast-filters.py` emits five logistic band edges instead:
+Retrieved 2026-09-10 through Kodak's official
+[WRATTEN 2 filter catalogue](https://www.kodak.com/en/motion/page/wratten-2-filters/).
+Each link below is a one-page manufacturer PDF of typical production diffuse
+density versus wavelength, not a measurement of the particular filter a user
+owns. Kodak cautions that the published curves are not production acceptance
+specifications.
 
-| Contrast Filter | Wratten | 50 % points (nm) | Peak transmittance |
-| --- | --- | --- | --- |
-| yellow | No. 8 | 495 … — | 0.87 |
-| orange | No. 15 | 520 … — | 0.88 |
-| red | No. 25 | 595 … — | 0.90 |
-| green | No. 58 | 490 … 600 | 0.42 |
-| blue | No. 47 | — … 495 | 0.28 |
+| Application name | Kodak filter and source | SHA-256 |
+|---|---|---|
+| yellow | [WRATTEN 2 No. 8](https://www.kodak.com/content/products-brochures/Film/Basic-Color-Filters-w2-8.pdf) | `5975c86498145713c0a864a9c3303f8f3522140856df3a14456fe43b2b00c4d0` |
+| orange | [WRATTEN 2 No. 15](https://www.kodak.com/content/products-brochures/Film/Basic-Color-Filters-W2-15.pdf) | `acbffbc45ce201913229fec81f3bc516b0587fe2a4b42142be01a3fcfae70a1e` |
+| red | [WRATTEN 2 No. 25](https://www.kodak.com/content/products-brochures/Film/Basic-Color-Filters-W2-25.pdf) | `a7f209922fce39413a1632a53952c9c0c5dc10a4e22103812d4a272d661234bb` |
+| green | [WRATTEN 2 No. 58](https://www.kodak.com/content/products-brochures/Film/Basic-Color-Filters-W2-58.pdf) | `a2305795138fe68adac82b963b90a62b3272674bb4f5f208a6207e8b74e82beb` |
+| blue | [WRATTEN 2 No. 47](https://www.kodak.com/content/products-brochures/Film/Basic-Color-Filters-W2-47.pdf) | `168a816b10cf0b56ac4c0aaba50a39206c0c78e1c79f802adaa3f5bb21a02bba` |
 
-Every edge is 7 nm wide. The wavelengths and peaks are the nominal values these
-filters are described by; **no parameter is fitted** to anything in this
-repository, which is what makes the check below worth running.
+No. 15 is deep yellow, despite the application's `orange` name. It remains
+No. 15 because the film reference tables specify that filter. Attribution:
+Eastman Kodak Company, KODAK WRATTEN 2 Optical Filter curves. The repository
+contains independent numerical readings and an extraction script, not the
+source PDFs or reproduced chart artwork. No open-content licence is claimed
+for Kodak's material; [Kodak's terms](https://www.kodak.com/en/company/page/site-terms/)
+describe its permitted research and product-information uses.
 
-Wratten No. 15 is a deep yellow rather than a true orange. It is the Contrast
-Filter named `orange` because it is the amber filter Kodak publishes a factor
-for on both of these films, and because it does the job a photographer reaches
-for an orange filter to do. Wratten No. 21 would be the literal orange and has
-no published factor on either datasheet, so choosing it would have cost the
-validation below for the sake of a name.
+## Extraction and censored values
 
-## What it is checked against
+`Scripts/digitize-wratten.py` pins every PDF checksum and uses PyMuPDF 1.28.2
+to read vector paths. Four pages are rotated 90 degrees; coordinates are
+transformed by the page rotation matrix before axis calibration. Each page's
+own frame defines 300–900 nm and density 0–3. Straight segments are used
+directly; No. 15's cubic segments are sampled at 101 points. Interpolation is
+in density, followed by `T = 10^(-D)`. The passbands retain their measured
+attenuation; they are not normalized to unit transmission.
 
-Both datasheets publish a daylight filter factor per Wratten filter, and the two
-tables differ. A factor falls straight out of the derived Spectral Weights as
-the ratio of their sums, so `ProfileBaker validate` reports one `filter-factor`
-row per filter per Stock, in stops:
+Disconnected curve groups remain separate. The omitted blocking sections and
+any paths above the visible density-3 limit are **censored measurements**:
+they establish transmission at most 0.001. The CSV uses that upper bound as an
+explicit conservative approximation, not a measured zero or measured exact
+0.001. It does not interpolate across missing chart sections.
 
-| Contrast Filter | Tri-X published / derived | T-Max published / derived |
-| --- | --- | --- |
-| yellow | 1.00 / 1.26 | 0.58 / 1.21 |
-| orange | 1.32 / 1.47 | 1.00 / 1.45 |
-| red | 3.00 / 3.01 | 3.00 / 3.04 |
-| green | 2.58 / 2.68 | 2.58 / 2.60 |
-| blue | 2.58 / 2.78 | 3.00 / 2.83 |
+| Filter | Censored sample wavelengths, inclusive, 10 nm spacing |
+|---|---|
+| yellow | 400–450 nm |
+| orange | 400–500 nm |
+| red | 400–570 nm |
+| green | 400–460 nm; 620–700 nm |
+| blue | 540–680 nm |
 
-Red, green and blue agree to 0.19 stops against factors Kodak publishes rounded
-to 1.5, 2, 2.5, 6 and 8 — a third of a stop of quantisation before the model is
-even wrong. **Yellow and orange do not**: the model over-predicts what they cost
-by 0.26 and 0.15 stops on Tri-X and by 0.63 and 0.45 stops on T-Max, and it
-reproduces almost none of the difference Kodak publishes between the two Stocks
-for those two filters. Both are minus-blue filters, so both residuals point at
-the same place: the model's blue end, where the D65 surrogate for Kodak's
-unspecified daylight, the reconstruction basis and each digitised sensitivity
-curve's 400 nm endpoint all compound. It is a limitation of this file and of the
-daylight assumption, not evidence about the digitised sensitivities.
+The printed stroke is about 1.92 PDF points, approximately 0.015 density or
+3.6% transmission for a full stroke width. This is a reading-resolution
+indicator, not a confidence interval. Six CSV decimals preserve reproducibility,
+not measurement precision. UV/IR transmission outside 400–700 nm is excluded
+from the model even where the original chart shows it.
 
-The stage's bound is therefore **0.7 stops**, which is loose enough for yellow
-on T-Max to pass and tight enough to catch a Contrast Filter applied as a tint,
-dropped from the collapse, or read off the wrong Stock. It is deliberately not
-the 0.03 the density stages answer to, and `StepWedgeStage.filterFactorStops`
-says so where a reader will meet it.
+## Independent filter-factor check
 
-What this check does establish is that the *sensitivities* are each Stock's own:
-red and green agree on both films to within 0.1 stops using two independently
-digitised curves and one shared transmittance table, so the agreement cannot be
-coming from the filter model.
+The following direct spectral calculation uses each stock's digitized
+`sensitivity.csv`, its D65 `observer.csv`, trapezoidal endpoint weights, and
+the six-decimal emitted transmittance table:
+
+```text
+filterFactorStops = log2(sum(sensitivity * D65 * quadrature)
+                        / sum(sensitivity * D65 * T * quadrature))
+```
+
+It does not fit the curves to the published factors. Compared with each
+stock's transcribed Kodak daylight `filter-factors.csv`:
+
+| Filter | Tri-X published / computed stops | T-Max published / computed stops |
+|---|---:|---:|
+| yellow | 1.000000 / 1.190282 | 0.584963 / 1.148225 |
+| orange | 1.321928 / 1.490573 | 1.000000 / 1.478598 |
+| red | 3.000000 / 2.987646 | 3.000000 / 3.001455 |
+| green | 2.584963 / 3.183390 | 2.584963 / 3.058930 |
+| blue | 2.584963 / 2.377920 | 3.000000 / 2.459078 |
+
+Maximum absolute residual is **0.598427 stops**, Tri-X green. All ten remain
+inside the existing **0.7-stop** validation bound; that bound is not enlarged.
+The former claim of green agreement within 0.1 stops described the old artistic
+filter table and does not survive measured transmission. Its failure must not
+be hidden by tuning the new source curves. Red still agrees within 0.02 stops.
+
+These residuals include the unspecified daylight spectrum replaced by D65,
+400 nm sensitivity truncation, digitization, and differences between the
+manufacturer's filter/film test conditions and this model. Kodak says WRATTEN 2
+has the same spectral response as its gelatin predecessor, but the older film
+filter factors do not establish same-batch or same-instrument equivalence to
+these particular WRATTEN 2 curves. Do not attribute all residuals to any one
+cause without additional measurements.
+
+Setting only the censored entries to zero for a sensitivity analysis changes
+the computed factors by less than 0.010 stops for these two stocks. Thus the
+blocking-floor approximation does not account for the larger remaining errors.
 
 ## Reproducing
 
+Download the five source PDFs into a temporary directory, naming them
+`w2-8.pdf`, `W2-15.pdf`, `W2-25.pdf`, `W2-58.pdf`, and `W2-47.pdf`, then run:
+
 ```sh
-python3 Scripts/model-contrast-filters.py Curves/contrast-filters
+python3 Scripts/digitize-wratten.py pdf-directory Curves/contrast-filters
 ```
 
-The script takes no inputs and depends on nothing. If a digitised Wratten
-transmittance measurement ever becomes available, it replaces this file and the
-residuals above are the thing to watch.
+The script reports every censored wavelength. The legacy
+`Scripts/model-contrast-filters.py` recreates the superseded artistic table;
+it is not the generator of this measured source table.

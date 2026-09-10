@@ -86,6 +86,11 @@ public enum ProfileContainer {
         for variant in header.profile.colour.lutVariants + (header.profile.colour.printVariants ?? []) {
             expected[variant.lut] = size * size * size * 8
         }
+        if let output = header.profile.colour.densityOutput {
+            for variant in output.lutVariants + (output.printVariants ?? []) {
+                expected[variant.lut] = output.lutSize * output.lutSize * output.lutSize * 8
+            }
+        }
         if let mono = header.profile.monochrome { expected[mono.densityCurve] = 1024 * 2 }
         guard Set(header.payloads.map(\.name)).count == header.payloads.count,
               Set(expected.keys) == Set(header.payloads.map(\.name)) else { throw FilmError.invalid("Profile payload references do not match") }

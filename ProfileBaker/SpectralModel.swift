@@ -5,7 +5,7 @@ import simd
 /// Strict numerical tables shared by spectral authoring inputs. No extrapolated measurements.
 struct SpectralTable {
     let rows: [[Double]]
-    init(_ directory: URL, _ name: String, header: String) throws {
+    init(_ directory: URL, _ name: String, header: String, allowSigned: Bool = false) throws {
         let lines = try String(contentsOf: directory.appendingPathComponent(name), encoding: .utf8)
             .components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && !$0.hasPrefix("#") }
@@ -16,7 +16,7 @@ struct SpectralTable {
             let fields = line.split(separator: ",", omittingEmptySubsequences: false)
             let values = fields.compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
             guard values.count == count, fields.count == count,
-                  values.allSatisfy({ $0.isFinite && $0 >= 0 }),
+                  values.allSatisfy({ $0.isFinite && (allowSigned || $0 >= 0) }),
                   result.last.map({ values[0] > $0[0] }) ?? true else {
                 throw FilmError.invalid("\(name): expected increasing samples and finite nonnegative values")
             }
@@ -36,7 +36,7 @@ struct SpectralModel {
         }
         let dirCouplers: [[Double]]
         /// Negative stocks only: the artistic Gaussian lobes the aggregate measured
-        /// absorption is separated into, because Kodak publishes no isolated dyes.
+        /// absorption is separated into when this Curve Set has no isolated dyes.
         let dyePeakNM: [Double]?
         let dyeWidthNM: [Double]?
         /// Negative stocks only: the scanner's transfer, which reversal has no use for.
@@ -184,6 +184,29 @@ struct SpectralModel {
             let peaks = shapes.inverse * grayExcess
             guard peaks.min() > 0 else { throw FilmError.invalid("The dye set cannot reach the reference neutral's density") }
             dyeContributions = dyes.map { SIMD3($0[1] * peaks[0], $0[2] * peaks[1], $0[3] * peaks[2]) }
+        } else if FileManager.default.fileExists(atPath: curves.directory.appendingPathComponent("isolated-dye-density.csv").path) {
+            let isolated = try SpectralTable(curves.directory, "isolated-dye-density.csv",
+                                             header: "wavelengthNM,cyan,magenta,yellow", allowSigned: true).rows
+            guard isolated.map({ $0[0] }) == grid else { throw FilmError.invalid("Isolated dyes must share the spectral grid") }
+            // Fit the peak-normalized dye/mask difference spectra to the measured
+            // aggregate neutral absorption. Signed lobes represent changes in mask
+            // absorption; they are not negative absolute film transmittance.
+            var normal = simd_double3x3(0)
+            var rhs = SIMD3<Double>(repeating: 0)
+            for i in grid.indices {
+                let row = SIMD3(isolated[i][1], isolated[i][2], isolated[i][3])
+                let weight = colourimetry.quadrature(i)
+                for c in 0..<3 { normal[c] += row * row[c] * weight }
+                rhs += row * (dyes[i][2] - dyes[i][1]) * weight
+            }
+            guard abs(simd_determinant(normal)) > 1e-8 else { throw FilmError.invalid("Singular isolated dye fit") }
+            let amplitudes = normal.inverse * rhs
+            guard amplitudes.min() > 0 else { throw FilmError.invalid("Isolated dyes cannot fit aggregate absorption with positive amounts") }
+            minimumDensity = dyes.map { $0[1] }
+            let fitted = isolated.map { SIMD3($0[1], $0[2], $0[3]) * amplitudes }
+            dyeContributions = fitted
+            let residual = grid.indices.map { abs(simd_reduce_add(fitted[$0]) - (dyes[$0][2] - dyes[$0][1])) }.max()!
+            guard residual <= 0.03 else { throw FilmError.invalid("Isolated dye fit exceeds 0.03 density: \(residual)") }
         } else {
             minimumDensity = dyes.map { $0[1] }
             dyeContributions = dyes.map { row in
@@ -275,6 +298,12 @@ struct SpectralModel {
         simd_max(density - base, SIMD3<Double>(repeating: 0)) / grayExcess
     }
 
+    /// Total absorption, including the base and changing mask. Individual
+    /// dye/mask difference spectra can be signed; absolute density cannot.
+    func spectralDensity(_ density: SIMD3<Double>, band: Int) -> Double {
+        max(0, minimumDensity[band] + simd_dot(dyeContributions[band], dyeAmounts(density)))
+    }
+
     /// The Transparency on a standard viewer. No inversion and no auto-balance: the
     /// dyes are read by transmission and that is already the picture. Nothing
     /// rolls the highlights off either, which is where reversal's roughly five
@@ -284,7 +313,7 @@ struct SpectralModel {
         let amounts = dyeAmounts(density)
         var xyz = SIMD3<Double>(repeating: 0)
         for i in observerXYZ.indices {
-            xyz += observerXYZ[i] * pow(10, -(minimumDensity[i] + simd_dot(dyeContributions[i], amounts)))
+            xyz += observerXYZ[i] * pow(10, -max(0, minimumDensity[i] + simd_dot(dyeContributions[i], amounts)))
         }
         // Not clamped above: clear film is brighter than Working Space mid-grey and
         // the Working Space carries that, exactly as it carries any other highlight.
@@ -298,7 +327,7 @@ struct SpectralModel {
         let amounts = dyeAmounts(density)
         var transmission = SIMD3<Double>(repeating: 0)
         for i in scanner.indices {
-            let spectralDensity = minimumDensity[i] + simd_dot(dyeContributions[i], amounts)
+            let spectralDensity = max(0, minimumDensity[i] + simd_dot(dyeContributions[i], amounts))
             transmission += scanner[i] * pow(10, -spectralDensity)
         }
         transmission /= clearScan

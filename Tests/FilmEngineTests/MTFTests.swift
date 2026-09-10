@@ -27,14 +27,14 @@ private func grating(width: Int, height: Int, cyclesPerMM: Double, frameWidthMM:
 
 /// The grating's amplitude, projected onto the frequency it was drawn at. Edge
 /// columns are dropped because the blur clamps there rather than wrapping.
-private func modulation(_ pixels: [Float16], width: Int, height: Int, cyclesPerMM: Double, frameWidthMM: Double = 36) -> Double {
+private func modulation(_ pixels: [Float16], width: Int, height: Int, cyclesPerMM: Double, frameWidthMM: Double = 36, channel: Int = 0) -> Double {
     let cyclesPerPixel = cyclesPerMM * frameWidthMM / Double(max(width, height))
     let margin = width / 8
     var sine = 0.0, cosine = 0.0, count = 0.0
     for y in 0..<height {
         for x in margin..<(width - margin) {
             let phase = 2 * .pi * cyclesPerPixel * (Double(x) + 0.5)
-            let value = Double(pixels[(y * width + x) * 4])
+            let value = Double(pixels[(y * width + x) * 4 + channel])
             sine += value * sin(phase)
             cosine += value * cos(phase)
             count += 1
@@ -71,7 +71,9 @@ private func modulation(_ pixels: [Float16], width: Int, height: Int, cyclesPerM
     metadata.mtf = portra.metadata.mtf
     let profile = try Profile(metadata: metadata, payloads: ["identity.lut3d": ColourCube.identity.payload])
     let renderer = try Renderer()
-    for (frequency, expected) in zip([5.0, 10], [1.088, 1.166]) {
+    for frequency in [5.0, 10] {
+        let index = try #require(portra.metadata.mtf.cyclesPerMM.firstIndex(of: frequency))
+        let expected = (portra.metadata.mtf.channelResponse?.first ?? portra.metadata.mtf.response)[index]
         let image = try grating(width: 1024, height: 64, cyclesPerMM: frequency)
         let result = try await renderer.render(image: .linear(image), profile: profile, settings: .init(output: .workingSpace))
         let rendered = modulation(result.rgba, width: 1024, height: 64, cyclesPerMM: frequency) / 0.25
@@ -108,4 +110,21 @@ private func modulation(_ pixels: [Float16], width: Int, height: Int, cyclesPerM
     let profile = try responding(cyclesPerMM: [5, 10, 20, 40, 80], response: [1, 0.98, 0.82, 0.51, 0.19])
     let unresolvable = try await renderer.render(image: .linear(small), profile: profile, settings: .init(output: .workingSpace))
     #expect(unresolvable.rgba == small.rgba)
+}
+
+@Test func measuredChannelMTFsDoNotCollapseToGreen() async throws {
+    let frequencies = [2.0, 4, 6, 8, 10, 12]
+    var metadata = Profile.identity.metadata
+    let curves = [0.015, 0.03, 0.05].map { sigma in
+        frequencies.map { exp(-2 * .pi * .pi * sigma * sigma * $0 * $0) }
+    }
+    metadata.mtf = .init(cyclesPerMM: frequencies, response: curves[1])
+    metadata.mtf.channelResponse = curves
+    let profile = try Profile(metadata: metadata, payloads: ["identity.lut3d": ColourCube.identity.payload])
+    let renderer = try Renderer()
+    let image = try grating(width: 1024, height: 64, cyclesPerMM: 6)
+    let result = try await renderer.render(image: .linear(image), profile: profile, settings: .init(output: .workingSpace))
+    let response = (0..<3).map { modulation(result.rgba, width: 1024, height: 64, cyclesPerMM: 6, channel: $0) / 0.25 }
+    for c in 0..<3 { #expect(abs(response[c] - curves[c][2]) < 0.08) }
+    #expect(response[0] > response[1] && response[1] > response[2])
 }

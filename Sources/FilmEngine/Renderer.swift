@@ -50,7 +50,7 @@ public actor Renderer {
         for name in ["passthrough", "whiteBalance", "exposure", "reciprocity", "filmResponse", "monochromeResponse", "scanOutput", "outputTransform",
                      "scatterThreshold", "scatterDownsample", "scatterBlurHorizontal", "scatterBlurVertical",
                      "scatterScale", "scatterUpsample", "scatterComposite",
-                     "mtfBlur", "mtfCombine", "grain", "grainDyeCloud", "adjust", "geometry"] {
+                     "mtfBlur", "mtfCombine", "grain", "grainDyeCloud", "densityOutput", "adjust", "geometry"] {
             guard let function = library.makeFunction(name: name) else { throw FilmError.invalid("Missing shader \(name)") }
             pipelines[name] = try device.makeComputePipelineState(function: function)
         }
@@ -101,7 +101,8 @@ public actor Renderer {
             scratch = try decoder.makeTexture(width: input.width, height: input.height)
         }
         let result = try renderTile(input, into: scratch, frame: Frame(width: input.width, height: input.height),
-                                    profile: profile, settings: settings, queue: queue)
+                                    profile: profile, settings: settings, queue: queue,
+                                    grainModel: Self.grainModel(profile, path: .preview, thermalState: .nominal))
         let pixels = try readback(result)
         return RenderedPixels(width: pixels.width, height: pixels.height, rgba: pixels.rgba, output: settings.output)
     }
@@ -169,6 +170,19 @@ public actor Renderer {
                 swap(&source, &destination)
                 continue
             }
+            if pass == .outputStage, let observation = plan.observation {
+                var minimum = observation.minimum, inverseSpan = observation.inverseSpan
+                var blend = plan.blend
+                try dispatch("densityOutput", label: "densityOutput",
+                             textures: [(source, 0), (destination, 1), (observation.lower, 2), (observation.upper, 3)],
+                             command: command, grid: destination) {
+                    $0.setBytes(&minimum, length: MemoryLayout<SIMD4<Float>>.stride, index: 18)
+                    $0.setBytes(&inverseSpan, length: MemoryLayout<SIMD4<Float>>.stride, index: 19)
+                    $0.setBytes(&blend, length: MemoryLayout<Float>.stride, index: 5)
+                }
+                swap(&source, &destination)
+                continue
+            }
             if pass == .geometry {
                 guard let geometry = plan.geometry else { continue }
                 try encodeGeometry(geometry, frame: &frameUniform, command: command, source: source, destination: destination)
@@ -191,6 +205,12 @@ public actor Renderer {
             encoder.setBytes(&output, length: MemoryLayout<UInt32>.size, index: 0)
             var weights = plan.spectralWeight
             encoder.setBytes(&weights, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
+            let contributions = plan.spectralContributions
+            var bandCount = UInt32(contributions.count)
+            encoder.setBytes(&bandCount, length: MemoryLayout<UInt32>.size, index: 20)
+            (contributions.isEmpty ? [SIMD4<Float>(repeating: 0)] : contributions).withUnsafeBytes {
+                encoder.setBytes($0.baseAddress!, length: $0.count, index: 21)
+            }
             var matrix = plan.whiteBalance ?? matrix_identity_float3x3
             encoder.setBytes(&matrix, length: MemoryLayout<simd_float3x3>.size, index: 2)
             var gain = plan.gain
@@ -227,11 +247,13 @@ public actor Renderer {
         /// The Monochrome Collapse's weights, already normalised so the Contrast
         /// Filter costs tonal separation rather than exposure. Zero for a colour Stock.
         let spectralWeight: SIMD4<Float>
+        let spectralContributions: [SIMD4<Float>]
         let lower: ResponseEntry
         let upper: ResponseEntry?
         let blend: Float
         let shaper: SIMD4<Float>
         let scan: Bool
+        let observation: Observation?
         let grayDensity: SIMD4<Float>
         let baseDensity: SIMD4<Float>
         /// The Adjustment Pass's controls, or nil when every one is at zero and the
@@ -316,7 +338,7 @@ public actor Renderer {
     /// The Stock's published response curve fitted to two Gaussians for this image.
     private struct MTF {
         /// (direct, fine, coarse, unused) weights summing to one.
-        let coefficients: SIMD4<Float>
+        let coefficients: [SIMD4<Float>]
         /// (sigma, kernel radius) in pixels, for the fine and the coarse Gaussian.
         let fine: SIMD2<Float>
         let coarse: SIMD2<Float>
@@ -357,6 +379,13 @@ public actor Renderer {
         /// Which tier renders the field. `Renderer.grainModel` has already applied the
         /// Render Path and the device's thermal state by the time this is set.
         let model: GrainModel
+    }
+
+    private struct Observation {
+        let lower: any MTLTexture
+        let upper: any MTLTexture
+        let minimum: SIMD4<Float>
+        let inverseSpan: SIMD4<Float>
     }
 
     /// Resolves the Profile and the user's settings against the frame. Sizes come
@@ -429,7 +458,18 @@ public actor Renderer {
         }
         // Spectral cubes already contain the Baker's scan or print; a Density Space
         // cube is scanned here.
-        let scan = stage == .scan && metadata.colour.cubeOutput != .displayLinearRec2020
+        let scan = stage == .scan && metadata.colour.cubeOutput != .displayLinearRec2020 && metadata.colour.densityOutput == nil
+        var observation: Observation?
+        if let output = metadata.colour.densityOutput {
+            let outputs = stage == .print ? output.printVariants! : output.lutVariants
+            let lowerOutput = outputs.first { $0.pushStops == lowerVariant!.pushStops }!
+            let upperOutput = upperVariant.flatMap { variant in outputs.first { $0.pushStops == variant.pushStops } } ?? lowerOutput
+            let minimum = SIMD4(Float(output.minimum[0]), Float(output.minimum[1]), Float(output.minimum[2]), 0)
+            let inverse = (0..<3).map { Float(1 / (output.maximum[$0] - output.minimum[$0])) }
+            observation = Observation(lower: try responseEntry(for: profile, name: lowerOutput.lut).texture,
+                                      upper: try responseEntry(for: profile, name: upperOutput.lut).texture,
+                                      minimum: minimum, inverseSpan: SIMD4(inverse[0], inverse[1], inverse[2], 0))
+        }
         func blended(_ value: (ResponseEntry) -> SIMD3<Double>) -> SIMD3<Double> {
             value(lower) + (upper.map { (value($0) - value(lower)) * Double(blend) } ?? SIMD3(repeating: 0))
         }
@@ -437,8 +477,10 @@ public actor Renderer {
         if scan, (0..<3).contains(where: { gray[$0] - base[$0] < 0.001 }) {
             throw FilmError.invalid("Profile \(metadata.id): mid-grey density is not above base density; the scan cannot auto-balance")
         }
+        let contributions = metadata.monochrome?.spectralContributions?.first { $0.filter == settings.contrastFilter }?.coefficients ?? []
         return Plan(whiteBalance: whiteBalance, gain: gain, reciprocity: reciprocity, spectralWeight: spectralWeight,
-                    lower: lower, upper: upper, blend: blend, shaper: shaper, scan: scan,
+                    spectralContributions: contributions.map { SIMD4(Float($0[0]), Float($0[1]), Float($0[2]), 0) },
+                    lower: lower, upper: upper, blend: blend, shaper: shaper, scan: scan, observation: observation,
                     grayDensity: SIMD4(Float(gray.x), Float(gray.y), Float(gray.z), scan ? 1 : 0),
                     baseDensity: SIMD4(Float(base.x), Float(base.y), Float(base.z), 0),
                     adjustments: Self.adjustments(settings.adjustments),
@@ -518,13 +560,36 @@ public actor Renderer {
         // Baker's scan has already returned a positive, so it is a transmission there.
         let densitySpace = profile.metadata.colour.cubeOutput != .displayLinearRec2020
         var scale = SIMD4<Float>()
+        var responseBase = SIMD4(Float(base.x), Float(base.y), Float(base.z), 0)
+        var response = (0..<3).flatMap { _ in metadata.densityResponse.map(Float.init) }
         for channel in 0..<3 { scale[channel] = Float(0.5 / (gray[channel] - base[channel])) }
+        if let curves = metadata.measuredDensityCurves {
+            response = []
+            for channel in 0..<3 {
+                let curve = curves[channel]
+                let first = curve.first!, last = curve.last!
+                responseBase[channel] = Float(first.density)
+                scale[channel] = Float(1 / (last.density - first.density))
+                // Sigma carries only aperture/intensity here; the table carries
+                // absolute measured sigma(D), independently for each layer.
+                let diameter = 2 * metadata.grainRadiusMicrons * metadata.channelRadiusScale[channel]
+                sigma[channel] = Float(settings.grainIntensity * Self.granularityApertureMicrons / max(diameter, pitchMicrons))
+                for i in 0..<32 {
+                    let density = first.density + Double(i) / 31 * (last.density - first.density)
+                    let high = curve.firstIndex { $0.density >= density } ?? curve.count - 1
+                    let low = max(0, high - 1)
+                    let a = curve[low], b = curve[high]
+                    let t = high == low ? 0 : (density - a.density) / (b.density - a.density)
+                    response.append(Float(a.rms + t * (b.rms - a.rms)))
+                }
+            }
+        }
         let uniforms = GrainUniforms(sigma: sigma, cell: cell,
                                      mix: SIMD4(Float((1 - correlation).squareRoot()), Float(correlation.squareRoot()),
                                                 sharedCell, densitySpace ? 1 : 0),
-                                     base: SIMD4(Float(base.x), Float(base.y), Float(base.z), 0),
+                                     base: responseBase,
                                      scale: scale, seed: SIMD4(repeating: settings.seed))
-        return Grain(uniforms: uniforms, response: metadata.densityResponse.map(Float.init), model: model)
+        return Grain(uniforms: uniforms, response: response, model: model)
     }
 
     /// Fits the Profile's published MTF with two Gaussians and the signal itself.
@@ -535,11 +600,14 @@ public actor Renderer {
     private func mtf(profile: Profile, width: Int, height: Int) -> MTF? {
         let metadata = profile.metadata.mtf
         let pixelsPerMM = Self.pixelsPerMicron(profile, width: width, height: height) * 1000
-        let points = zip(metadata.cyclesPerMM, metadata.response)
-            .map { (cycles: $0 / pixelsPerMM, response: $1) }
-            .filter { $0.cycles > 0 && $0.cycles <= 0.5 }
-        guard let lowest = points.map(\.cycles).min(), let highest = points.map(\.cycles).max(),
-              points.contains(where: { abs($0.response - 1) > 0.005 }) else { return nil }
+        let channels = metadata.channelResponse ?? Array(repeating: metadata.response, count: 3)
+        let channelPoints = channels.map { channel in
+            zip(metadata.cyclesPerMM, channel)
+                .map { (cycles: $0 / pixelsPerMM, response: $1) }
+                .filter { $0.cycles > 0 && $0.cycles <= 0.5 }
+        }
+        guard let lowest = channelPoints[0].map(\.cycles).min(), let highest = channelPoints[0].map(\.cycles).max(),
+              channelPoints.joined().contains(where: { abs($0.response - 1) > 0.005 }) else { return nil }
         // The shader convolves a truncated, sampled Gaussian, whose response departs
         // from the continuous exp(−2π²s²f²) below about one pixel of sigma. Fitting
         // the kernel that actually runs is what keeps the rendered curve on the
@@ -560,17 +628,21 @@ public actor Renderer {
         // Least squares on the two blur weights, with the direct weight taking the
         // remainder so the fit cannot change a flat field's value. A little Tikhonov
         // keeps a Profile with one usable point from being under-determined.
-        var aa = 1e-3, ab = 0.0, bb = 1e-3, ay = 0.0, by = 0.0
-        for point in points {
-            let a = response(fine, point.cycles) - 1, b = response(coarse, point.cycles) - 1, y = point.response - 1
-            aa += a * a; ab += a * b; bb += b * b; ay += a * y; by += b * y
+        let coefficients: [SIMD4<Float>] = channelPoints.compactMap { points in
+            var aa = 1e-3, ab = 0.0, bb = 1e-3, ay = 0.0, by = 0.0
+            for point in points {
+                let a = response(fine, point.cycles) - 1, b = response(coarse, point.cycles) - 1, y = point.response - 1
+                aa += a * a; ab += a * b; bb += b * b; ay += a * y; by += b * y
+            }
+            let determinant = aa * bb - ab * ab
+            var weights = SIMD2<Double>(ay / aa, 0)
+            if abs(determinant) > 1e-9 { weights = SIMD2((ay * bb - by * ab) / determinant, (by * aa - ay * ab) / determinant) }
+            weights = simd_clamp(weights, SIMD2(repeating: -4), SIMD2(repeating: 4))
+            guard weights.x.isFinite, weights.y.isFinite else { return nil }
+            return SIMD4<Float>(Float(1 - weights.x - weights.y), Float(weights.x), Float(weights.y), 0)
         }
-        let determinant = aa * bb - ab * ab
-        var weights = SIMD2<Double>(ay / aa, 0)
-        if abs(determinant) > 1e-9 { weights = SIMD2((ay * bb - by * ab) / determinant, (by * aa - ay * ab) / determinant) }
-        weights = simd_clamp(weights, SIMD2(repeating: -4), SIMD2(repeating: 4))
-        guard weights.x.isFinite, weights.y.isFinite else { return nil }
-        return MTF(coefficients: SIMD4(Float(1 - weights.x - weights.y), Float(weights.x), Float(weights.y), 0),
+        guard coefficients.count == 3 else { return nil }
+        return MTF(coefficients: coefficients,
                    fine: SIMD2(Float(fine), Float(radius(fine))), coarse: SIMD2(Float(coarse), Float(radius(coarse))))
     }
 
@@ -786,10 +858,12 @@ public actor Renderer {
         }
         try blur(mtf.fine, into: textures[0], label: "mtf.fine")
         try blur(mtf.coarse, into: textures[1], label: "mtf.coarse")
-        var coefficients = mtf.coefficients
+        let coefficients = mtf.coefficients
         try dispatch("mtfCombine", label: "mtf.combine",
                      textures: [(source, 0), (destination, 1), (textures[0], 4), (textures[1], 5)],
-                     command: command, grid: destination) { $0.setBytes(&coefficients, length: MemoryLayout<SIMD4<Float>>.size, index: 14) }
+                     command: command, grid: destination) { encoder in
+            coefficients.withUnsafeBytes { encoder.setBytes($0.baseAddress!, length: $0.count, index: 14) }
+        }
     }
 
     /// The Grain and Geometry Passes are the two whose value depends on *where* in the
@@ -890,9 +964,14 @@ public actor Renderer {
             entry = ResponseEntry(id: profile.cacheID, name: name, texture: curve, grayDensity: SIMD3(repeating: gray),
                                   baseDensity: SIMD3(repeating: base))
         } else {
-            let cube = try ColourCube(size: profile.metadata.colour.lutSize, payload: payload)
+            let output = profile.metadata.colour.densityOutput
+            let outputNames = (output?.lutVariants ?? []) + (output?.printVariants ?? [])
+            let size = outputNames.contains { $0.lut == name } ? output!.lutSize : profile.metadata.colour.lutSize
+            let cube = try ColourCube(size: size, payload: payload)
+            let coordinate = Self.responseCoordinate(0.18, shaper: profile.metadata.colour.inputShaper)
+            let baseCoordinate = profile.metadata.process == .e6 && output != nil ? 1.0 : 0.0
             entry = ResponseEntry(id: profile.cacheID, name: name, texture: try makeColourCube(cube),
-                                  grayDensity: cube.sample(SIMD3(repeating: 0.18)), baseDensity: cube.sample(SIMD3(repeating: 0)))
+                                  grayDensity: cube.sample(SIMD3(repeating: coordinate)), baseDensity: cube.sample(SIMD3(repeating: baseCoordinate)))
         }
         responseCache.append(entry)
         if responseCache.count > textureCacheCapacity { responseCache.removeFirst() }

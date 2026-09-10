@@ -292,7 +292,7 @@ public struct ColourCube: Sendable, Equatable {
 
     /// Tetrahedral interpolation of a coordinate already inside [0, 1]; the shader
     /// samples identically. The renderer uses this for the scan's auto-balance.
-    func sample(_ coordinate: SIMD3<Double>) -> SIMD3<Double> {
+    public func sample(_ coordinate: SIMD3<Double>) -> SIMD3<Double> {
         let q = simd_clamp(coordinate, SIMD3(repeating: 0), SIMD3(repeating: 1)) * Double(size - 1)
         var base = SIMD3<Int>(Int(q.x), Int(q.y), Int(q.z))
         base = simd_clamp(base, SIMD3(repeating: 0), SIMD3(repeating: size - 2))

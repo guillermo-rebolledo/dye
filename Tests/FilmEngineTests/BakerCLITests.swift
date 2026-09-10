@@ -154,7 +154,7 @@ private func printingCurveSet(_ stock: String, in directory: URL) throws -> URL 
 @Test func portraDevelopmentChangesShapeAroundReferenceGray() async throws {
     let profile = try ProfileContainer.load(from: repository.appendingPathComponent("Sources/FilmEngine/Catalogue/portra-400.filmprofile"))
     let shaper = try #require(profile.metadata.colour.inputShaper)
-    #expect(profile.metadata.colour.cubeOutput == .displayLinearRec2020)
+    #expect(profile.metadata.colour.cubeOutput == .density)
     #expect(profile.metadata.colour.sourceFingerprint?.count == 64)
     // Scene-linear light for shaped coordinates 0.3 and 0.7 either side of mid-grey.
     func scene(_ coordinate: Double) -> Float16 {
