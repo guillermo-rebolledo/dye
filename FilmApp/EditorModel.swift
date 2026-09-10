@@ -34,6 +34,15 @@ import FilmEngine
     private var renderLoop: Task<Void, Never>?
     private var needsRender = false
 
+    /// The Adjustments the editor is holding at zero, each with the value it held
+    /// when it was switched off. A photo editor lets a control be taken out of the
+    /// picture without being thrown away, which a reset cannot do, and the two are
+    /// different questions: *what would this look like without it* and *I do not
+    /// want it*. Only the editor knows the difference. Everything downstream — the
+    /// render, the Export, a saved Preset — sees the zero in `settings`, because a
+    /// bypassed control really is not applied.
+    var stashedAdjustments: [Parameter.Identity: Double] = [:]
+
     var profile: Profile { catalogue.first { $0.id == selectedStock } ?? .identity }
 
     /// The Catalogue as every surface that renders it shows it: the Identity Profile
@@ -401,6 +410,9 @@ import FilmEngine
         try settings.validate()
         selectedStock = stockID
         self.settings = settings
+        // A Preset is a different picture's Adjustments, so nothing held back from
+        // this one is still waiting to be switched on.
+        stashedAdjustments.removeAll()
         stockChanged()
     }
 

@@ -87,7 +87,41 @@ struct ActiveControl: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(isEnabled ? parameter.readout : "Unavailable")
+            // An overlay rather than the last item in the row: the row collapses
+            // its children into one element for VoiceOver, and a control inside it
+            // would collapse with them and stop being reachable. It also keeps the
+            // row's baseline alignment, which an image in it would not.
+            .overlay(alignment: .trailing) {
+                if isEnabled, model.canBypass(parameter) { bypass(parameter) }
+            }
         } else { Color.clear }
+    }
+
+    /// Switching an Adjustment off and on again, which is the question a photo
+    /// editor asks most of one: *is this doing anything for the picture*. It sits
+    /// on the readout line rather than the header because the header is 16 pt tall
+    /// and a control has to be reachable; the row's own 34 pt is the tallest the
+    /// deck can give it without moving the track, so the width carries the rest of
+    /// the target.
+    private func bypass(_ parameter: Parameter) -> some View {
+        let off = model.isBypassed(parameter.id)
+        return Button {
+            Haptics.buttonPress()
+            withAnimation(Tokens.Motion.ease(Tokens.Motion.reset, reduceMotion: reduceMotion)) {
+                model.toggleBypass(parameter.id)
+            }
+        } label: {
+            Image(systemName: off ? "circle" : "checkmark.circle.fill")
+                .font(Tokens.TypeStyle.controlName.font)
+                .foregroundStyle(off ? Tokens.Deck.quietInk : Tokens.Palette.accent)
+                .frame(width: Tokens.Metrics.minimumHitTarget, height: Tokens.Deck.readoutHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Apply \(parameter.name)")
+        .accessibilityValue(off ? "Off" : "On")
+        .accessibilityHint(off ? "Restores \(parameter.readout)" : "Renders without it and keeps the value")
+        .accessibilityAddTraits(off ? [] : .isSelected)
     }
 
     @ViewBuilder private var track: some View {

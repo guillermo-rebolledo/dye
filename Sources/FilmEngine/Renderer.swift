@@ -423,13 +423,13 @@ public actor Renderer {
     /// Brilliance is not a curve of its own. It is the three moves a photo editor
     /// makes to bring detail out — open the shadows, pull the highlights back, add
     /// a little contrast in the middle — made together, so it resolves here to those
-    /// three controls and the shader never sees it. The sums are clamped to where
-    /// each curve stays monotone: shadows and highlights have that headroom above
-    /// one, contrast does not.
+    /// three controls and the shader never sees it. All three sums are clamped to
+    /// ±1, which is the range each term's gain is chosen to stay monotone over: a
+    /// sum past it would be a fourth control's worth of curve, not a stronger one.
     private static func adjustments(_ a: Adjustments) -> AdjustmentUniforms? {
         guard !a.isNeutral else { return nil }
-        let shadows = min(max(a.shadows + 0.6 * a.brilliance, -1.5), 1.5)
-        let highlights = min(max(a.highlights - 0.5 * a.brilliance, -1.5), 1.5)
+        let shadows = min(max(a.shadows + 0.6 * a.brilliance, -1), 1)
+        let highlights = min(max(a.highlights - 0.5 * a.brilliance, -1), 1)
         let contrast = min(max(a.contrast + 0.3 * a.brilliance, -1), 1)
         return AdjustmentUniforms(tone: SIMD4(Float(a.blackPoint), Float(a.brightness), Float(shadows), Float(highlights)),
                                   colour: SIMD4(Float(contrast), Float(a.saturation), Float(a.vibrance), 0))

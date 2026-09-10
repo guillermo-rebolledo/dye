@@ -134,9 +134,7 @@ extension ParameterDial {
         /// Fixed spacing per step lets the tape extend beyond the viewport.
         /// Shutter speeds retain the handoff's 54 pt per stop / 18 pt per third stop.
         static func dial(for parameter: Parameter) -> Self {
-            let pointsPerStep = parameter.control == .shutterDial
-                ? Tokens.Discrete.pointsPerStop * CGFloat(parameter.step)
-                : Tokens.Track.dialPointsPerStep
+            let pointsPerStep = parameter.pointsPerStep
             let span = parameter.range.upperBound - parameter.range.lowerBound
             let travel = CGFloat(span / max(parameter.step, .ulpOfOne)) * pointsPerStep
             return Self(parameter: parameter,
@@ -238,6 +236,20 @@ extension ParameterDial {
             return choice * decade
         }
 
+        /// What the minor ticks step by. Normally the parameter's own step, which
+        /// is what a tick means. A pitch fine enough to make two hundred steps
+        /// draggable puts those ticks closer together than the row can resolve,
+        /// and a tick row that reads as a solid band has stopped saying anything,
+        /// so the ticks thin to a fraction of the major interval instead.
+        var minorInterval: Double {
+            let pitch = travel / max(span, .ulpOfOne)
+            guard parameter.step * pitch < Tokens.Track.minimumTickSpacing else { return parameter.step }
+            let major = majorInterval
+            let candidates = [major / 10, major / 5, major / 2, major]
+            return candidates.first { $0 >= parameter.step && $0 * pitch >= Tokens.Track.minimumTickSpacing }
+                ?? major
+        }
+
         /// Every mark of `interval`, aligned to `origin`, that falls in the range.
         func marks(every interval: Double, from origin: Double) -> [Double] {
             guard interval > 0, span > 0 else { return [] }
@@ -301,7 +313,7 @@ struct ParameterDialTrack: View, Animatable {
         let major = parameter.control == .shutterDial ? 1 : map.majorInterval
         let labelOrigin = parameter.control == .shutterDial ? parameter.range.lowerBound : 0
 
-        for mark in map.marks(every: parameter.step, from: parameter.range.lowerBound) {
+        for mark in map.marks(every: map.minorInterval, from: parameter.range.lowerBound) {
             let position = x(mark)
             guard position >= 0, position <= size.width else { continue }
             let tick = CGRect(x: position - Tokens.Track.tickWidth / 2, y: 0,

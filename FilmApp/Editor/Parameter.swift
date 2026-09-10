@@ -159,6 +159,20 @@ struct Parameter: Identifiable {
     /// Where the anchor is drawn, or nil when the parameter has no detent.
     var detentFraction: Double? { detent.map(fraction(of:)) }
 
+    /// What one step costs the finger. The deck's ordinary pitch is drawn for a
+    /// control with a few dozen steps in it, and every control has it except two.
+    /// A shutter speed keeps the handoff's spacing per stop, because a shutter
+    /// dial is spaced in stops. An Adjustment keeps the step at the 1 a photo
+    /// editor's ±100 readout expects and takes a finer pitch instead, so its
+    /// whole range costs the same finger travel the rest of the deck does rather
+    /// than five screen widths of it.
+    var pointsPerStep: CGFloat {
+        switch control {
+        case .shutterDial: Tokens.Discrete.pointsPerStop * CGFloat(step)
+        default: stage == .adjust ? Tokens.Track.adjustmentPointsPerStep : Tokens.Track.dialPointsPerStep
+        }
+    }
+
     /// A shutter speed as a photographer reads one. Shared by the exposure-time
     /// format and by `reciprocityHint`, which names the threshold the same way.
     static func shutterSpeed(_ seconds: Double) -> String {
@@ -388,22 +402,38 @@ extension EditorModel {
     /// All eight are bipolar, ±100 over the engine's ±1, and zero is the detent:
     /// not the least of the effect but the effect not applied.
     private var adjustParameters: [Parameter] {
-        func adjustment(_ id: Parameter.Identity, _ name: String, _ keyPath: WritableKeyPath<Adjustments, Double>,
-                        caption: @escaping () -> String) -> Parameter {
-            Parameter(id: id, name: name, stage: .adjust, value: adjustmentBinding(keyPath),
+        func adjustment(_ id: Parameter.Identity, _ name: String, caption: @escaping () -> String) -> Parameter {
+            Parameter(id: id, name: name, stage: .adjust, value: adjustmentBinding(id),
                       range: EditorRange.adjustment, step: 1, detent: 0,
                       format: Self.adjustmentLabel, caption: caption)
         }
         return [
-            adjustment(.brilliance, "Brilliance", \.brilliance) { [weak self] in self?.brillianceHint ?? "" },
-            adjustment(.highlights, "Highlights", \.highlights) { [weak self] in self?.highlightsHint ?? "" },
-            adjustment(.shadows, "Shadows", \.shadows) { [weak self] in self?.shadowsHint ?? "" },
-            adjustment(.contrast, "Contrast", \.contrast) { [weak self] in self?.contrastHint ?? "" },
-            adjustment(.brightness, "Brightness", \.brightness) { [weak self] in self?.brightnessHint ?? "" },
-            adjustment(.blackPoint, "Black point", \.blackPoint) { [weak self] in self?.blackPointHint ?? "" },
-            adjustment(.saturation, "Saturation", \.saturation) { [weak self] in self?.saturationHint ?? "" },
-            adjustment(.vibrance, "Vibrance", \.vibrance) { [weak self] in self?.vibranceHint ?? "" },
+            adjustment(.brilliance, "Brilliance") { [weak self] in self?.brillianceHint ?? "" },
+            adjustment(.highlights, "Highlights") { [weak self] in self?.highlightsHint ?? "" },
+            adjustment(.shadows, "Shadows") { [weak self] in self?.shadowsHint ?? "" },
+            adjustment(.contrast, "Contrast") { [weak self] in self?.contrastHint ?? "" },
+            adjustment(.brightness, "Brightness") { [weak self] in self?.brightnessHint ?? "" },
+            adjustment(.blackPoint, "Black point") { [weak self] in self?.blackPointHint ?? "" },
+            adjustment(.saturation, "Saturation") { [weak self] in self?.saturationHint ?? "" },
+            adjustment(.vibrance, "Vibrance") { [weak self] in self?.vibranceHint ?? "" },
         ]
+    }
+
+    /// The Adjustment a control stands for. Nil for everything else on the deck,
+    /// which is what makes this the one place that decides whether a parameter is
+    /// an Adjustment at all rather than each caller matching the eight cases.
+    static func adjustmentKeyPath(_ id: Parameter.Identity) -> WritableKeyPath<Adjustments, Double>? {
+        switch id {
+        case .brilliance: \.brilliance
+        case .highlights: \.highlights
+        case .shadows: \.shadows
+        case .contrast: \.contrast
+        case .brightness: \.brightness
+        case .blackPoint: \.blackPoint
+        case .saturation: \.saturation
+        case .vibrance: \.vibrance
+        default: nil
+        }
     }
 
     // MARK: - Bindings
@@ -434,11 +464,43 @@ extension EditorModel {
                        set: { self.outputStage = stages[Self.index($0, in: stages)] })
     }
 
+    /// Whether a control has something to switch off, which is either a value
+    /// applied now or one held back from before. A control at zero that was never
+    /// switched off has nothing to bypass, and offering the toggle there would
+    /// promise a comparison with nothing on the other side of it.
+    func canBypass(_ parameter: Parameter) -> Bool {
+        guard Self.adjustmentKeyPath(parameter.id) != nil else { return false }
+        return parameter.value.wrappedValue != 0 || isBypassed(parameter.id)
+    }
+
+    func isBypassed(_ id: Parameter.Identity) -> Bool { stashedAdjustments[id] != nil }
+
+    /// Off keeps the value and renders without it; on gives it back. Written
+    /// straight to the settings rather than through the binding, whose whole job
+    /// is to clear a stash the moment the dial moves.
+    func toggleBypass(_ id: Parameter.Identity) {
+        guard let keyPath = Self.adjustmentKeyPath(id) else { return }
+        if let stashed = stashedAdjustments.removeValue(forKey: id) {
+            settings.adjustments[keyPath: keyPath] = stashed
+        } else {
+            stashedAdjustments[id] = settings.adjustments[keyPath: keyPath]
+            settings.adjustments[keyPath: keyPath] = 0
+        }
+    }
+
     /// An Adjustment as the ±100 the deck shows, over the ±1 the engine stores. The
     /// read is rounded so a value that went in as a whole number comes back as one.
-    private func adjustmentBinding(_ keyPath: WritableKeyPath<Adjustments, Double>) -> Binding<Double> {
-        Binding(get: { (self.settings.adjustments[keyPath: keyPath] * 100).rounded() },
-                set: { self.settings.adjustments[keyPath: keyPath] = min(max($0, -100), 100) / 100 })
+    private func adjustmentBinding(_ id: Parameter.Identity) -> Binding<Double> {
+        // A parameter that is not an Adjustment has no Adjustment to bind to, and
+        // reads zero and refuses the write rather than moving one of the eight.
+        guard let keyPath = Self.adjustmentKeyPath(id) else { return .constant(0) }
+        return Binding(get: { (self.settings.adjustments[keyPath: keyPath] * 100).rounded() },
+                       set: {
+                           // Moving a bypassed dial is asking for it back, at the
+                           // value under the finger rather than the one it held.
+                           self.stashedAdjustments[id] = nil
+                           self.settings.adjustments[keyPath: keyPath] = min(max($0, -100), 100) / 100
+                       })
     }
 
     private static func index<Element>(_ value: Double, in list: [Element]) -> Int {

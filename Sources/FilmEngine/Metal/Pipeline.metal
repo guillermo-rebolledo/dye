@@ -463,9 +463,9 @@ static float inverseTransfer(float x) {
 // and never to the light before the film. Neutral settings do not run the Pass.
 //
 // `tone` = (black point, brightness, shadows, highlights), `colour` = (contrast,
-// saturation, vibrance, unused), each −1…1 except that the renderer has already
-// folded Brilliance into shadows, highlights and contrast, and clamped the sums to
-// what keeps the curve below monotone.
+// saturation, vibrance, unused), each −1…1, the renderer having already folded
+// Brilliance into shadows, highlights and contrast and clamped those three sums
+// back to ±1, which is what keeps the curve below monotone at the gains it uses.
 //
 // The tone controls compose one curve in the display encoding, applied to each
 // channel, which is what a photo editor's RGB tone curve is. Every term is a
@@ -489,18 +489,26 @@ static float adjustTone(float x, float4 tone, float contrast) {
     // Brightness: the midtones, peaking at mid-grey, with black and white held.
     float c = clamp(x, 0.0f, 1.0f);
     x += 0.5f * tone.y * c * (1.0f - c);
-    // Shadows: peaks a third of the way up, and is gone by white.
+    // Shadows: peaks a quarter of the way up, where the darkest tones a picture
+    // actually has sit, and is gone well before white. The two directions are
+    // geared differently because the curve's own slope bounds them differently:
+    // opening the shadows is bounded at the top of the mask, which leaves room
+    // for a gain above one, and closing them is bounded at black, where the
+    // slope cannot go below zero. The gains are the largest each direction
+    // admits with a tenth of the slope still to spare.
     c = clamp(x, 0.0f, 1.0f);
-    x += 0.5f * tone.z * c * (1.0f - c) * (1.0f - c);
-    // Highlights: pushing peaks two thirds of the way up and is gone by white;
+    float shadowMask = c * (1.0f - c) * (1.0f - c) * (1.0f - c);
+    x += (tone.z >= 0.0f ? 2.0f : 0.9f) * tone.z * shadowMask;
+    // Highlights: pushing peaks three quarters of the way up, the mirror of the
+    // shadow mask, so it reaches the brights and leaves the midtones alone;
     // recovering is a C1 knee from mid-grey that compresses everything above it,
     // including light past white, back toward the range.
     if (tone.w >= 0.0f) {
         c = clamp(x, 0.0f, 1.0f);
-        x += 0.5f * tone.w * c * c * (1.0f - c);
+        x += 0.9f * tone.w * c * c * c * (1.0f - c);
     } else if (x > 0.5f) {
         float d = x - 0.5f;
-        x = 0.5f + d / (1.0f - tone.w * d);
+        x = 0.5f + d / (1.0f - 3.0f * tone.w * d);
     }
     // Contrast: an S about mid-grey, slope 1.5 there at full and 0.5 at full
     // negative, flattening into a toe and a shoulder at the ends.
