@@ -2,7 +2,7 @@
 
 A delta spec against the shipped editor at `guillermo-rebolledo/dye@main` (read 2026-09-10). It describes only what changes. Anything not mentioned here — the engine, the twelve passes, parameter ranges, captions, `EditorModel`, the sheets — is unchanged.
 
-Design reference: `Dye Editor.dc.html` (screens `3a`–`3d`; `3a` is interactive). Earlier explorations are in `Dye Editor - archive turns 1-2.dc.html` (ids `1a`–`2f`).
+Design reference: [`Dye Editor - one rail.html`](Dye%20Editor%20-%20one%20rail.html), the standalone offline bundle in this folder (screens `3a`–`3d`; `3a` is interactive). It is the only design file in the repo. The earlier explorations this document refers to as "the archive" — the fixed-deck editor and the simplification passes, ids `1a`–`2f` — are not checked in; [`../docs/editor-redesign.md`](../docs/editor-redesign.md) is the record of what was built from them.
 
 ---
 
@@ -254,9 +254,7 @@ Type is unchanged: SF Pro for text, SF Mono with tabular figures for **every** n
 
 ## 12. Reference
 
-- `Dye Editor.dc.html` — `3a` live rail (all 20 pucks, real ranges and detents, rolling digits, live grade) · `3b` detent and mid-drag · `3c` stock takeover · `3d` mechanics and puck states
-- `Dye Editor - archive turns 1-2.dc.html` — the fixed-deck editor, canvas study, secondary surfaces, component sheet, and the three simplification passes
-- `Dye Editor — one rail.html` — standalone offline copy
-- `github.md` — repo association and screen map
+- [`Dye Editor - one rail.html`](Dye%20Editor%20-%20one%20rail.html) — `3a` live rail (all 20 pucks, real ranges and detents, rolling digits, live grade) · `3b` detent and mid-drag · `3c` stock takeover · `3d` mechanics and puck states. Open it in a browser; it is a design reference written in HTML, not production code, and nothing in it is meant to be ported.
+- [`../docs/editor-redesign.md`](../docs/editor-redesign.md) — the implementation spec for the fixed-deck editor this one supersedes, including where its handoff and the engine disagreed and how each was resolved.
 
 Where this document and the engine disagree, the engine wins.

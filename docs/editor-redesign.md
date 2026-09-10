@@ -6,6 +6,15 @@ stack of three Stage Cards in `FilmApp/FilmApp.swift`. This document is the
 implementation spec for that handoff — what gets built, against which parts of
 the engine, in what order, and what has to be decided before it can be finished.
 
+> **The design reference has moved on.** The fixed-deck mockups this document was
+> written against are no longer in the repo. The handoff folder now holds the
+> rail that supersedes the deck:
+> [`one-rail-redesign.md`](../design_handoff_dye_editor/one-rail-redesign.md) is
+> the spec and
+> [`Dye Editor - one rail.html`](../design_handoff_dye_editor/Dye%20Editor%20-%20one%20rail.html)
+> is the reference. This document stays the record of what shipped, of where the
+> fixed-deck handoff and the engine disagreed, and of how each was resolved.
+
 The handoff is the source of truth for *appearance*. The engine is the source of
 truth for *behaviour*, which is the handoff's own rule and is applied literally
 below. Where the two disagree, §2 records the resolution rather than leaving the
@@ -319,8 +328,11 @@ Behaviour, ranges and caption copy: `FilmApp/EditorModel.swift`,
 `FilmApp/ContactSheetView.swift`, `Sources/FilmEngine/RenderTypes.swift`,
 `Sources/FilmEngine/Profiles/FilmProfile.swift`, `Curves/*/stock.json`.
 
-Appearance: `design_handoff_dye_editor/README.md` and
-`design_handoff_dye_editor/Dye Editor.dc.html`, screens `1a`–`1q`.
+Appearance: `design_handoff_dye_editor/README.md`, and the rail that supersedes
+this deck in `design_handoff_dye_editor/one-rail-redesign.md` and
+`design_handoff_dye_editor/Dye Editor - one rail.html`, screens `3a`–`3d`. The
+fixed-deck mockups this document was written against, screens `1a`–`1q`, are no
+longer in the repo; §2 below is the surviving record of what they specified.
 
 
 ## Minimal UI — September 2026
