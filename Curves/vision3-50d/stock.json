@@ -50,7 +50,8 @@
       }
     ]
   },
-  "displayName": "Kodak Vision3 50D",
+  "accuracy": "modelled",
+  "displayName": "Daylight 50",
   "format": "135",
   "grain": {
     "channelCorrelation": 0.15,

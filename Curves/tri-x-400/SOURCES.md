@@ -119,3 +119,18 @@ No code, profiles, LUTs, digitised curves or fitted parameters from any other
 film-simulation project are incorporated here. This is an independent model
 built from Kodak and CIE source measurements, and it does not claim perceptual
 validation against a real Tri-X negative.
+
+## Rights
+
+Attribution: Kodak Alaris, for the published datasheets and technical publications cited
+above. This repository contains **independent numerical readings and an extraction
+script**, not the source PDFs and not reproduced chart artwork. Extracting numerical
+facts from a published chart is a different act from reproducing the chart, and this
+project keeps to the former.
+
+**No open-content licence is claimed for Kodak Alaris's material.** Nothing in `Curves/`
+ships inside the application; only the baked
+`Sources/FilmEngine/Catalogue/*.filmprofile` files do. Dye is not affiliated with,
+endorsed by, or sponsored by Kodak Alaris. See the repository's `NOTICE.md`.
+
+CIE data in this directory is separately licensed CC BY-SA 4.0; see `NOTICE.md`.

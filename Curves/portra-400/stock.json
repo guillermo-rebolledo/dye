@@ -50,7 +50,8 @@
       }
     ]
   },
-  "displayName": "Kodak Portra 400",
+  "accuracy": "modelled",
+  "displayName": "Linen 400",
   "format": "135",
   "grain": {
     "channelCorrelation": 0.15,

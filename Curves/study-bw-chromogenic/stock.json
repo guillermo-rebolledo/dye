@@ -9,6 +9,7 @@
     "lutVariants": [],
     "outputStage": "scan"
   },
+  "accuracy": "synthetic",
   "displayName": "Chromogenic study (synthetic)",
   "format": "135",
   "grain": {

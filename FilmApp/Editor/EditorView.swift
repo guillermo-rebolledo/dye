@@ -12,7 +12,8 @@ struct EditorView: View {
 
     var body: some View {
         NavigationStack {
-            EditorScreen(model: model, canvas: canvas, error: model.error, photo: $photo,
+            EditorScreen(model: model, canvas: canvas, error: model.error,
+                         openAsSRGB: model.refusedPhoto == nil ? nil : { Task { await model.openRefusedPhotoAsSRGB() } }, photo: $photo,
                          showPresets: { showsPresets = true }, showContactSheet: { showsContactSheet = true },
                          showExport: { isExporting = true }, showSettings: { showsSettings = true })
                 .toolbar(.hidden, for: .navigationBar)
@@ -48,7 +49,9 @@ struct EditorView: View {
 private struct EditorScreen: View {
     let model: EditorModel
     let canvas: CanvasView.Content
-    var error: String?
+    var error: UserFacingError?
+    /// Offered only when the app can still open the photograph the decoder refused.
+    var openAsSRGB: (() -> Void)?
     @Binding var photo: PhotosPickerItem?
     let showPresets: () -> Void
     let showContactSheet: () -> Void
@@ -85,7 +88,7 @@ private struct EditorScreen: View {
             if canvas.hasPhoto || model.beforePixels != nil {
                 editor
             } else {
-                PhotoWelcomeScreen(photo: $photo, isLoading: isLoading, error: error)
+                PhotoWelcomeScreen(photo: $photo, isLoading: isLoading, error: error, openAsSRGB: openAsSRGB)
             }
         }
         .background(Tokens.Palette.canvas.ignoresSafeArea())
@@ -138,10 +141,9 @@ private struct EditorScreen: View {
         VStack(spacing: 0) {
             if let error {
                 ScrollView {
-                    Text(error).typeStyle(.caption).foregroundStyle(Tokens.Palette.destructive)
+                    ErrorStrip(error: error, openAsSRGB: openAsSRGB)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(12)
-                        .accessibilityLabel("Error: \(error)")
-                }.frame(maxHeight: 64)
+                }.frame(maxHeight: 96)
             }
             DeckView(model: model, selection: selection, hasPhoto: canvas.hasPhoto, photo: $photo,
                      isLoupeEnabled: $isLoupeEnabled, showPresets: showPresets,
@@ -157,7 +159,8 @@ private struct EditorScreen: View {
 private struct PhotoWelcomeScreen: View {
     @Binding var photo: PhotosPickerItem?
     let isLoading: Bool
-    let error: String?
+    let error: UserFacingError?
+    var openAsSRGB: (() -> Void)?
 
     var body: some View {
         GeometryReader { geometry in
@@ -195,10 +198,7 @@ private struct PhotoWelcomeScreen: View {
                     }
 
                     if let error {
-                        Text(error)
-                            .font(.callout)
-                            .foregroundStyle(Tokens.Palette.destructive)
-                            .accessibilityLabel("Error: \(error)")
+                        ErrorStrip(error: error, openAsSRGB: openAsSRGB)
                     }
                 }
                 .multilineTextAlignment(.center)
@@ -242,7 +242,7 @@ private struct EditorPreview: View {
     @SwiftUI.State private var previewError: String?
 
     var body: some View {
-        EditorScreen(model: model, canvas: canvas, error: previewError, photo: .constant(nil),
+        EditorScreen(model: model, canvas: canvas, error: previewError.map { UserFacingError(FilmError.invalid($0), doing: .rendering) }, photo: .constant(nil),
                      showPresets: {}, showContactSheet: {}, showExport: {},
                      isLoupeEnabled: state == .loupe, accessibleBefore: state == .original,
                      previewReadout: state == .dragging)
@@ -280,3 +280,40 @@ private struct EditorPreview: View {
 #Preview("Editor · 1:1 loupe") { EditorPreview(state: .loupe).preferredColorScheme(.dark) }
 
 #Preview("Editor · fine drag") { EditorPreview(state: .dragging).preferredColorScheme(.dark) }
+
+/// One failure, said once, with the engine's own words kept behind a disclosure and
+/// a way forward offered when there is one.
+private struct ErrorStrip: View {
+    let error: UserFacingError
+    var openAsSRGB: (() -> Void)?
+    @State private var showsDetails = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Tokens.Metrics.space5) {
+            Text(error.message)
+                .typeStyle(.caption)
+                .foregroundStyle(Tokens.Palette.destructive)
+                .fixedSize(horizontal: false, vertical: true)
+            if let openAsSRGB, error.photoProblem?.canOpenAsSRGB == true {
+                Button("Open as sRGB", action: openAsSRGB)
+                    .font(.footnote.weight(.semibold))
+                    .frame(minHeight: Tokens.Metrics.minimumHitTarget)
+                    .accessibilityHint("Opens the photo assuming standard colours, which may not be exactly right")
+            }
+            if let details = error.details {
+                Button(showsDetails ? "Hide details" : "Details") { showsDetails.toggle() }
+                    .font(.footnote)
+                    .frame(minHeight: Tokens.Metrics.minimumHitTarget)
+                if showsDetails {
+                    Text(details)
+                        .typeStyle(.caption)
+                        .foregroundStyle(Tokens.Palette.textTertiary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .multilineTextAlignment(.leading)
+        .accessibilityElement(children: .contain)
+    }
+}

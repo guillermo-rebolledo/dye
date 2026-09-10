@@ -121,3 +121,18 @@ code, profiles, LUTs, digitised curves or fitted parameters from that project ar
 incorporated. This is an independent simplified model over Kodak and CIE source
 measurements. It does not claim numerical parity with any other implementation, or
 independent perceptual validation of Vision3 colour.
+
+## Rights
+
+Attribution: Eastman Kodak Company, for the published datasheets and technical publications cited
+above. This repository contains **independent numerical readings and an extraction
+script**, not the source PDFs and not reproduced chart artwork. Extracting numerical
+facts from a published chart is a different act from reproducing the chart, and this
+project keeps to the former.
+
+**No open-content licence is claimed for Eastman Kodak Company's material.** Nothing in `Curves/`
+ships inside the application; only the baked
+`Sources/FilmEngine/Catalogue/*.filmprofile` files do. Dye is not affiliated with,
+endorsed by, or sponsored by Eastman Kodak Company. See the repository's `NOTICE.md`.
+
+CIE data in this directory is separately licensed CC BY-SA 4.0; see `NOTICE.md`.

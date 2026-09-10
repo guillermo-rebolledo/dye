@@ -44,6 +44,17 @@ and validate loops skip directories without a `stock.json` for that reason.
 - For measured data, add `SOURCES.md` citing the manufacturer, datasheet edition,
   page/figure and digitisation method. Mark only supported parameters `measured`.
   Radii remain microns; Halation values are artistic, not datasheet measurements.
+- **Every `SOURCES.md` carries a `## Rights` section** naming the rights holder,
+  stating that the repository holds independent numerical readings rather than the
+  source PDFs or reproduced chart artwork, and claiming no open-content licence over
+  the manufacturer's material. `grep -L "## Rights" Curves/*/SOURCES.md` must return
+  nothing. The obligation on the CIE data is separate and lives in `NOTICE.md`.
+- **`accuracy` is `modelled`** for any Stock, and `synthetic` for a study. Omitting
+  the field means `modelled`, so omission is always the modest claim. Nothing may be
+  `validated` until a held-out capture benchmark exists.
+- **Display Names carry no trademark.** The Catalogue ships under names of its own;
+  a Curve Set's directory name and Profile id keep the real spelling as internal
+  handles. `Scripts/check-archive.py` fails the build if a mark reaches the bundle.
 - A Stock that shares another's Emulsion gets a directory containing `stock.json`
   and `SOURCES.md` only. See [Derived Curve Sets](#derived-curve-sets) below.
 - A colour negative that prints declares `colour.printVariants`, naming one further

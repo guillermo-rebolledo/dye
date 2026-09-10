@@ -28,6 +28,7 @@ struct PresetSheet: View {
     let model: EditorModel
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.presetStoreOutcome) private var storeOutcome
     @Query(sort: \Preset.createdAt, order: .reverse) private var presets: [Preset]
     @State private var name = ""
     @State private var error: String?
@@ -41,6 +42,13 @@ struct PresetSheet: View {
         SheetSurface(title: "Presets", done: { dismiss() }) {
             VStack(alignment: .leading, spacing: Tokens.Sheet.rowGap) {
                 saveLine
+                // A session-only store is the one thing about Presets the user
+                // cannot discover by looking, so it is said before anything is saved.
+                if case .inMemory = storeOutcome {
+                    Text("Saved presets could not be opened, so presets you save now will last until you close Dye. Reinstalling Dye clears the problem.")
+                        .typeStyle(.caption).foregroundStyle(Tokens.Palette.destructive)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let error {
                     Text(error).typeStyle(.caption).foregroundStyle(Tokens.Palette.destructive)
                 }
@@ -59,6 +67,7 @@ struct PresetSheet: View {
     private var saveLine: some View {
         HStack(spacing: Tokens.Sheet.labelGap) {
             TextField("Name this look", text: $name)
+                .accessibilityLabel("Preset name")
                 .typeStyle(.sheetBody)
                 .foregroundStyle(Tokens.Palette.textPrimary)
                 .tint(Tokens.Palette.accent)
@@ -83,7 +92,7 @@ struct PresetSheet: View {
             do { try context.save() } catch { context.rollback(); throw error }
             name = ""
             error = nil
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = UserFacingError(error, doing: .savingPreset).message }
     }
 
     /// Named from the Stock and the Output Stage on screen, so it says what will
@@ -96,14 +105,15 @@ struct PresetSheet: View {
         if rows.isEmpty {
             Text("No presets yet")
                 .typeStyle(.caption)
-                .foregroundStyle(Tokens.Palette.textQuaternary)
+                .foregroundStyle(Tokens.Palette.textTertiary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, Tokens.Metrics.space20)
         } else {
             List {
                 ForEach(rows) { row in
-                    Button { apply(row) } label: { PresetRowView(row: row, pixels: model.presetThumbnails[row.id]) }
+                    Button { apply(row) } label: { PresetRowView(row: row, pixels: model.presetThumbnails[row.id],
+                                                                 delete: { delete(row.preset) }) }
                         .buttonStyle(.plain)
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
@@ -134,12 +144,12 @@ struct PresetSheet: View {
         do {
             try model.applyPreset(stockID: row.preset.stockID, settings: settings)
             dismiss()
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = UserFacingError(error, doing: .savingPreset).message }
     }
 
     private func delete(_ preset: Preset) {
         context.delete(preset)
-        do { try context.save() } catch let failure { context.rollback(); error = failure.localizedDescription }
+        do { try context.save() } catch let failure { context.rollback(); error = UserFacingError(failure, doing: .savingPreset).message }
     }
 }
 
@@ -164,7 +174,7 @@ struct PresetRow: Identifiable, Equatable {
         return EditorModel.PresetRender(id: id, stockID: preset.stockID, settings: settings)
     }
 
-    /// `Portra 400 · +0.3 EV · 5200 K · Print · adjusted`, from the decoded settings alone.
+    /// `Modelled · Linen 400 · +0.3 EV · 5200 K · Print · adjusted`, from the decoded settings alone.
     var summary: String {
         guard let settings else { return "Saved before this version; cannot be read" }
         return Self.look(profile, settings: settings, fallbackStockName: preset.stockID)
@@ -184,7 +194,7 @@ struct PresetRow: Identifiable, Equatable {
     /// line that names every parameter names nothing.
     static func look(_ profile: Profile?, settings: RenderSettings, fallbackStockName: String? = nil) -> String {
         let defaults = RenderSettings()
-        var parts = [profile?.metadata.displayName ?? fallbackStockName ?? "Unknown stock"]
+        var parts = [profile?.metadata.qualifiedDisplayName ?? fallbackStockName ?? "Unknown stock"]
         if abs(settings.exposureStops - defaults.exposureStops) > 0.001 {
             parts.append(String(format: "%+.1f EV", settings.exposureStops))
         }
@@ -206,6 +216,9 @@ struct PresetRow: Identifiable, Equatable {
 private struct PresetRowView: View {
     let row: PresetRow
     let pixels: RenderedPixels?
+    /// Deleting is a swipe, which VoiceOver cannot reach. The row carries the same
+    /// action by name so every affordance has a non-gestural route.
+    let delete: () -> Void
 
     var body: some View {
         HStack(spacing: Tokens.Presets.rowGap) {
@@ -225,8 +238,16 @@ private struct PresetRowView: View {
         .padding(.horizontal, Tokens.Presets.rowPadding)
         .frame(minHeight: Tokens.Presets.rowHeight)
         .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(pixels == nil ? "developing" : "")
+        .accessibilityAction(named: "Delete", delete)
+    }
+
+    /// Name, then look, then the warning if the Stock has gone — in that order, rather
+    /// than the concatenation `children: .combine` produced.
+    private var accessibilityLabel: String {
+        [row.preset.name, row.summary, row.unavailable].compactMap { $0 }.joined(separator: ", ")
     }
 
     private var thumbnail: some View {
@@ -281,8 +302,8 @@ private struct PresetSheetPreview: View {
         let red = RenderSettings(developmentOffset: -1, contrastFilter: .red)
         return [(try? Preset(name: "Sunday portraits", stockID: "portra-400", settings: warm)),
                 (try? Preset(name: "Slide, punchy", stockID: "velvia-50", settings: RenderSettings())),
-                (try? Preset(name: "Old test — T-Max", stockID: "t-max-100", settings: red)),
-                (try? Preset(name: "From a stock that left", stockID: "kodachrome-64", settings: RenderSettings()))]
+                (try? Preset(name: "Old test — Graphite", stockID: "t-max-100", settings: red)),
+                (try? Preset(name: "From a stock that left", stockID: "a-stock-that-left", settings: RenderSettings()))]
             .compactMap { $0 }
     }
 }

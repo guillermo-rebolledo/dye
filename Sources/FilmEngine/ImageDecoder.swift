@@ -19,15 +19,15 @@ struct ImageDecoder {
     }
 
     /// `maximumDimension` downsamples in the linear Working Space for the Preview Render Path.
-    func decode(_ data: Data, maximumDimension: Int? = nil) throws -> any MTLTexture {
+    func decode(_ data: Data, maximumDimension: Int? = nil, assumingSRGB: Bool = false) throws -> any MTLTexture {
         if let maximumDimension, maximumDimension < 1 { throw FilmError.invalid("Preview dimension must be positive") }
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
-            throw FilmError.invalid("Unsupported photo file")
+            throw FilmError.photo(.unsupportedFormat)
         }
         let type = CGImageSourceGetType(source) as String? ?? ""
         if UTTypeConformsToRaw(type) {
             guard let raw = CIRAWFilter(imageData: data, identifierHint: type) else {
-                throw FilmError.invalid("The system RAW decoder does not support this photo")
+                throw FilmError.photo(.unsupportedRaw)
             }
             raw.isDraftModeEnabled = false
             let native = max(raw.nativeSize.width, raw.nativeSize.height)
@@ -57,16 +57,18 @@ struct ImageDecoder {
             if let error = command.error { throw error }
             return texture
         }
+        // A file the system will not decode and a file with no colour tag are two
+        // different failures, and used to share one misleading message.
         guard let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
               let space = image.colorSpace, space.model == .rgb || space.model == .monochrome else {
-            throw FilmError.invalid("Photo has no supported input colour profile")
+            throw FilmError.photo(.undecodable)
         }
         let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
         let exif = properties?[kCGImagePropertyExifDictionary] as? [CFString: Any]
-        guard properties?[kCGImagePropertyProfileName] != nil || exif?[kCGImagePropertyExifColorSpace] as? Int == 1 else {
+        guard assumingSRGB || properties?[kCGImagePropertyProfileName] != nil || exif?[kCGImagePropertyExifColorSpace] as? Int == 1 else {
             // ImageIO supplies a default sRGB CGColorSpace even when the file has
             // no tag. The metadata must establish that assignment explicitly.
-            throw FilmError.invalid("This photo has no colour profile; assign one before opening it")
+            throw FilmError.photo(.untagged)
         }
         let orientation = properties?[kCGImagePropertyOrientation] as? Int ?? 1
         let swapsAxes = (5...8).contains(orientation)
@@ -115,7 +117,7 @@ struct ImageDecoder {
 
     func makeTexture(width: Int, height: Int) throws -> any MTLTexture {
         guard width > 0, height > 0, width <= 16_384, height <= 16_384 else {
-            throw FilmError.invalid("Photo exceeds the supported texture dimensions")
+            throw FilmError.photo(.tooLarge)
         }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: width, height: height, mipmapped: false)
         descriptor.usage = [.shaderRead, .shaderWrite, .renderTarget]

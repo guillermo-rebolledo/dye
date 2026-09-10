@@ -122,3 +122,18 @@ digitised curves, or fitted parameters from that project are incorporated here.
 This is an independent simplified model using Kodak and CIE source measurements.
 It does not claim numerical parity with spektrafilm or its ports, or independent
 perceptual validation of Portra 160 colour.
+
+## Rights
+
+Attribution: Kodak Alaris, for the published datasheets and technical publications cited
+above. This repository contains **independent numerical readings and an extraction
+script**, not the source PDFs and not reproduced chart artwork. Extracting numerical
+facts from a published chart is a different act from reproducing the chart, and this
+project keeps to the former.
+
+**No open-content licence is claimed for Kodak Alaris's material.** Nothing in `Curves/`
+ships inside the application; only the baked
+`Sources/FilmEngine/Catalogue/*.filmprofile` files do. Dye is not affiliated with,
+endorsed by, or sponsored by Kodak Alaris. See the repository's `NOTICE.md`.
+
+CIE data in this directory is separately licensed CC BY-SA 4.0; see `NOTICE.md`.

@@ -58,8 +58,151 @@ public struct Profile: Sendable, Identifiable {
         try Dictionary(uniqueKeysWithValues: metadata.payloadNames.map { ($0, try readPayload($0)) })
     }
 
+    /// `Profile.identity` backs the very first frame the editor draws, so its metadata
+    /// is compiled into the binary rather than read out of the resource bundle. A
+    /// bundle lookup here could only ever fail for packaging reasons, and it would fail
+    /// on launch, which is the one place there is no way to report it. `identityProfileDecodesFromItsCompiledSource`
+    /// is what keeps this literal and the schema honest.
     private static let identityMetadata: FilmProfile = {
-        let url = Bundle.module.url(forResource: "identity", withExtension: "json", subdirectory: "Calibration")!
-        return try! JSONDecoder().decode(FilmProfile.self, from: Data(contentsOf: url))
+        do { return try JSONDecoder().decode(FilmProfile.self, from: Data(identitySource.utf8)) }
+        catch { fatalError("The compiled-in identity Profile does not decode: \(error)") }
     }()
+
+    /// The identity Profile's authoring metadata. Every Pass is silent, the Colour
+    /// Cube is the identity cube, and the Output Stage is `none`, so a render through
+    /// it returns the Working Space unchanged.
+    static let identitySource = #"""
+{
+  "accuracy": "synthetic",
+  "balance": 5500,
+  "bloom": {
+    "radiusMicrons": 900.0,
+    "strength": 0.0
+  },
+  "colour": {
+    "lutSize": 33,
+    "lutVariants": [
+      {
+        "lut": "identity.lut3d",
+        "pushStops": 0
+      }
+    ],
+    "outputStage": "none"
+  },
+  "displayName": "No Film Stock",
+  "format": "135",
+  "grain": {
+    "channelCorrelation": 0.15,
+    "channelRadiusScale": [
+      1,
+      0.85,
+      0.7
+    ],
+    "densityResponse": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "grainRadiusMicrons": 1.2,
+    "model": "procedural",
+    "rmsGranularity": 0
+  },
+  "halation": {
+    "radiusMicrons": [
+      220,
+      90,
+      45
+    ],
+    "strength": 0,
+    "threshold": 1.6,
+    "tint": [
+      1,
+      0.35,
+      0.18
+    ]
+  },
+  "id": "identity",
+  "mtf": {
+    "cyclesPerMM": [
+      5,
+      10,
+      20,
+      40,
+      80
+    ],
+    "response": [
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  "nominalISO": 100,
+  "process": "e6",
+  "provenance": {
+    "balance": "artistic",
+    "bloom.radiusMicrons": "artistic",
+    "bloom.strength": "artistic",
+    "colour.lutSize": "artistic",
+    "colour.lutVariants": "artistic",
+    "colour.outputStage": "artistic",
+    "format": "artistic",
+    "grain.channelCorrelation": "artistic",
+    "grain.channelRadiusScale": "artistic",
+    "grain.densityResponse": "artistic",
+    "grain.grainRadiusMicrons": "artistic",
+    "grain.model": "artistic",
+    "grain.rmsGranularity": "artistic",
+    "halation.radiusMicrons": "artistic",
+    "halation.strength": "artistic",
+    "halation.threshold": "artistic",
+    "halation.tint": "artistic",
+    "mtf.cyclesPerMM": "artistic",
+    "mtf.response": "artistic",
+    "nominalISO": "artistic",
+    "reciprocity.schwarzschildP": "artistic",
+    "reciprocity.thresholdSeconds": "artistic",
+    "trueISO": "artistic"
+  },
+  "reciprocity": {
+    "schwarzschildP": [
+      1,
+      1,
+      1
+    ],
+    "thresholdSeconds": 1
+  },
+  "trueISO": 100
+}
+"""#
 }

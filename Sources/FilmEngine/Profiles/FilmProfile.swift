@@ -30,21 +30,38 @@ public enum FilmFormat: String, Codable, Sendable {
 /// numbers, and the app says so rather than letting it pass as the other two.
 public enum Provenance: String, Codable, Sendable { case measured, artistic, approximation }
 
+/// How far a Profile's appearance has been checked against the Stock it models.
+/// Distinct from `Provenance`, which records where one parameter's *value* came
+/// from: a Profile can be built entirely from measured values and still never have
+/// been compared with a photograph. Absent means `modelled`, so a Profile can never
+/// claim more than it has by omitting the field.
+public enum Accuracy: String, Codable, Sendable {
+    /// Compared against held-out captures of the Stock and found to match. Nothing
+    /// in the Catalogue is this yet; `Tests/…/FilmReferences/manifest.json` is empty.
+    case validated
+    /// Built from published data and judgement, with no photographic comparison made.
+    case modelled
+    /// Not a model of any Stock at all — the synthetic studies and the identity Profile.
+    case synthetic
+}
+
 /// A Contrast Filter: coloured glass on the lens, modelled as a spectral multiply
 /// applied before the Monochrome Collapse. Black & white only, and never a tint —
 /// each case names a Profile's own Spectral Weight for light seen through that glass.
 public enum ContrastFilter: String, Codable, Sendable, CaseIterable, Identifiable {
     case none, yellow, orange, red, green, blue
     public var id: String { rawValue }
-    /// The glass, named by the Wratten number the transmittance model describes.
+    /// The glass, named by its colour and its depth. The transmittance model is
+    /// digitised from a published filter series whose numbers are a live trademark,
+    /// so the numbers stay in `Curves/contrast-filters/` and out of the interface.
     public var displayName: String {
         switch self {
         case .none: "No filter"
-        case .yellow: "Yellow (Wratten 8)"
-        case .orange: "Orange (Wratten 15)"
-        case .red: "Red (Wratten 25)"
-        case .green: "Green (Wratten 58)"
-        case .blue: "Blue (Wratten 47)"
+        case .yellow: "Yellow, light"
+        case .orange: "Orange, deep"
+        case .red: "Red, deep"
+        case .green: "Green, medium"
+        case .blue: "Blue, deep"
         }
     }
     /// What the glass is for, in the terms a photographer chooses it in.
@@ -98,10 +115,44 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
     public var derivedFrom: String?
     /// Dotted schema paths, one marker per physical parameter (arrays count as one).
     public var provenance: [String: Provenance]
+    /// How far this Profile has been checked against the Stock. Optional so that a
+    /// Curve Set that omits it decodes, and so that omitting it is the modest claim.
+    public var accuracy: Accuracy?
 
     /// Whether any parameter stands in for a measurement the Stock never published.
     /// The app says so wherever it names the Stock; see `Provenance.approximation`.
     public var isApproximation: Bool { provenance.values.contains(.approximation) }
+
+    /// `accuracy` with its default applied. Never claims more than was authored.
+    public var accuracyClaim: Accuracy { accuracy ?? .modelled }
+
+    /// The word the app puts in front of a Display Name, or nil when the name stands
+    /// unqualified. Approximation outranks accuracy because a borrowed measurement is
+    /// the stronger caveat, and a study needs no qualifier — its own name says so.
+    public var nameQualifier: String? {
+        if isApproximation { return "Approx." }
+        switch accuracyClaim {
+        case .validated, .synthetic: return nil
+        case .modelled: return "Modelled"
+        }
+    }
+
+    /// The Display Name as the app must render it **wherever it names the Stock**.
+    /// Every naming site reads this rather than `displayName`, so a redesign cannot
+    /// silently drop the qualifier the way the editor rebuild did.
+    /// `everyNamingSiteUsesTheQualifiedDisplayName` fails if a new site reaches for
+    /// the bare name without saying, in the line, why it wants it.
+    public var qualifiedDisplayName: String {
+        guard let nameQualifier else { return displayName }
+        return nameQualifier + " · " + displayName
+    }
+
+    /// The same claim spelled for VoiceOver, which reads a mid-dot as a pause and an
+    /// abbreviation as letters.
+    public var spokenDisplayName: String {
+        guard nameQualifier != nil else { return displayName }
+        return displayName + (isApproximation ? ", approximation" : ", modelled")
+    }
 
     public struct Colour: Codable, Equatable, Sendable {
         public var lutVariants: [Variant]

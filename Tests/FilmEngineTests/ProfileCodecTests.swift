@@ -160,3 +160,102 @@ func profileCodecRoundTripsEveryProcess(_ process: FilmProcess) throws {
     }
     #expect(throws: FilmError.self) { try decodeHalfValues(Data([0])) }
 }
+
+// MARK: - What the app is allowed to call a Stock
+//
+// `CONTEXT.md` says a Profile carrying any Approximation is an approximation and
+// that the app labels it as one *wherever it names the Stock*. That contract was
+// silently broken once already: the editor rebuild at `a080f4e` left the label on
+// the Filmstrip and dropped it from the other six naming sites, and nothing failed.
+// These assert the contract at the Profile codec seam, and
+// `everyNamingSiteUsesTheQualifiedDisplayName` fails when a new site is added
+// without it, which is the failure mode that actually happened.
+
+@Test func aProfileCarryingAnApproximationQualifiesItsOwnName() throws {
+    for profile in try ProfileCatalogue.bundled().profiles {
+        let metadata = profile.metadata
+        guard metadata.isApproximation else { continue }
+        #expect(metadata.nameQualifier == "Approx.", "\(profile.id) is an approximation and does not say so")
+        #expect(metadata.qualifiedDisplayName == "Approx. · " + metadata.displayName)
+        #expect(metadata.spokenDisplayName == metadata.displayName + ", approximation")
+    }
+}
+
+@Test func aStockWhoseAccuracyIsUnestablishedIsQualifiedToo() throws {
+    let profiles = try ProfileCatalogue.bundled().profiles
+    // Nothing in the Catalogue has been compared with a photograph of the film, so
+    // nothing may present an unqualified name. `FilmReferences/manifest.json` is the
+    // evidence that would change this, and it is still an empty placeholder.
+    for profile in profiles where profile.metadata.accuracyClaim == .modelled {
+        #expect(profile.metadata.nameQualifier != nil, "\(profile.id) presents itself unqualified")
+    }
+    // A study is not a claim about any Stock, so it needs no qualifier: its own
+    // Display Name already says what it is.
+    for profile in profiles where profile.metadata.accuracyClaim == .synthetic {
+        #expect(profile.metadata.displayName.contains("synthetic") || profile.id == Profile.identity.id)
+        #expect(profile.metadata.nameQualifier == nil)
+    }
+    #expect(profiles.filter { $0.metadata.accuracyClaim == .validated }.isEmpty,
+            "A Profile claims validated accuracy; check it against a held-out capture benchmark first")
+}
+
+@Test func anApproximationOutranksTheAccuracyQualifier() throws {
+    var metadata = Profile.identity.metadata
+    metadata.accuracy = .modelled
+    #expect(metadata.nameQualifier == "Modelled")
+    metadata.provenance["grain.densityExtrapolation"] = .approximation
+    #expect(metadata.nameQualifier == "Approx.")
+    metadata.accuracy = .validated
+    #expect(metadata.nameQualifier == "Approx.", "A borrowed measurement is the stronger caveat")
+}
+
+@Test func accuracySurvivesTheProfileCodec() throws {
+    for profile in try ProfileCatalogue.bundled().profiles {
+        let decoded = try ProfileContainer.decode(ProfileContainer.encode(profile))
+        #expect(decoded.metadata.accuracy == profile.metadata.accuracy, "\(profile.id) lost its accuracy claim")
+    }
+}
+
+@Test func identityProfileDecodesFromItsCompiledSource() throws {
+    // `Profile.identity` backs the first frame, so its metadata is compiled in rather
+    // than read from the resource bundle. Nothing else proves the literal still parses.
+    let metadata = try JSONDecoder().decode(FilmProfile.self, from: Data(Profile.identitySource.utf8))
+    #expect(metadata == Profile.identity.metadata)
+    #expect(metadata.displayName == "No Film Stock")
+    #expect(metadata.accuracy == .synthetic)
+}
+
+/// Every place the interface renders a Stock's name must render the qualifier with
+/// it. This reads the app's own sources because the app is not in this package and
+/// there is no other way to assert it — and because the contract is exactly the kind
+/// that a redesign drops without any test noticing.
+@Test func everyNamingSiteUsesTheQualifiedDisplayName() throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        .deletingLastPathComponent().deletingLastPathComponent()
+    let sources = ["FilmApp", "Sources/FilmEngine"].flatMap { directory -> [URL] in
+        let base = root.appendingPathComponent(directory)
+        return FileManager.default.enumerator(at: base, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" } ?? []
+    }
+    #expect(sources.count > 20, "Found no app sources to check; the layout moved")
+
+    for url in sources {
+        // `FilmProfile.swift` defines the qualifier and necessarily reads the bare name.
+        guard url.lastPathComponent != "FilmProfile.swift" else { continue }
+        for (number, line) in try String(contentsOf: url, encoding: .utf8)
+            .components(separatedBy: .newlines).enumerated() {
+            guard line.contains("metadata.displayName") else { continue }
+            // A site that genuinely wants the bare name says so in the line, with a
+            // reason. Exempting in the test file instead would put the justification
+            // where nobody editing the naming site would ever read it, and an
+            // exemption with no reason is just a way of turning the check off.
+            if let marker = line.range(of: "// bare-display-name:") {
+                let reason = line[marker.upperBound...].trimmingCharacters(in: .whitespaces)
+                #expect(reason.count >= 12, "\(url.lastPathComponent):\(number + 1) exempts itself without a reason")
+                continue
+            }
+            let site = "\(url.lastPathComponent):\(number + 1)"
+            Issue.record("\(site) names a Stock with its bare Display Name; use qualifiedDisplayName or spokenDisplayName")
+        }
+    }
+}

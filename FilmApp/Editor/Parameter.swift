@@ -300,9 +300,9 @@ extension EditorModel {
 
     private var filmParameters: [Parameter] {
         var parameters: [Parameter] = [
-            Parameter(id: .stock, name: "Stock", stage: .film, value: .constant(0),
+            Parameter(id: .stock, name: "Film Stock", stage: .film, value: .constant(0),
                       range: 0...0, step: 1, control: .filmstrip,
-                      format: { [weak self] _ in self?.profile.metadata.displayName ?? "Stock" })
+                      format: { [weak self] _ in self?.profile.metadata.qualifiedDisplayName ?? "Film Stock" })
         ]
         if !contrastFilters.isEmpty {
             let filters = contrastFilters
@@ -575,7 +575,7 @@ extension EditorModel {
         guard filter != .none, let stops = contrastFilterStops else {
             return "No glass on the lens. " + base
         }
-        return String(format: "%@ Kodak's filter factor for this stock costs %.1f stops, already added back, so the "
+        return String(format: "%@ The published filter factor for this stock costs %.1f stops, already added back, so the "
                       + "exposure stays where you put it and only the separation changes.", base, stops)
     }
 
@@ -731,7 +731,7 @@ private struct ParameterCatalogue: View {
     var body: some View {
         NavigationStack {
             List {
-                Picker("Stock", selection: $model.selectedStock) {
+                Picker("Film Stock", selection: $model.selectedStock) {
                     ForEach(stocks, id: \.self) { Text($0) }
                 }
                 ForEach(EditorStage.allCases) { stage in

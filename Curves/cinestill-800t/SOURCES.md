@@ -39,3 +39,18 @@ Baking fingerprints the parent inputs, local process chart and override metadata
 Independent controlled C-41 captures and scans are still required to establish
 photographic accuracy; the manufacturer graph alone does not calibrate the entire
 finished look.
+
+## Rights
+
+Attribution: CineStill Film, for the published datasheets and technical publications cited
+above. This repository contains **independent numerical readings and an extraction
+script**, not the source PDFs and not reproduced chart artwork. Extracting numerical
+facts from a published chart is a different act from reproducing the chart, and this
+project keeps to the former.
+
+**No open-content licence is claimed for CineStill Film's material.** Nothing in `Curves/`
+ships inside the application; only the baked
+`Sources/FilmEngine/Catalogue/*.filmprofile` files do. Dye is not affiliated with,
+endorsed by, or sponsored by CineStill Film. See the repository's `NOTICE.md`.
+
+CIE data in this directory is separately licensed CC BY-SA 4.0; see `NOTICE.md`.

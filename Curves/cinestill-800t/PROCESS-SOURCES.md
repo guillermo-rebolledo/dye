@@ -92,3 +92,24 @@ every C-41 lab, current emulsion batch, or controlled full ECN-2 process. They
 also do not measure the C-41 dye/mask spectra, DIR, grain or halation. An
 accurate full-colour CineStill model still requires a calibrated paired capture
 or manufacturer clarification of the omitted conditions.
+
+## Rights
+
+Attribution: CineStill Film, for the product-page artwork the process curves were
+digitised from, and Eastman Kodak Company for the curve chart one panel of that
+artwork overlays.
+
+**This is the weakest source in the repository and should be replaced.** The two
+process curves were read from a marketing product page rather than from a technical
+datasheet, and one panel is a third party's reproduction of another manufacturer's
+chart, digitised at one further remove. No permission, licence or terms-of-use
+statement covers either use, and none is claimed here.
+
+What holds it up meanwhile is the same position as everywhere else in `Curves/`:
+these are independent numerical readings, not the image, and nothing in `Curves/`
+ships inside the application. That is a weaker argument here than elsewhere because
+the source is not a publication of technical data.
+
+**Replace or re-source** from a document CineStill publishes as technical data, or
+drop the process-specific curves and mark the Profile's Provenance accordingly.
+Tracked as REL-15 in `docs/audits/app-store-readiness.md`.

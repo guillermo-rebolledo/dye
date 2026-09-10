@@ -64,7 +64,7 @@ public struct ExportOptions: Sendable, Equatable {
     /// it is around seven sigmas of the coarsest pyramid level in play, and paying it
     /// in full costs a 12MP Export roughly six times its render time. The default
     /// keeps a little over half of it, which on the Catalogue's stress case — a point
-    /// light ten stops over white through Cinestill 800T at 200% halation — leaves the
+    /// light ten stops over white through Halogen 800 at 200% halation — leaves the
     /// tiled and untiled renders apart by four hundredths of an eight-bit code value.
     /// One buys exactness; below about a half, the truncation starts to be a seam.
     public var apronFraction: Double

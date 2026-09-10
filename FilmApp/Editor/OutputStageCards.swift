@@ -52,7 +52,7 @@ struct OutputStageCards: View {
                     thumbnails[stage] = pixels
                 }
             } catch is CancellationError { }
-            catch { self.error = error.localizedDescription }
+            catch { self.error = UserFacingError(error, doing: .loadingStock).message }
         }
         .overlay(alignment: .top) {
             if error != nil {

@@ -18,6 +18,7 @@
     ],
     "outputStage": "scan"
   },
+  "accuracy": "synthetic",
   "displayName": "Colour negative study (synthetic)",
   "format": "135",
   "grain": {

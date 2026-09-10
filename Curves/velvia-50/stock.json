@@ -28,7 +28,8 @@
     ],
     "outputStage": "none"
   },
-  "displayName": "Fujifilm Velvia 50",
+  "accuracy": "modelled",
+  "displayName": "Vermilion 50",
   "format": "135",
   "grain": {
     "channelCorrelation": 0.15,

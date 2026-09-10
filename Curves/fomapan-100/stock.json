@@ -14,7 +14,8 @@
     "lutVariants": [],
     "outputStage": "scan"
   },
-  "displayName": "Fomapan 100 Classic",
+  "accuracy": "modelled",
+  "displayName": "Ash 100",
   "format": "135",
   "grain": {
     "channelCorrelation": 1,

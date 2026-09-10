@@ -41,7 +41,11 @@ public actor Renderer {
         self.exportQueue = exportQueue
         exportQueue.label = "FilmEngine.export"
         decoder = try ImageDecoder(device: device)
-        let url = Bundle.module.url(forResource: "Pipeline", withExtension: "metal", subdirectory: "Metal")!
+        // A packaging fault is the likeliest way this app fails on a device it has
+        // never run on, so it reports rather than traps.
+        guard let url = Bundle.module.url(forResource: "Pipeline", withExtension: "metal", subdirectory: "Metal") else {
+            throw FilmError.invalid("Missing shader source Pipeline.metal")
+        }
         let options = MTLCompileOptions()
         if #available(macOS 15, iOS 18, *) { options.mathMode = .safe }
         else { options.fastMathEnabled = false }
@@ -65,8 +69,8 @@ public actor Renderer {
 
     /// Colour-managed decode into the Working Space, optionally downsampled for the
     /// Preview Render Path so slider changes re-render a screen-sized image.
-    public func decode(_ data: Data, maximumDimension: Int? = nil) throws -> LinearImage {
-        let texture = try decoder.decode(data, maximumDimension: maximumDimension)
+    public func decode(_ data: Data, maximumDimension: Int? = nil, assumingSRGB: Bool = false) throws -> LinearImage {
+        let texture = try decoder.decode(data, maximumDimension: maximumDimension, assumingSRGB: assumingSRGB)
         return try readback(texture)
     }
 
@@ -115,7 +119,7 @@ public actor Renderer {
 
     func texture(for image: RenderImage) throws -> any MTLTexture {
         switch image {
-        case .encoded(let data): return try decoder.decode(data)
+        case .encoded(let data, let assumingSRGB): return try decoder.decode(data, assumingSRGB: assumingSRGB)
         case .linear(let image):
             let texture = try decoder.makeTexture(width: image.width, height: image.height)
             image.rgba.withUnsafeBytes {
@@ -284,7 +288,7 @@ public actor Renderer {
         /// The Scattering Passes' reach: wide, and the only part of the Apron worth
         /// trading against, because it is also the only part whose furthest pixels
         /// carry almost none of the halo. Widest is the modelled lens's Bloom at 900
-        /// µm — further than even Cinestill's Halation, which MEM-252 expected to
+        /// µm — further than even Halogen 800's Halation, which MEM-252 expected to
         /// dominate, because Bloom did not have a Pass when it was written.
         var scatterReach: Double { max(bloom?.reach ?? 0, halation?.reach ?? 0) }
 

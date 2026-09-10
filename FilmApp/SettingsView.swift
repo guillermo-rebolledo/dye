@@ -14,6 +14,28 @@ struct SettingsView: View {
                         Label("Glossary", systemImage: "book.closed")
                     }
                 }
+                // Reachable in two taps from the editor, which is what a
+                // non-affiliation statement has to be to be worth having.
+                Section {
+                    NavigationLink {
+                        LegalTextView(title: "About", text: Legal.disclaimer)
+                    } label: {
+                        Label("About", systemImage: "info.circle")
+                    }
+                    NavigationLink {
+                        LegalTextView(title: "Acknowledgements", text: Legal.acknowledgements)
+                    } label: {
+                        Label("Acknowledgements", systemImage: "text.book.closed")
+                    }
+                    Link(destination: Legal.privacyPolicyURL) {
+                        Label("Privacy Policy", systemImage: "hand.raised")
+                    }
+                    Link(destination: Legal.supportURL) {
+                        Label("Support", systemImage: "lifepreserver")
+                    }
+                } footer: {
+                    Text(versionSummary)
+                }
             }
             .scrollContentBackground(.hidden)
             .background(Tokens.Palette.deck)
@@ -29,6 +51,36 @@ struct SettingsView: View {
         .tint(Tokens.Palette.accent)
         .preferredColorScheme(.dark)
     }
+
+    /// The version and build the user is running, which is the first thing a support
+    /// request needs and the only thing the user cannot look up for themselves.
+    private var versionSummary: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = info?["CFBundleVersion"] as? String ?? "—"
+        return "Dye \(version) (\(build))"
+    }
+}
+
+/// A single block of legal or attribution prose. Selectable, because someone reading
+/// a licence notice may well want to copy a DOI out of it.
+struct LegalTextView: View {
+    let title: String
+    let text: String
+
+    var body: some View {
+        ScrollView {
+            Text(text)
+                .font(.callout)
+                .textSelection(.enabled)
+                .foregroundStyle(Tokens.Palette.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
+        }
+        .background(Tokens.Palette.deck)
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+    }
 }
 
 /// Explanations live here so the editor can concentrate on the photograph.
@@ -42,7 +94,7 @@ struct GlossaryView: View {
             guard let parameter = context.first(where: { $0.name == entry.title }),
                   let caption = parameter.captionText, !caption.isEmpty else { return entry }
             return GlossaryEntry(section: entry.section, title: entry.title,
-                                 explanation: entry.explanation + "\n\nCurrent stock · " + model.profile.metadata.displayName + "\n" + caption)
+                                 explanation: entry.explanation + "\n\nCurrent stock · " + model.profile.metadata.qualifiedDisplayName + "\n" + caption)
         }
     }
 
@@ -95,7 +147,7 @@ private struct GlossaryEntry: Identifiable {
     var id: String { title }
 
     static let all: [Self] = [
-        .init(section: "Controls", title: "Parameter rail", explanation: "Swipe the row of round controls to move through Light, Film, Lab and Adjust in pipeline order. Tap a control to select it, or tap the stage name beside the parameter name to jump to a group. VoiceOver users can swipe up or down on the rail to move between controls. The Stock header stays visible above the dials. Tap it to browse stocks, then tap Done to return to the same dial. Output choices open separately from the header."),
+        .init(section: "Controls", title: "Parameter rail", explanation: "Swipe the row of round controls to move through Light, Film, Lab and Adjust in pipeline order. Tap a control to select it, or tap the stage name beside the parameter name to jump to a group. VoiceOver users can swipe up or down on the rail to move between controls. The Film Stock header stays visible above the dials. Tap it to browse stocks, then tap Done to return to the same dial. Output choices open separately from the header."),
         .init(section: "Controls", title: "Dials", explanation: "Drag the scale beneath a value to adjust it. The fixed centre marker shows your setting. A detent is a gentle snap at a reference value, such as neutral exposure or the stock’s natural grain intensity. Touch and hold a parameter name, or double-tap it, to reset that control. VoiceOver users can swipe up or down to adjust a dial."),
         .init(section: "Controls", title: "Compare & fine adjustment", explanation: "Hold the photo to compare it with the original. Drag horizontally on the photo for finer adjustment of the active control. VoiceOver offers comparison and loupe actions on the photo."),
         .init(section: "Controls", title: "Loupe", explanation: "The loupe shows a 1:1 view for inspecting detail. Touch and hold the Contact Sheet button to turn it on or off."),
@@ -105,7 +157,8 @@ private struct GlossaryEntry: Identifiable {
         .init(section: "Light", title: "Temperature", explanation: "Set the colour temperature of the light in kelvin. The reference point follows the selected stock’s daylight or tungsten balance."),
         .init(section: "Light", title: "Tint", explanation: "Adjust the green–magenta balance. Zero is neutral."),
         .init(section: "Light", title: "Exposure time", explanation: "Simulate the film’s response to exposure duration. Some stocks change response during long exposures; this is called reciprocity failure. This control appears for stocks that model that behaviour."),
-        .init(section: "Film", title: "Film Stock", explanation: "A stock defines the film’s colour response, contrast and texture. Available controls depend on the stock. Choose a Film Stock to apply its look. No Film Stock applies no film response. Some stocks approximate another emulsion; their appearance is a simulation."),
+        .init(section: "Film", title: "Reading a stock’s name", explanation: "Dye’s stocks carry names of Dye’s own, and each one is a physical model rather than a photograph of film. Modelled means the model is built from published measurements and judgement, and has never been compared with a real frame. Approx. means more than that: for at least one parameter the manufacturer publishes no usable measurement, so a value borrowed from a related stock stands in for it. An unqualified name would mean a stock checked against real captures; nothing in the catalogue is that yet."),
+        .init(section: "Film", title: "Film Stock", explanation: "A stock defines the film’s colour response, contrast and texture. Available controls depend on the stock. Choose a Film Stock to apply its look. No Film Stock applies no film response. Every stock is marked Modelled or Approx.; see Reading a stock’s name."),
         .init(section: "Film", title: "Contrast filter", explanation: "Simulate coloured glass in front of black-and-white film. Filters change the relative brightness of colours. The app compensates for the filter’s light loss."),
         .init(section: "Film", title: "Development", explanation: "Change the simulated development of the film. Push and pull settings affect tone and contrast. Available ranges depend on the stock."),
         .init(section: "Film", title: "Bloom", explanation: "Spread bright light into a soft glow. 100% is the stock’s modelled strength; higher values exaggerate it."),

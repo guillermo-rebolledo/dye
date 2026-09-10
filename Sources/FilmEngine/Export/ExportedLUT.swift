@@ -49,7 +49,7 @@ extension Renderer {
         let rendered = try readback(renderTile(lattice, into: scratch, frame: Frame(width: width, height: height),
                                                profile: profile, settings: settings, queue: exportQueue, spatial: false))
         var lines = [
-            "# Exported from Dye: \(profile.metadata.displayName), \(settings.output.displayName).",
+            "# Exported from Dye: \(profile.metadata.qualifiedDisplayName), \(settings.output.displayName).",
             "# Colour only. This LUT carries no grain, halation, bloom, micro-contrast",
             "# or vignette, so it will look flatter than the app does.",
             "TITLE \"\(title(profile: profile, settings: settings))\"",
@@ -69,7 +69,7 @@ extension Renderer {
     /// A name that says which Stock and which of the user's colour controls are in it,
     /// because a `.cube` in a folder of `.cube`s has nothing else to identify it by.
     private func title(profile: Profile, settings: RenderSettings) -> String {
-        var parts = [profile.metadata.displayName]
+        var parts = [profile.metadata.qualifiedDisplayName]
         // A Contrast Filter is part of the colour half of the look and does travel in
         // a cube, unlike the five spatial Passes the header warns about.
         if settings.contrastFilter != .none { parts.append(settings.contrastFilter.displayName) }

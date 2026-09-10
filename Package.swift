@@ -7,7 +7,7 @@ let package = Package(
     products: [.library(name: "FilmEngine", targets: ["FilmEngine"]),
                .executable(name: "ProfileBaker", targets: ["ProfileBaker"])],
     targets: [
-        .target(name: "FilmEngine", resources: [.copy("Metal"), .copy("Profiles/Calibration"), .copy("Catalogue")]),
+        .target(name: "FilmEngine", resources: [.copy("Metal"), .copy("Catalogue")]),
         .executableTarget(name: "ProfileBaker", dependencies: ["FilmEngine"], path: "ProfileBaker"),
         .testTarget(name: "FilmEngineTests", dependencies: ["FilmEngine", .target(name: "ProfileBaker", condition: .when(platforms: [.macOS]))], resources: [.copy("Fixtures")])
     ],

@@ -1,10 +1,56 @@
 import Foundation
 import simd
 
+/// Something wrong with the photograph the user chose, as distinct from something
+/// wrong with the app. Each case is a *different* failure with a *different* thing to
+/// do about it, which is the whole reason they are cases rather than one string: a
+/// file the decoder cannot read and a file with no colour profile are not the same
+/// problem, and telling a photographer to "assign a colour profile" on an iPhone is
+/// not something anyone can act on.
+public enum PhotoProblem: String, Sendable {
+    /// The file is not an image format the system can open at all.
+    case unsupportedFormat
+    /// The file claims a format the system knows but its pixels cannot be read.
+    case undecodable
+    /// The system has no RAW decoder for this camera.
+    case unsupportedRaw
+    /// No ICC tag and no EXIF colour space, so nothing establishes what the numbers
+    /// mean. The decoder stays strict; the app decides whether to assume sRGB.
+    case untagged
+    /// Larger on an edge than the renderer's textures go.
+    case tooLarge
+
+    /// What to tell the user. Written for a photographer, not for whoever wrote the
+    /// decoder, and carrying no engine vocabulary at all.
+    public var message: String {
+        switch self {
+        case .unsupportedFormat: "Dye cannot open this kind of file."
+        case .undecodable: "This photo could not be read. The file may be damaged or incomplete."
+        case .unsupportedRaw: "This camera's raw files are not supported on this device."
+        case .untagged: "This photo does not say which colours its numbers mean, so Dye cannot render it accurately."
+        case .tooLarge: "This photo is too large for Dye to open."
+        }
+    }
+
+    /// Whether the app can offer a way forward rather than a wall. Only the untagged
+    /// case has one: the file is perfectly readable, and assuming sRGB is a decision
+    /// the app may take responsibility for even though the decoder will not.
+    public var canOpenAsSRGB: Bool { self == .untagged }
+}
+
 public enum FilmError: Error, LocalizedError, Sendable {
+    /// An engine failure. The message is written for whoever is reading a stack
+    /// trace, names Profile ids, payloads and shaders, and is never shown to a user
+    /// except behind a Details disclosure.
     case invalid(String)
+    /// A problem with the photograph, already written for the user.
+    case photo(PhotoProblem)
+
     public var errorDescription: String? {
-        switch self { case .invalid(let message): message }
+        switch self {
+        case .invalid(let message): message
+        case .photo(let problem): problem.message
+        }
     }
 }
 
@@ -34,7 +80,14 @@ public struct LinearImage: Sendable {
 
 public enum RenderImage: Sendable {
     case linear(LinearImage)
-    case encoded(Data)
+    /// `assumingSRGB` overrides the decoder's refusal to guess at an untagged file.
+    /// The decoder stays strict; taking responsibility for the assumption is the
+    /// app's job, because only the app can ask the user whether to.
+    case encoded(Data, assumingSRGB: Bool)
+
+    /// Encoded input on the decoder's own terms, which is what every caller but the
+    /// untagged-photo path wants.
+    public static func encoded(_ data: Data) -> Self { .encoded(data, assumingSRGB: false) }
 }
 
 /// The user's controls, in pipeline order. White Balance and Exposure act on the

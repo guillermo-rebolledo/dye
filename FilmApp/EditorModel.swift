@@ -22,7 +22,13 @@ import FilmEngine
     private(set) var thumbnailGeneration = UUID()
     private var openGeneration = UUID()
     private var thumbnailRendererTask: Task<Renderer, Error>?
-    private(set) var error: String?
+    private(set) var error: UserFacingError?
+    /// The photograph the decoder refused, kept so that "Open as sRGB" has something
+    /// to open. Cleared as soon as anything else is opened.
+    private(set) var refusedPhoto: Data?
+    /// Whether the photo on screen is being read as sRGB on the user's say-so rather
+    /// than on its own metadata. The Export path has to make the same assumption.
+    private(set) var assumesSRGB = false
     private(set) var isLoading = false
     private(set) var lastRenderMilliseconds: Double?
 
@@ -139,7 +145,7 @@ import FilmEngine
     func loadCatalogue() async {
         guard catalogue.isEmpty else { return }
         do { catalogue = try await Task.detached { try ProfileCatalogue.bundled().profiles }.value }
-        catch { self.error = error.localizedDescription }
+        catch { self.error = UserFacingError(error, doing: .loadingCatalogue) }
     }
 
     func open(_ item: PhotosPickerItem) async {
@@ -149,40 +155,74 @@ import FilmEngine
         defer { if openGeneration == request { isLoading = false } }
         do {
             error = nil
-            if renderer == nil { renderer = try await Renderer.make() }
-            guard let data = try await item.loadTransferable(type: Data.self), let renderer else {
-                throw FilmError.invalid("The photo could not be loaded")
+            refusedPhoto = nil
+            guard let data = try await item.loadTransferable(type: Data.self) else {
+                throw FilmError.photo(.undecodable)
             }
             try Task.checkCancellation()
             guard openGeneration == request else { return }
-            let decoded = try await renderer.decode(data, maximumDimension: Self.previewMaximumDimension)
-            try Task.checkCancellation()
-            let before = try await renderer.render(image: .linear(decoded), profile: .identity, settings: RenderSettings())
-            try Task.checkCancellation()
-            guard openGeneration == request else { return }
-            thumbnailTask?.cancel()
-            presetThumbnailTask?.cancel()
-            imageGeneration = UUID()
-            pixels = before
-            beforePixels = before
-            thumbnails = [:]
-            presetThumbnails = [:]
-            thumbnailInput = nil
-            preview = decoded
-            original = data
-            originalDate = ExportDate.originalDate(in: data)
-            if exportTask == nil { export = nil }
-            scheduleRender()
-            isLoading = false
-            // Filmstrip decoding is secondary to showing the photo and accepting edits.
-            let small = try await renderer.decode(data, maximumDimension: 192)
-            try Task.checkCancellation()
-            guard openGeneration == request else { return }
-            thumbnailInput = small
-            thumbnailGeneration = UUID()
-            scheduleThumbnails()
+            try await load(data, assumingSRGB: false, request: request)
         } catch is CancellationError { }
-        catch { if openGeneration == request { self.error = error.localizedDescription } }
+        catch { report(error, data: nil, request: request) }
+    }
+
+    /// Open the photograph the decoder refused, on the understanding that its numbers
+    /// are sRGB. The decoder stays strict about untagged files; taking responsibility
+    /// for the assumption is the app's job, because only the app can ask the user.
+    func openRefusedPhotoAsSRGB() async {
+        guard let data = refusedPhoto else { return }
+        let request = UUID()
+        openGeneration = request
+        isLoading = true
+        defer { if openGeneration == request { isLoading = false } }
+        do {
+            error = nil
+            refusedPhoto = nil
+            try await load(data, assumingSRGB: true, request: request)
+        } catch is CancellationError { }
+        catch { report(error, data: data, request: request) }
+    }
+
+    private func load(_ data: Data, assumingSRGB: Bool, request: UUID) async throws {
+        if renderer == nil { renderer = try await Renderer.make() }
+        guard let renderer else { throw FilmError.invalid("Renderer unavailable after construction") }
+        let decoded = try await renderer.decode(data, maximumDimension: Self.previewMaximumDimension,
+                                                assumingSRGB: assumingSRGB)
+        try Task.checkCancellation()
+        let before = try await renderer.render(image: .linear(decoded), profile: .identity, settings: RenderSettings())
+        try Task.checkCancellation()
+        guard openGeneration == request else { return }
+        thumbnailTask?.cancel()
+        presetThumbnailTask?.cancel()
+        imageGeneration = UUID()
+        pixels = before
+        beforePixels = before
+        thumbnails = [:]
+        presetThumbnails = [:]
+        thumbnailInput = nil
+        preview = decoded
+        original = data
+        assumesSRGB = assumingSRGB
+        originalDate = ExportDate.originalDate(in: data)
+        if exportTask == nil { export = nil }
+        scheduleRender()
+        isLoading = false
+        // Filmstrip decoding is secondary to showing the photo and accepting edits.
+        let small = try await renderer.decode(data, maximumDimension: 192, assumingSRGB: assumingSRGB)
+        try Task.checkCancellation()
+        guard openGeneration == request else { return }
+        thumbnailInput = small
+        thumbnailGeneration = UUID()
+        scheduleThumbnails()
+    }
+
+    /// Record why the photo did not open, and keep the bytes when the app can still
+    /// offer to open them.
+    private func report(_ failure: Error, data: Data?, request: UUID) {
+        guard openGeneration == request else { return }
+        let described = UserFacingError(failure, doing: .openingPhoto)
+        error = described
+        refusedPhoto = described.photoProblem?.canOpenAsSRGB == true ? data : nil
     }
 
     private func stockChanged() {
@@ -261,6 +301,9 @@ import FilmEngine
         var tileCount: Int
         var elapsedSeconds: Double
         var savedDate: Date? = nil
+        /// Why the file is not in the photo library. Nil when it is, or when there
+        /// was never a library to add it to, as for an Exported LUT.
+        var notAddedToPhotos: PhotosRefusal? = nil
 
         var megapixels: Double? {
             guard let pixelWidth, let pixelHeight else { return nil }
@@ -294,11 +337,31 @@ import FilmEngine
         for await state in observer.states { thermalState = state }
     }
 
+    /// Why an Export is on disk but not in the photo library.
+    enum PhotosRefusal: Sendable, Equatable {
+        /// The user declined add-only access. Recoverable in Settings.
+        case denied
+        /// Access was granted and Photos would not take it anyway.
+        case failed
+    }
+
+    /// The name the exported file carries out of the app. Derived from the Display
+    /// Name rather than the Profile id, because the id is a stable internal handle and
+    /// the user has never seen it.
+    static func exportFilename(for profile: Profile) -> String {
+        let name = profile.metadata.displayName // bare-display-name: a filename, and a qualifier is interface
+            .components(separatedBy: CharacterSet.alphanumerics.union(.whitespaces).inverted).joined(separator: " ")
+            .split(separator: " ").joined(separator: "-")
+        return name.isEmpty ? profile.id : name.lowercased()
+    }
+
     /// Renders the photo at full resolution and saves it to Photos and a shareable file. The
     /// renderer reports per Tile, which is also where it can be cancelled.
     func exportImage() {
         guard let original, let renderer, exportTask == nil else { return }
         let (profile, settings, format) = (profile, exportSettings, exportFormat)
+        let name = Self.exportFilename(for: profile)
+        let assumesSRGB = assumesSRGB
         let creationDate = exportDate.resolve(originalDate: originalDate)
         export = .running(ExportProgress(completedTiles: 0, tileCount: 0))
         // The Tile count belongs to the plan the renderer made, and the only place it
@@ -319,37 +382,43 @@ import FilmEngine
         exportTask = Task { [weak self] in
             defer { self?.exportTask = nil }
             do {
-                let authorization = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
-                try Task.checkCancellation()
-                guard authorization == .authorized || authorization == .limited else {
-                    throw FilmError.invalid("Photo not saved. Allow adding photos in Settings to save exports to Photos.")
-                }
-                let data = try await renderer.export(image: .encoded(original), profile: profile, settings: settings,
+                // Render and write first. Photos is *a* destination, not *the* one:
+                // the file exists and can be shared whatever the library says, and
+                // asking before there is anything to save wastes the user's answer.
+                let data = try await renderer.export(image: .encoded(original, assumingSRGB: assumesSRGB), profile: profile, settings: settings,
                                                      format: format, options: ExportOptions(creationDate: creationDate), progress: report)
                 try Task.checkCancellation()
-                let url = try await Self.write(data, named: "\(profile.id).\(format.fileExtension)")
+                let url = try await Self.write(data, named: "\(name).\(format.fileExtension)")
                 self?.export = .saving
-                do {
-                    // Photos invokes this block on its own queue. Prevent it from
-                    // inheriting MainActor and trapping Swift's executor check.
-                    try await PHPhotoLibrary.shared().performChanges { @Sendable in
-                        let request = PHAssetCreationRequest.forAsset()
-                        request.creationDate = creationDate
-                        request.addResource(with: .photo, fileURL: url, options: nil)
+                var refusal: PhotosRefusal?
+                let authorization = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+                try Task.checkCancellation()
+                if authorization == .authorized || authorization == .limited {
+                    do {
+                        // Photos invokes this block on its own queue. Prevent it from
+                        // inheriting MainActor and trapping Swift's executor check.
+                        try await PHPhotoLibrary.shared().performChanges { @Sendable in
+                            let request = PHAssetCreationRequest.forAsset()
+                            request.creationDate = creationDate
+                            request.addResource(with: .photo, fileURL: url, options: nil)
+                        }
+                    } catch {
+                        refusal = .failed
                     }
-                } catch {
-                    try? FileManager.default.removeItem(at: url)
-                    throw FilmError.invalid("Photo could not be saved to Photos: \(error.localizedDescription)")
+                } else {
+                    refusal = .denied
                 }
                 let size = Self.pixelSize(of: data)
                 self?.export = .finished(ExportRecord(url: url, pixelWidth: size?.width, pixelHeight: size?.height,
                                                       output: settings.output, byteCount: data.count,
                                                       tileCount: tileCount.withLock { $0 },
-                                                      elapsedSeconds: Self.seconds(since: started), savedDate: creationDate))
+                                                      elapsedSeconds: Self.seconds(since: started),
+                                                      savedDate: refusal == nil ? creationDate : nil,
+                                                      notAddedToPhotos: refusal))
             } catch is CancellationError {
                 self?.export = nil
             } catch {
-                self?.export = .failed(error.localizedDescription)
+                self?.export = .failed(UserFacingError(error, doing: .exporting).message)
             }
         }
     }
@@ -366,14 +435,14 @@ import FilmEngine
             do {
                 let text = try await renderer.exportedLUT(profile: profile, settings: settings)
                 let data = Data(text.utf8)
-                let url = try await Self.write(data, named: "\(profile.id).cube")
+                let url = try await Self.write(data, named: "\(Self.exportFilename(for: profile)).cube")
                 // No pixel dimensions and no gamut: a LUT is a mapping, not a frame.
                 self?.export = .finished(ExportRecord(url: url, byteCount: data.count, tileCount: 1,
                                                       elapsedSeconds: Self.seconds(since: started)))
             } catch is CancellationError {
                 self?.export = nil
             } catch {
-                self?.export = .failed(error.localizedDescription)
+                self?.export = .failed(UserFacingError(error, doing: .exportingLUT).message)
             }
         }
     }
@@ -543,7 +612,7 @@ import FilmEngine
                     store(key, result)
                 }
             } catch is CancellationError { }
-            catch { self.error = error.localizedDescription }
+            catch { self.error = UserFacingError(error, doing: .rendering) }
         }
     }
 
@@ -565,7 +634,7 @@ import FilmEngine
                     error = nil
                     lastRenderMilliseconds = Self.seconds(since: started) * 1000
                 } catch {
-                    self.error = error.localizedDescription
+                    self.error = UserFacingError(error, doing: .rendering)
                 }
             }
         }

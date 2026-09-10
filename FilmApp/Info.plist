@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Everything else is synthesised from INFOPLIST_KEY_* build settings. This
+	     file exists for the one key that cannot be: INFOPLIST_KEY_UILaunchScreen_Generation
+	     emits an empty UILaunchScreen dictionary and silently drops the colour name,
+	     so the launch screen took the default white and the app then forced dark
+	     onto a #050505 canvas — a white flash on every cold launch. -->
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
+</dict>
+</plist>
