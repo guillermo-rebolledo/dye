@@ -1,15 +1,52 @@
 name: FilmEngine
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
-  engine:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      engine: ${{ steps.scope.outputs.engine }}
+      app: ${{ steps.scope.outputs.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test CI change detection
+        run: python3 -B -m unittest discover -s Scripts -p 'test_ci_*.py'
+      - name: Fetch the PR base
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git fetch --no-tags --depth=1 origin "$BASE_SHA"
+      - name: Select required checks
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        run: python3 -B Scripts/ci_scope.py
+
+  engine_tests:
+    needs: changes
+    if: needs.changes.outputs.engine == 'true'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - name: Swift 6 typecheck and CLI build
         run: swift build
+      # Spectral integration is CPU-bound. Keep renderer tests in Debug, but
+      # use the optimized CLI for every bake and numerical validation.
+      - name: Build optimized ProfileBaker
+        run: |
+          swift build -c release --product ProfileBaker
+          echo "PROFILE_BAKER_EXECUTABLE=$(swift build -c release --show-bin-path)/ProfileBaker" >> "$GITHUB_ENV"
       # Swift Testing runs tests concurrently. Keep timing assertions away from
       # the other GPU renders and Baker processes without relaxing their budgets.
       - name: Renderer, codec, and Baker CLI tests
@@ -23,7 +60,7 @@ jobs:
       - name: Numerical Step Wedges
         run: |
           mkdir -p .build/step-wedges
-          baker="$(swift build --show-bin-path)/ProfileBaker"
+          baker="$PROFILE_BAKER_EXECUTABLE"
           for stock in Curves/*; do
             [ -f "$stock/stock.json" ] || continue
             id="$(basename "$stock")"
@@ -34,8 +71,32 @@ jobs:
         with:
           name: step-wedges
           path: .build/step-wedges
+
+  app:
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
       - name: Build the iOS app (Baker is not linked)
         run: >-
           xcodebuild -project FilmApp.xcodeproj -scheme FilmApp
           -sdk iphonesimulator -configuration Debug
           -derivedDataPath .build/app CODE_SIGNING_ALLOWED=NO build
+
+  # Preserve the existing required check, including for docs-only PRs. A failed
+  # dependency must fail this check, not silently skip it and permit merging.
+  engine:
+    needs: [changes, engine_tests, app]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify every required job succeeded
+        env:
+          CI_OK: >-
+            ${{ needs.changes.result == 'success' &&
+                ((needs.changes.outputs.engine == 'true' && needs.engine_tests.result == 'success') ||
+                 (needs.changes.outputs.engine == 'false' && needs.engine_tests.result == 'skipped')) &&
+                ((needs.changes.outputs.app == 'true' && needs.app.result == 'success') ||
+                 (needs.changes.outputs.app == 'false' && needs.app.result == 'skipped')) }}
+        run: test "$CI_OK" = true
