@@ -68,10 +68,11 @@ struct OutputStageCards: View {
         // Both pictures explicitly override output; selecting one does not
         // invalidate either preview or flash the cards back to placeholders.
         settings.outputStage = nil
-        return PreviewKey(stock: model.selectedStock, settings: settings)
+        return PreviewKey(image: model.thumbnailGeneration, stock: model.selectedStock, settings: settings)
     }
 
     private struct PreviewKey: Equatable {
+        let image: UUID
         let stock: String
         let settings: RenderSettings
     }
@@ -82,7 +83,7 @@ private struct OutputStagePreview: View {
     var body: some View {
         OutputStageCards(model: model).padding(Tokens.Metrics.space16)
             .background(Tokens.Palette.deck)
-            .task { model.loadCatalogue(); model.selectedStock = "portra-400"; model.outputStage = .print }
+            .task { await model.loadCatalogue(); model.selectedStock = "portra-400"; model.outputStage = .print }
     }
 }
 

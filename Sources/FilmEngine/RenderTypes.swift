@@ -314,6 +314,8 @@ public struct ColourCube: Sendable, Equatable {
 
 /// Pixels returned by the renderer, tagged with the requested output encoding.
 public struct RenderedPixels: Sendable {
+    /// Copies retain identity so display-only changes need no pixel comparison or upload.
+    public let id = UUID()
     public let width: Int
     public let height: Int
     public let rgba: [Float16]

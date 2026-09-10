@@ -48,6 +48,7 @@ struct PresetSheet: View {
             }
             .padding(.bottom, Tokens.Metrics.space20)
         }
+        .onDisappear { model.cancelPresetThumbnails() }
         .task(id: rows) { model.schedulePresetThumbnails(rows.compactMap(\.render)) }
     }
 
@@ -264,7 +265,7 @@ private struct PresetSheetPreview: View {
                 PresetSheet(model: model).filmSheet().modelContainer(container)
             }
             .task {
-                model.loadCatalogue()
+                await model.loadCatalogue()
                 model.selectedStock = "portra-400"
                 model.settings.outputStage = .print
                 model.settings.exposureStops = 0.3

@@ -62,13 +62,15 @@ struct ContactSheetView: View {
     /// editor is holding.
     @Sendable private func load() async {
         do {
-            profiles = try [.identity] + ProfileCatalogue.bundled().profiles
-            let renderer = try Renderer()
-            let input = try ContactSheetReference.image()
+            profiles = try await Task.detached { [.identity] + (try ProfileCatalogue.bundled().profiles) }.value
+            let renderer = try await Renderer.make()
+            let input = try await Task.detached { try ContactSheetReference.image() }.value
             for profile in profiles {
                 try Task.checkCancellation()
-                images[profile.id] = try await renderer.render(image: .linear(input), profile: profile,
+                let pixels = try await renderer.render(image: .linear(input), profile: profile,
                                                                settings: ContactSheetReference.settings)
+                try Task.checkCancellation()
+                images[profile.id] = pixels
             }
         } catch is CancellationError { }
         catch { self.error = error.localizedDescription }

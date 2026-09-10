@@ -43,6 +43,16 @@ import FilmEngine
         start = .now
         _ = try await renderer.render(image: .linear(preview), profile: .identity)
         let edited = milliseconds(start)
-        print("PHOTO_AUDIT iteration=\(iteration) init_main_actor_ms=\(initialization) preview_decode_ms=\(decode) before_ms=\(before) thumbnail_decode_ms=\(thumbnail) edited_ms=\(edited) total_ms=\(milliseconds(total))")
+        let openTotal = milliseconds(total)
+        let stock = try #require(catalogue.profiles.first { $0.id == "portra-400" })
+        var dialTimes: [Double] = []
+        for step in 0..<12 {
+            start = .now
+            _ = try await renderer.render(image: .linear(preview), profile: stock,
+                                          settings: .init(exposureStops: Double(step) / 6))
+            dialTimes.append(milliseconds(start))
+        }
+        print("PHOTO_AUDIT dial_first_ms=\(dialTimes[0]) dial_warm_mean_ms=\(dialTimes.dropFirst().reduce(0, +) / 11)")
+        print("PHOTO_AUDIT iteration=\(iteration) init_main_actor_ms=\(initialization) preview_decode_ms=\(decode) before_ms=\(before) thumbnail_decode_ms=\(thumbnail) edited_ms=\(edited) total_ms=\(openTotal)")
     }
 }

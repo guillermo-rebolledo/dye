@@ -82,3 +82,21 @@ import UniformTypeIdentifiers
     let renderer = try Renderer()
     await #expect(throws: FilmError.self) { _ = try await renderer.render(image: .encoded(data), profile: .identity) }
 }
+
+/// Reused ping-pong textures must be refilled, and resizing must discard both.
+@Test func repeatedPreviewRendersMatchFreshRenderers() async throws {
+    let renderer = try Renderer()
+    for (width, exposure) in [(32, 1.0), (32, 0.0), (17, -1.0), (32, 0.5)] {
+        let image = try LinearImage(width: width, height: 13,
+                                    rgba: Array(repeating: [Float16(0.2), 0.4, 0.6, 1], count: width * 13).flatMap { $0 })
+        let settings = RenderSettings(output: .workingSpace, exposureStops: exposure)
+        let actual = try await renderer.render(image: .linear(image), profile: .identity, settings: settings)
+        let fresh = try Renderer()
+        let expected = try await fresh.render(image: .linear(image), profile: .identity, settings: settings)
+        #expect(actual.width == width)
+        #expect(actual.rgba == expected.rgba)
+        #expect(actual.id != expected.id)
+        let copy = actual
+        #expect(copy.id == actual.id)
+    }
+}

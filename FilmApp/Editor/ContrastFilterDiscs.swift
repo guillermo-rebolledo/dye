@@ -63,7 +63,7 @@ private struct ContrastFilterPreview: View {
             }
         }
         .padding(Tokens.Metrics.space16).background(Tokens.Palette.deck)
-        .task { model.loadCatalogue(); model.selectedStock = "tri-x-400"; model.settings.contrastFilter = .yellow }
+        .task { await model.loadCatalogue(); model.selectedStock = "tri-x-400"; model.settings.contrastFilter = .yellow }
     }
 }
 
