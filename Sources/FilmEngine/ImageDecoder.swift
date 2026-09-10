@@ -22,7 +22,7 @@ struct ImageDecoder {
     }
 
     /// `maximumDimension` downsamples in the linear Working Space for the Preview Render Path.
-    func decode(_ data: Data, maximumDimension: Int? = nil) throws -> any MTLTexture {
+    func decode(_ data: Data, maximumDimension: Int? = nil) async throws -> any MTLTexture {
         if let maximumDimension, maximumDimension < 1 { throw FilmError.invalid("Preview dimension must be positive") }
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
             throw FilmError.invalid("Unsupported photo file")
@@ -51,13 +51,11 @@ struct ImageDecoder {
             if raw.isColorNoiseReductionSupported { raw.colorNoiseReductionAmount = 0 }
             guard let image = raw.outputImage, !image.extent.isEmpty, !image.extent.isInfinite else { throw FilmError.invalid("RAW decode failed") }
             let texture = try makeTexture(width: Int(image.extent.width), height: Int(image.extent.height))
-            // Render on an explicit command buffer and wait: with a nil buffer Core Image
-            // commits asynchronously and later reads of the texture race the decode.
+            // Render on an explicit command buffer and await it: with a nil buffer Core
+            // Image commits asynchronously and later reads of the texture race the decode.
             guard let command = queue.makeCommandBuffer() else { throw FilmError.invalid("Cannot create decode command") }
             context.render(image, to: texture, commandBuffer: command, bounds: image.extent, colorSpace: workingSpace)
-            command.commit()
-            command.waitUntilCompleted()
-            if let error = command.error { throw error }
+            try await withCheckedThrowingContinuation(Renderer.completion(command))
             return texture
         }
         guard let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
@@ -151,13 +149,31 @@ struct ImageDecoder {
         return texture
     }
 
-    func makeTexture(width: Int, height: Int) throws -> any MTLTexture {
+    /// Whether the CPU ever touches a texture, which is the only thing that decides
+    /// how it may be stored.
+    ///
+    /// `.shared` makes a texture CPU-coherent, and on Apple GPUs that forgoes lossless
+    /// framebuffer compression. Of the textures the pass graph holds, the CPU touches
+    /// exactly two: the input it uploads a photograph into and whichever ping-pong
+    /// texture holds the result it reads back. The Scattering Pyramid's levels and
+    /// scratch and the MTF Pass's three textures — most of what the Export budget
+    /// counts — are written and read only by kernels.
+    enum Access {
+        /// Uploaded to or read back from, so it has to be visible to both.
+        case shared
+        /// Only ever a kernel's input or output.
+        case deviceOnly
+    }
+
+    func makeTexture(width: Int, height: Int, access: Access = .shared) throws -> any MTLTexture {
         guard width > 0, height > 0, width <= 16_384, height <= 16_384 else {
             throw FilmError.invalid("Photo exceeds the supported texture dimensions")
         }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: width, height: height, mipmapped: false)
-        descriptor.usage = [.shaderRead, .shaderWrite, .renderTarget]
-        descriptor.storageMode = .shared
+        // Nothing in `Pipeline.metal` is a render pass; every kernel is a compute
+        // kernel writing through `texture2d<half, access::write>`.
+        descriptor.usage = access == .shared ? [.shaderRead, .shaderWrite, .renderTarget] : [.shaderRead, .shaderWrite]
+        descriptor.storageMode = access == .shared ? .shared : .private
         guard let texture = device.makeTexture(descriptor: descriptor) else { throw FilmError.invalid("Cannot allocate image texture") }
         return texture
     }

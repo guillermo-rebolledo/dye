@@ -67,20 +67,88 @@ public actor Renderer {
         self.exportQueue = exportQueue
         exportQueue.label = "FilmEngine.export"
         decoder = try ImageDecoder(device: device, bandBytes: decodeBandBytes)
-        let url = Bundle.module.url(forResource: "Pipeline", withExtension: "metal", subdirectory: "Metal")!
-        let options = MTLCompileOptions()
-        if #available(macOS 15, iOS 18, *) { options.mathMode = .safe }
-        else { options.fastMathEnabled = false }
-        let library = try device.makeLibrary(source: String(contentsOf: url, encoding: .utf8), options: options)
-        var pipelines: [String: any MTLComputePipelineState] = [:]
-        for name in ["passthrough", "whiteBalance", "exposure", "reciprocity", "filmResponse", "monochromeResponse", "scanOutput", "outputTransform",
-                     "scatterThreshold", "scatterDownsample", "scatterBlurHorizontal", "scatterBlurVertical",
-                     "scatterScale", "scatterUpsample", "scatterComposite",
-                     "mtfBlur", "mtfCombine", "grain", "grainDyeCloud", "densityOutput", "adjust", "geometry"] {
-            guard let function = library.makeFunction(name: name) else { throw FilmError.invalid("Missing shader \(name)") }
-            pipelines[name] = try device.makeComputePipelineState(function: function)
+        pipelines = try Self.pipelines(for: device)
+    }
+
+    /// Every shader the pass graph can run, built once per Metal device.
+    ///
+    /// `Pipeline.metal` ships as a copied resource rather than as a compiled target,
+    /// so this is 639 lines of Metal Shading Language compiled from source and 21
+    /// compute pipeline states built from the result. The editor stands up as many as
+    /// three Renderers — the Preview's, the thumbnails' and the Contact Sheet's — and
+    /// paid for all of it three times. The driver's own binary cache makes the second
+    /// and third cheap once it is warm, but it is cold on first launch after every
+    /// install and every update, which is exactly when first-photo time is being
+    /// judged.
+    ///
+    /// Keyed by the device's registry ID: a pipeline state belongs to the device that
+    /// built it, and nothing here assumes there is only ever one.
+    private static func pipelines(for device: any MTLDevice) throws -> [String: any MTLComputePipelineState] {
+        try pipelineCache.withLock { cache in
+            if let existing = cache[device.registryID] { return existing }
+            let url = Bundle.module.url(forResource: "Pipeline", withExtension: "metal", subdirectory: "Metal")!
+            let options = MTLCompileOptions()
+            // Safe math is what the Golden Images and the identity bit-exactness test
+            // are asserted against. It is not a performance setting to be relaxed.
+            if #available(macOS 15, iOS 18, *) { options.mathMode = .safe }
+            else { options.fastMathEnabled = false }
+            let library = try device.makeLibrary(source: String(contentsOf: url, encoding: .utf8), options: options)
+            var pipelines: [String: any MTLComputePipelineState] = [:]
+            for name in ["passthrough", "whiteBalance", "exposure", "reciprocity", "filmResponse", "monochromeResponse", "scanOutput", "outputTransform",
+                         "scatterThreshold", "scatterDownsample", "scatterBlurHorizontal", "scatterBlurVertical",
+                         "scatterScale", "scatterUpsample", "scatterComposite",
+                         "mtfBlur", "mtfCombine", "grain", "grainDyeCloud", "densityOutput", "adjust", "geometry"] {
+                guard let function = library.makeFunction(name: name) else { throw FilmError.invalid("Missing shader \(name)") }
+                pipelines[name] = try device.makeComputePipelineState(function: function)
+            }
+            cache[device.registryID] = pipelines
+            return pipelines
         }
-        self.pipelines = pipelines
+    }
+
+    /// Deployment reaches iOS 17, which predates `Mutex`.
+    private final class PipelineCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage: [UInt64: [String: any MTLComputePipelineState]] = [:]
+        func withLock<T>(_ body: (inout [UInt64: [String: any MTLComputePipelineState]]) throws -> T) rethrows -> T {
+            lock.lock(); defer { lock.unlock() }
+            return try body(&storage)
+        }
+    }
+
+    private static let pipelineCache = PipelineCache()
+
+    /// A GPU pass is now awaited rather than blocked on, so a second render can enter
+    /// the actor while one is in flight — and the ping-pong pair, the Scattering
+    /// Pyramid and the MTF textures are actor state that the pass in flight is still
+    /// reading and writing. This is the turn that keeps the two apart: everything from
+    /// resolving the Plan to reading back the result holds it, and it is released at
+    /// the one point where the textures are nobody's.
+    private var isRendering = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    private func takeRenderTurn() async {
+        while isRendering { await withCheckedContinuation { waiting.append($0) } }
+        isRendering = true
+    }
+
+    private func endRenderTurn() {
+        isRendering = false
+        guard !waiting.isEmpty else { return }
+        waiting.removeFirst().resume()
+    }
+
+    /// Suspends until the GPU is finished instead of holding the actor's thread for
+    /// the whole pass. Nothing else could enter a blocked actor — not another Preview
+    /// frame, not a thumbnail, not the Output Stage cards — and the CPU sat idle
+    /// rather than encoding the next command buffer.
+    static func completion(_ command: any MTLCommandBuffer) -> (CheckedContinuation<Void, any Error>) -> Void {
+        { continuation in
+            command.addCompletedHandler { buffer in
+                if let error = buffer.error { continuation.resume(throwing: error) } else { continuation.resume() }
+            }
+            command.commit()
+        }
     }
 
     /// What the tests read to observe contracts that leave no other trace outside the
@@ -114,8 +182,8 @@ public actor Renderer {
 
     /// Colour-managed decode into the Working Space, optionally downsampled for the
     /// Preview Render Path so slider changes re-render a screen-sized image.
-    public func decode(_ data: Data, maximumDimension: Int? = nil) throws -> LinearImage {
-        let texture = try decoder.decode(data, maximumDimension: maximumDimension)
+    public func decode(_ data: Data, maximumDimension: Int? = nil) async throws -> LinearImage {
+        let texture = try await decoder.decode(data, maximumDimension: maximumDimension)
         return try readback(texture)
     }
 
@@ -124,9 +192,11 @@ public actor Renderer {
     ///
     /// This is the Preview Render Path: one Tile that is the whole frame. `export`
     /// runs the same graph over many Tiles of one frame.
-    public func render(image: RenderImage, profile: Profile, settings: RenderSettings = .init()) throws -> RenderedPixels {
+    public func render(image: RenderImage, profile: Profile, settings: RenderSettings = .init()) async throws -> RenderedPixels {
         try settings.validate()
         try Task.checkCancellation()
+        await takeRenderTurn()
+        defer { endRenderTurn() }
         let input: any MTLTexture
         let scratch: any MTLTexture
         switch image {
@@ -142,7 +212,7 @@ public actor Renderer {
             scratch = textures.scratch
         case .encoded:
             previewTextures = nil
-            input = try texture(for: image)
+            input = try await texture(for: image)
             scratch = try decoder.makeTexture(width: input.width, height: input.height)
         }
         let frame = Frame(width: input.width, height: input.height)
@@ -158,15 +228,15 @@ public actor Renderer {
                               withBytes: $0.baseAddress!, bytesPerRow: image.width * 8)
             }
         }
-        let result = try execute(plan, input: input, scratch: scratch, frame: frame,
-                                 profile: profile, settings: settings, queue: queue)
+        let result = try await execute(plan, input: input, scratch: scratch, frame: frame,
+                                       profile: profile, settings: settings, queue: queue)
         let pixels = try readback(result)
         return RenderedPixels(width: pixels.width, height: pixels.height, rgba: pixels.rgba, output: settings.output)
     }
 
-    func texture(for image: RenderImage) throws -> any MTLTexture {
+    func texture(for image: RenderImage) async throws -> any MTLTexture {
         switch image {
-        case .encoded(let data): return try decoder.decode(data)
+        case .encoded(let data): return try await decoder.decode(data)
         case .linear(let image):
             let texture = try decoder.makeTexture(width: image.width, height: image.height)
             image.rgba.withUnsafeBytes {
@@ -193,12 +263,14 @@ public actor Renderer {
     /// carries the colour half of the look and nothing that reads a neighbour.
     func renderTile(_ input: any MTLTexture, into scratch: any MTLTexture, frame: Frame,
                     profile: Profile, settings: RenderSettings, queue: any MTLCommandQueue,
-                    spatial: Bool = true, grainModel: GrainModel = .procedural) throws -> any MTLTexture {
+                    spatial: Bool = true, grainModel: GrainModel = .procedural) async throws -> any MTLTexture {
+        await takeRenderTurn()
+        defer { endRenderTurn() }
         let plan = try plan(profile: profile, settings: settings, frame: frame,
                             tileWidth: input.width, tileHeight: input.height,
                             spatial: spatial, grainModel: grainModel)
-        return try execute(plan, input: input, scratch: scratch, frame: frame,
-                           profile: profile, settings: settings, queue: queue)
+        return try await execute(plan, input: input, scratch: scratch, frame: frame,
+                                 profile: profile, settings: settings, queue: queue)
     }
 
     /// The same Tile render against a Plan the caller already holds. Everything in a
@@ -206,14 +278,26 @@ public actor Renderer {
     /// grain cell and a vignette are all the frame's — so an Export resolves one and
     /// every Tile of it renders against that one.
     func renderTile(_ input: any MTLTexture, into scratch: any MTLTexture, plan: Plan, frame: Frame,
-                    profile: Profile, settings: RenderSettings, queue: any MTLCommandQueue) throws -> any MTLTexture {
-        try execute(plan, input: input, scratch: scratch, frame: frame,
-                    profile: profile, settings: settings, queue: queue)
+                    profile: Profile, settings: RenderSettings, queue: any MTLCommandQueue) async throws -> any MTLTexture {
+        await takeRenderTurn()
+        defer { endRenderTurn() }
+        return try await execute(plan, input: input, scratch: scratch, frame: frame,
+                                 profile: profile, settings: settings, queue: queue)
     }
 
     func execute(_ plan: Plan, input: any MTLTexture, scratch: any MTLTexture, frame: Frame,
-                         profile: Profile, settings: RenderSettings, queue: any MTLCommandQueue) throws -> any MTLTexture {
+                 profile: Profile, settings: RenderSettings, queue: any MTLCommandQueue) async throws -> any MTLTexture {
         guard let command = queue.makeCommandBuffer() else { throw FilmError.invalid("Cannot create render command") }
+        // One encoder for the whole graph rather than one per dispatch.
+        //
+        // A serial compute encoder already inserts the memory barriers a pass graph
+        // needs between successive dispatches on tracked resources, so ending an
+        // encoder between two Passes buys a hard boundary the code was getting for
+        // free — about fifty times per Preview frame, and about 6 500 times per 48MP
+        // Export. What the labels were doing for a frame capture, debug groups do.
+        guard let encoder = command.makeComputeCommandEncoder() else {
+            throw FilmError.invalid("Cannot create render command")
+        }
         var frameUniform = frame.packed
         var source = input
         var destination = scratch
@@ -228,19 +312,19 @@ public actor Renderer {
             // textures should keep them alive.
             if let scattering = Scattering(pass) {
                 guard let scatter = scattering == .bloom ? plan.bloom : plan.halation else { continue }
-                try encodeScatter(scatter, scattering, command: command, source: source, destination: destination)
+                try encodeScatter(scatter, scattering, encoder: encoder, source: source, destination: destination)
                 swap(&source, &destination)
                 continue
             }
             if pass == .mtf {
                 guard let mtf = plan.mtf else { mtfTextures = nil; continue }
-                try encodeMTF(mtf, command: command, source: source, destination: destination)
+                try encodeMTF(mtf, encoder: encoder, source: source, destination: destination)
                 swap(&source, &destination)
                 continue
             }
             if pass == .grain {
                 guard let grain = plan.grain else { continue }
-                try encodeGrain(grain, frame: &frameUniform, command: command, source: source, destination: destination)
+                try encodeGrain(grain, frame: &frameUniform, encoder: encoder, source: source, destination: destination)
                 swap(&source, &destination)
                 continue
             }
@@ -249,7 +333,7 @@ public actor Renderer {
                 var blend = plan.blend
                 try dispatch("densityOutput", label: "densityOutput",
                              textures: [(source, 0), (destination, 1), (observation.lower, 2), (observation.upper, 3)],
-                             command: command, grid: destination) {
+                             encoder: encoder, grid: destination) {
                     $0.setBytes(&minimum, length: MemoryLayout<SIMD4<Float>>.stride, index: 18)
                     $0.setBytes(&inverseSpan, length: MemoryLayout<SIMD4<Float>>.stride, index: 19)
                     $0.setBytes(&blend, length: MemoryLayout<Float>.stride, index: 5)
@@ -259,17 +343,16 @@ public actor Renderer {
             }
             if pass == .geometry {
                 guard let geometry = plan.geometry else { continue }
-                try encodeGeometry(geometry, frame: &frameUniform, command: command, source: source, destination: destination)
+                try encodeGeometry(geometry, frame: &frameUniform, encoder: encoder, source: source, destination: destination)
                 swap(&source, &destination)
                 continue
             }
             let name = pipelineName(for: pass, plan: plan, profile: profile)
             // A copy-only pass cannot change pixels; retain the current ping-pong source.
             guard name != "passthrough" else { continue }
-            guard let encoder = command.makeComputeCommandEncoder(), let pipeline = pipelines[name] else {
-                throw FilmError.invalid("Cannot encode \(pass)")
-            }
-            encoder.label = pass.rawValue
+            guard let pipeline = pipelines[name] else { throw FilmError.invalid("Cannot encode \(pass)") }
+            encoder.pushDebugGroup(pass.rawValue)
+            defer { encoder.popDebugGroup() }
             encoder.setComputePipelineState(pipeline)
             encoder.setTexture(source, index: 0)
             encoder.setTexture(destination, index: 1)
@@ -303,12 +386,10 @@ public actor Renderer {
             encoder.setBytes(&adjustments, length: MemoryLayout<AdjustmentUniforms>.stride, index: 15)
             encoder.dispatchThreads(MTLSize(width: input.width, height: input.height, depth: 1),
                 threadsPerThreadgroup: MTLSize(width: 16, height: 16, depth: 1))
-            encoder.endEncoding()
             swap(&source, &destination)
         }
-        command.commit()
-        command.waitUntilCompleted()
-        if let error = command.error { throw error }
+        encoder.endEncoding()
+        try await withCheckedThrowingContinuation(Self.completion(command))
         return source
     }
 
@@ -903,17 +984,18 @@ public actor Renderer {
             // which a Tile reads as its own edge and an untiled render does not.
             let w = max(1, (width + (1 << level) - 1) >> level)
             let h = max(1, (height + (1 << level) - 1) >> level)
-            levels.append(try decoder.makeTexture(width: w, height: h))
-            scratch.append(try decoder.makeTexture(width: w, height: h))
+            levels.append(try decoder.makeTexture(width: w, height: h, access: .deviceOnly))
+            scratch.append(try decoder.makeTexture(width: w, height: h, access: .deviceOnly))
         }
-        let pyramid = Pyramid(raw: try decoder.makeTexture(width: width, height: height), levels: levels, scratch: scratch)
+        let pyramid = Pyramid(raw: try decoder.makeTexture(width: width, height: height, access: .deviceOnly),
+                              levels: levels, scratch: scratch)
         scatterPyramid = pyramid
         return pyramid
     }
 
     /// Threshold, blur each level, then accumulate coarse to fine and composite the
     /// tinted result back into the linear signal the Film Response reads.
-    private func encodeScatter(_ scatter: Scatter, _ scattering: Scattering, command: any MTLCommandBuffer,
+    private func encodeScatter(_ scatter: Scatter, _ scattering: Scattering, encoder: any MTLComputeCommandEncoder,
                                source: any MTLTexture, destination: any MTLTexture) throws {
         let count = scatter.levelWeights.count - 1
         let pyramid = try pyramid(width: source.width, height: source.height, count: count)
@@ -921,10 +1003,9 @@ public actor Renderer {
         var tint = scatter.tint
         func dispatch(_ name: String, label: String, textures: [any MTLTexture], weight: SIMD4<Float>? = nil,
                       grid: any MTLTexture) throws {
-            guard let encoder = command.makeComputeCommandEncoder(), let pipeline = pipelines[name] else {
-                throw FilmError.invalid("Cannot encode \(label)")
-            }
-            encoder.label = label
+            guard let pipeline = pipelines[name] else { throw FilmError.invalid("Cannot encode \(label)") }
+            encoder.pushDebugGroup(label)
+            defer { encoder.popDebugGroup() }
             encoder.setComputePipelineState(pipeline)
             for (index, texture) in textures.enumerated() { encoder.setTexture(texture, index: index) }
             encoder.setBytes(&parameters, length: MemoryLayout<SIMD4<Float>>.size, index: 8)
@@ -933,7 +1014,6 @@ public actor Renderer {
             encoder.setBytes(&levelWeight, length: MemoryLayout<SIMD4<Float>>.size, index: 10)
             encoder.dispatchThreads(MTLSize(width: grid.width, height: grid.height, depth: 1),
                                     threadsPerThreadgroup: MTLSize(width: 16, height: 16, depth: 1))
-            encoder.endEncoding()
         }
         // Weight 0 belongs to the unblurred extract; weight L + 1 to pyramid level L.
         try dispatch("scatterThreshold", label: "\(scattering).threshold", textures: [source, pyramid.raw], grid: pyramid.raw)
@@ -967,12 +1047,12 @@ public actor Renderer {
     private func mtfTextures(width: Int, height: Int) throws -> [any MTLTexture] {
         if let textures = mtfTextures, textures[0].width == width, textures[0].height == height { return textures }
         counters.tileTextureAllocations += 1
-        let textures = try (0..<3).map { _ in try decoder.makeTexture(width: width, height: height) }
+        let textures = try (0..<3).map { _ in try decoder.makeTexture(width: width, height: height, access: .deviceOnly) }
         mtfTextures = textures
         return textures
     }
 
-    private func encodeMTF(_ mtf: MTF, command: any MTLCommandBuffer,
+    private func encodeMTF(_ mtf: MTF, encoder: any MTLComputeCommandEncoder,
                            source: any MTLTexture, destination: any MTLTexture) throws {
         let textures = try mtfTextures(width: source.width, height: source.height)
         func blur(_ gaussian: SIMD2<Float>, into result: any MTLTexture, label: String) throws {
@@ -980,7 +1060,7 @@ public actor Renderer {
                 var parameters = SIMD4<Float>(gaussian.x, gaussian.y, axis.x, axis.y)
                 try dispatch("mtfBlur", label: "\(label).\(index == 0 ? "h" : "v")",
                              textures: [(index == 0 ? source : textures[2], 0), (index == 0 ? textures[2] : result, 1)],
-                             command: command, grid: result) { $0.setBytes(&parameters, length: MemoryLayout<SIMD4<Float>>.size, index: 14) }
+                             encoder: encoder, grid: result) { $0.setBytes(&parameters, length: MemoryLayout<SIMD4<Float>>.size, index: 14) }
             }
         }
         try blur(mtf.fine, into: textures[0], label: "mtf.fine")
@@ -988,14 +1068,14 @@ public actor Renderer {
         let coefficients = mtf.coefficients
         try dispatch("mtfCombine", label: "mtf.combine",
                      textures: [(source, 0), (destination, 1), (textures[0], 4), (textures[1], 5)],
-                     command: command, grid: destination) { encoder in
+                     encoder: encoder, grid: destination) { encoder in
             coefficients.withUnsafeBytes { encoder.setBytes($0.baseAddress!, length: $0.count, index: 14) }
         }
     }
 
     /// The Grain and Geometry Passes are the two whose value depends on *where* in the
     /// frame a pixel sits, so both are given the Tile's placement in it.
-    private func encodeGrain(_ grain: Grain, frame: inout SIMD4<Float>, command: any MTLCommandBuffer,
+    private func encodeGrain(_ grain: Grain, frame: inout SIMD4<Float>, encoder: any MTLComputeCommandEncoder,
                              source: any MTLTexture, destination: any MTLTexture) throws {
         var uniforms = grain.uniforms
         // `dye-cloud` has its own kernel; `stochastic` is still MEM-239's phase 7 and
@@ -1003,36 +1083,34 @@ public actor Renderer {
         try dispatch(grain.model == .dyeCloud ? "grainDyeCloud" : "grain",
                      label: "\(Pass.grain.rawValue).\(grain.model.rawValue)",
                      textures: [(source, 0), (destination, 1)],
-                     command: command, grid: destination) {
+                     encoder: encoder, grid: destination) {
             $0.setBytes(&uniforms, length: MemoryLayout<GrainUniforms>.stride, index: 11)
             $0.setBytes(grain.response, length: MemoryLayout<Float>.stride * grain.response.count, index: 12)
             $0.setBytes(&frame, length: MemoryLayout<SIMD4<Float>>.size, index: 17)
         }
     }
 
-    private func encodeGeometry(_ geometry: Geometry, frame: inout SIMD4<Float>, command: any MTLCommandBuffer,
+    private func encodeGeometry(_ geometry: Geometry, frame: inout SIMD4<Float>, encoder: any MTLComputeCommandEncoder,
                                 source: any MTLTexture, destination: any MTLTexture) throws {
         var parameters = geometry.packed
         try dispatch("geometry", label: Pass.geometry.rawValue, textures: [(source, 0), (destination, 1)],
-                     command: command, grid: destination) {
+                     encoder: encoder, grid: destination) {
             $0.setBytes(&parameters, length: MemoryLayout<SIMD4<Float>>.size, index: 16)
             $0.setBytes(&frame, length: MemoryLayout<SIMD4<Float>>.size, index: 17)
         }
     }
 
     private func dispatch(_ name: String, label: String, textures: [(any MTLTexture, Int)],
-                          command: any MTLCommandBuffer, grid: any MTLTexture,
+                          encoder: any MTLComputeCommandEncoder, grid: any MTLTexture,
                           bind: (any MTLComputeCommandEncoder) -> Void) throws {
-        guard let encoder = command.makeComputeCommandEncoder(), let pipeline = pipelines[name] else {
-            throw FilmError.invalid("Cannot encode \(label)")
-        }
-        encoder.label = label
+        guard let pipeline = pipelines[name] else { throw FilmError.invalid("Cannot encode \(label)") }
+        encoder.pushDebugGroup(label)
+        defer { encoder.popDebugGroup() }
         encoder.setComputePipelineState(pipeline)
         for (texture, index) in textures { encoder.setTexture(texture, index: index) }
         bind(encoder)
         encoder.dispatchThreads(MTLSize(width: grid.width, height: grid.height, depth: 1),
                                 threadsPerThreadgroup: MTLSize(width: 16, height: 16, depth: 1))
-        encoder.endEncoding()
     }
 
     private func pipelineName(for pass: Pass, plan: Plan, profile: Profile) -> String {

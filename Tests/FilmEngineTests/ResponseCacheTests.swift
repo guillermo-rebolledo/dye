@@ -87,3 +87,63 @@ private func reference(_ size: Int = 96) throws -> LinearImage {
     let after = try await renderer.render(image: .linear(image), profile: profile, settings: settings)
     #expect(before.rgba == after.rgba)
 }
+
+@Test func concurrentRendersOnOneRendererMatchTheirSequentialEquivalents() async throws {
+    // The renderer no longer holds its actor for the duration of a GPU pass, which
+    // makes the actor reentrant at exactly the moment the ping-pong pair, the
+    // Scattering Pyramid and the MTF textures are live. A second render entering there
+    // would reallocate or overwrite them under the first.
+    let catalogue = try ProfileCatalogue.bundled().profiles
+    let portra = try #require(catalogue.first { $0.id == "portra-400" })
+    let cinestill = try #require(catalogue.first { $0.id == "cinestill-800t" })
+    // Different dimensions as well as different Profiles: the textures are keyed by
+    // size, so two renders that disagree about the size are the case that reallocates.
+    let jobs: [(Profile, LinearImage, RenderSettings)] = [
+        (portra, try reference(96), RenderSettings(halationIntensity: 1)),
+        (cinestill, try reference(64), RenderSettings(temperatureKelvin: 3200, halationIntensity: 2)),
+        (portra, try reference(128), RenderSettings(exposureStops: 1)),
+        (cinestill, try reference(96), RenderSettings(temperatureKelvin: 3200, bloomIntensity: 2)),
+    ]
+    let alone = try Renderer()
+    var sequential: [RenderedPixels] = []
+    for (profile, image, settings) in jobs {
+        sequential.append(try await alone.render(image: .linear(image), profile: profile, settings: settings))
+    }
+
+    let shared = try Renderer()
+    let concurrent = try await withThrowingTaskGroup(of: (Int, RenderedPixels).self) { group in
+        for (index, job) in jobs.enumerated() {
+            group.addTask { (index, try await shared.render(image: .linear(job.1), profile: job.0, settings: job.2)) }
+        }
+        var results = [RenderedPixels?](repeating: nil, count: jobs.count)
+        for try await (index, pixels) in group { results[index] = pixels }
+        return results.compactMap { $0 }
+    }
+    #expect(concurrent.count == jobs.count)
+    for (expected, actual) in zip(sequential, concurrent) {
+        #expect(expected.width == actual.width && expected.height == actual.height)
+        #expect(expected.rgba == actual.rgba)
+    }
+}
+
+@Test func aPreviewRenderDoesNotWaitOutAnExport() async throws {
+    // The Export path and the Preview path stop sharing one Renderer's scratch, so an
+    // Export in flight is not a Preview that has to wait for it. Both complete, and
+    // both are what they would have been alone.
+    let profile = try #require(ProfileCatalogue.bundled().profiles.first { $0.id == "portra-400" })
+    let previewImage = try reference(128)
+    let exportImage = try reference(192)
+    let settings = RenderSettings(halationIntensity: 1)
+    let options = ExportOptions(textureBudgetBytes: 64 * 64 * 8 * TilePlan.tileTextureCount,
+                                minimumTileEdge: 16, thermalState: .nominal)
+    let alone = try await Renderer().render(image: .linear(previewImage), profile: profile, settings: settings)
+
+    let previewRenderer = try Renderer()
+    let exportRenderer = try Renderer()
+    async let exported = exportRenderer.export(image: .linear(exportImage), profile: profile,
+                                               settings: settings, format: .jpeg, options: options)
+    async let preview = previewRenderer.render(image: .linear(previewImage), profile: profile, settings: settings)
+    let (file, pixels) = try await (exported, preview)
+    #expect(!file.isEmpty)
+    #expect(pixels.rgba == alone.rgba)
+}

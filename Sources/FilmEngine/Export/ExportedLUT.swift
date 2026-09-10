@@ -21,7 +21,7 @@ extension Renderer {
     /// a grade of already-display-encoded footage. `DOMAIN_MAX` is 1: input outside
     /// that is not addressable by a cube, and the app's own render is where scene
     /// values above diffuse white still live.
-    public func exportedLUT(profile: Profile, settings: RenderSettings = .init(), size: Int = 33) throws -> String {
+    public func exportedLUT(profile: Profile, settings: RenderSettings = .init(), size: Int = 33) async throws -> String {
         guard (2...65).contains(size) else { throw FilmError.invalid("Exported LUT size must be 2...65") }
         guard settings.output != .workingSpace else {
             throw FilmError.invalid("An Exported LUT needs a display encoding; choose Display P3 or sRGB")
@@ -44,10 +44,10 @@ extension Renderer {
                 }
             }
         }
-        let lattice = try texture(for: .linear(LinearImage(unchecked: width, height, rgba)))
+        let lattice = try await texture(for: .linear(LinearImage(unchecked: width, height, rgba)))
         let scratch = try decoder.makeTexture(width: width, height: height)
-        let rendered = try readback(renderTile(lattice, into: scratch, frame: Frame(width: width, height: height),
-                                               profile: profile, settings: settings, queue: exportQueue, spatial: false))
+        let rendered = try readback(await renderTile(lattice, into: scratch, frame: Frame(width: width, height: height),
+                                                     profile: profile, settings: settings, queue: exportQueue, spatial: false))
         let header = """
         # Exported from Dye: \(profile.metadata.displayName), \(settings.output.displayName).
         # Colour only. This LUT carries no grain, halation, bloom, micro-contrast

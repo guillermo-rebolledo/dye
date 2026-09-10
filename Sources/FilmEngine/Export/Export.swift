@@ -19,7 +19,7 @@ extension Renderer {
         // scope ends before the encoder starts.
         let writer: ImageWriter
         do {
-            let source = try texture(for: image)
+            let source = try await texture(for: image)
             writer = try ImageWriter(format: format, output: settings.output,
                                      width: source.width, height: source.height)
             try await renderTiles(source, profile: profile, settings: settings, options: options, progress: progress) {
@@ -35,7 +35,7 @@ extension Renderer {
     public func exportedPixels(image: RenderImage, profile: Profile, settings: RenderSettings = .init(),
                                options: ExportOptions = .init(),
                                progress: (@Sendable (ExportProgress) -> Void)? = nil) async throws -> RenderedPixels {
-        let source = try texture(for: image)
+        let source = try await texture(for: image)
         let width = source.width, height = source.height
         var rgba = [Float16](repeating: 0, count: width * height * 4)
         try await renderTiles(source, profile: profile, settings: settings, options: options, progress: progress) { tile, pixels in
@@ -57,8 +57,8 @@ extension Renderer {
     /// it. The app shows the Tile count; the tests assert the Apron against the reach
     /// of the widest Pass.
     public func tilePlan(image: RenderImage, profile: Profile, settings: RenderSettings = .init(),
-                         options: ExportOptions = .init()) throws -> TilePlan {
-        let source = try texture(for: image)
+                         options: ExportOptions = .init()) async throws -> TilePlan {
+        let source = try await texture(for: image)
         return try tilePlan(frameWidth: source.width, frameHeight: source.height, profile: profile,
                             settings: settings, options: options)
     }
@@ -121,11 +121,11 @@ extension Renderer {
         for index in 0..<plan.count {
             try Task.checkCancellation()
             let tile = plan.tile(index)
-            try copy(source, into: input, from: tile, plan: plan)
+            try await copy(source, into: input, from: tile, plan: plan)
             let frame = Frame(width: plan.frameWidth, height: plan.frameHeight,
                               originX: tile.originX, originY: tile.originY)
-            let result = try renderTile(input, into: scratch, plan: planned.render, frame: frame,
-                                        profile: profile, settings: settings, queue: exportQueue)
+            let result = try await renderTile(input, into: scratch, plan: planned.render, frame: frame,
+                                              profile: profile, settings: settings, queue: exportQueue)
             core.withUnsafeMutableBytes {
                 result.getBytes($0.baseAddress!, bytesPerRow: tile.width * 8,
                                 from: MTLRegionMake2D(tile.insetX, tile.insetY, tile.width, tile.height), mipmapLevel: 0)
@@ -145,7 +145,7 @@ extension Renderer {
     /// letting it hang over the edge — so the Apron a border Tile lacks is simply the
     /// clamp the Passes already apply at the frame edge.
     private func copy(_ source: any MTLTexture, into tile: any MTLTexture,
-                      from region: TilePlan.Tile, plan: TilePlan) throws {
+                      from region: TilePlan.Tile, plan: TilePlan) async throws {
         guard let command = exportQueue.makeCommandBuffer(), let blit = command.makeBlitCommandEncoder() else {
             throw FilmError.invalid("Cannot read the tile from the frame")
         }
@@ -154,9 +154,7 @@ extension Renderer {
                   sourceSize: MTLSize(width: plan.paddedWidth, height: plan.paddedHeight, depth: 1),
                   to: tile, destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0))
         blit.endEncoding()
-        command.commit()
-        command.waitUntilCompleted()
-        if let error = command.error { throw error }
+        try await withCheckedThrowingContinuation(Self.completion(command))
     }
 
     /// Preview and Export keep the same physical Grain Model at every thermal
