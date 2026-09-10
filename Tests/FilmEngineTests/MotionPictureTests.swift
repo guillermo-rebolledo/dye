@@ -210,10 +210,10 @@ private func average(_ pixels: RenderedPixels, _ index: Int) -> Double {
         // normalized to black. Compare shadow separation, not black offsets.
         let printShadowStep = average(printed, 1) - average(printed, 0)
         let scanShadowStep = average(scanned, 1) - average(scanned, 0)
-        #expect(printShadowStep < scanShadowStep)
+        #expect(printShadowStep < scanShadowStep, "\(id): scan \(stops.indices.map { average(scanned, $0) }), print \(stops.indices.map { average(printed, $0) })")
         // Paper white is brighter than Working Space mid-grey by about three stops,
         // which is the paper's whole scale, and is carried rather than clipped.
-        #expect(average(printed, stops.count - 1) > 1)
+        #expect(average(printed, stops.count - 1) > 1, "\(id): print \(stops.indices.map { average(printed, $0) })")
     }
 }
 
@@ -255,4 +255,31 @@ private func average(_ pixels: RenderedPixels, _ index: Int) -> Double {
     // push. What the push moves is the contrast around it.
     #expect(abs(average(pushed, 1) - average(neutral, 1)) < 0.03)
     #expect(average(pushed, 2) / average(pushed, 0) > average(neutral, 2) / average(neutral, 0))
+}
+
+@Test func stockAndOutputSwitchesPreserveTheSameRenderedResponse() async throws {
+    let profiles = try ProfileCatalogue.bundled().profiles.filter { $0.metadata.colour.densityOutput != nil }
+    let image = try ramp([-4, -3, -2, -1, 0, 1, 2, 3])
+    var reference: [String: [Float16]] = [:]
+    for profile in profiles {
+        let renderer = try Renderer()
+        let stages: [OutputStage] = profile.metadata.colour.printVariants == nil ? [.none] : [.scan, .print]
+        for stage in stages {
+            reference[profile.id + stage.rawValue] = try await renderer.render(image: .linear(image), profile: profile,
+                settings: referenced(stage, profile)).rgba
+        }
+    }
+    // Two slots force eviction between film and observation payloads. The same
+    // input must remain identical after stock/output switches and repeated loads.
+    let shared = try Renderer(textureCacheCapacity: 2)
+    for _ in 0..<4 {
+        for profile in profiles.reversed() {
+            let stages: [OutputStage] = profile.metadata.colour.printVariants == nil ? [.none] : [.print, .scan]
+            for stage in stages {
+                let result = try await shared.render(image: .linear(image), profile: profile, settings: referenced(stage, profile))
+                let expected = try #require(reference[profile.id + stage.rawValue])
+                #expect(result.rgba == expected, "\(profile.id), \(stage): stock/output switch changed the response")
+            }
+        }
+    }
 }
