@@ -16,7 +16,7 @@ public struct LinearImage: Sendable {
 
     public init(width: Int, height: Int, rgba: [Float16]) throws {
         guard width > 0, height > 0, width <= 16_384, height <= 16_384,
-              rgba.count == width * height * 4, rgba.allSatisfy(\.isFinite) else {
+              rgba.count == width * height * 4, rgba.allSatisfy({ $0.isFinite }) else {
             throw FilmError.invalid("Invalid image dimensions or non-finite pixels")
         }
         self.width = width
@@ -277,7 +277,7 @@ public struct ColourCube: Sendable, Equatable {
     public let rgba: [Float16]
     public init(size: Int, rgba: [Float16]) throws {
         guard (2...129).contains(size), rgba.count == size * size * size * 4,
-              rgba.allSatisfy(\.isFinite) else { throw FilmError.invalid("Invalid Colour Cube") }
+              rgba.allSatisfy({ $0.isFinite }) else { throw FilmError.invalid("Invalid Colour Cube") }
         self.size = size
         self.rgba = rgba
     }

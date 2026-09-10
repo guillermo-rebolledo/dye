@@ -114,7 +114,13 @@ public enum ProfileContainer {
 
 extension ColourCube {
     public var payload: Data { encodeHalfValues(rgba) }
-    public init(size: Int, payload: Data) throws { try self.init(size: size, rgba: decodeHalfValues(payload)) }
+    public init(size: Int, payload: Data) throws {
+        guard (2...129).contains(size), payload.count == size * size * size * 8 else {
+            throw FilmError.invalid("Invalid Colour Cube")
+        }
+        self.size = size
+        self.rgba = try decodeHalfValues(payload)
+    }
 }
 
 func encodeHalfValues(_ values: [Float16]) -> Data {
@@ -128,8 +134,17 @@ func encodeHalfValues(_ values: [Float16]) -> Data {
 
 func decodeHalfValues(_ bytes: Data) throws -> [Float16] {
     guard bytes.count % 2 == 0 else { throw FilmError.invalid("Truncated float16 payload") }
-    let data = [UInt8](bytes)
-    let values = stride(from: 0, to: data.count, by: 2).map { Float16(bitPattern: UInt16(data[$0]) | UInt16(data[$0 + 1]) << 8) }
-    guard values.allSatisfy(\.isFinite) else { throw FilmError.invalid("Non-finite profile payload") }
+    // Large density cubes should not allocate a second byte array or traverse
+    // millions of key paths. Copy once, then validate the IEEE-754 exponent bits.
+    var values = [Float16](repeating: 0, count: bytes.count / 2)
+    try values.withUnsafeMutableBytes { raw in
+        bytes.copyBytes(to: raw)
+        let words = raw.bindMemory(to: UInt16.self)
+        for i in words.indices {
+            let word = UInt16(littleEndian: words[i])
+            guard word & 0x7c00 != 0x7c00 else { throw FilmError.invalid("Non-finite profile payload") }
+            words[i] = word
+        }
+    }
     return values
 }

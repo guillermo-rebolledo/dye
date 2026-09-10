@@ -124,3 +124,18 @@ func profileCodecRoundTripsEveryProcess(_ process: FilmProcess) throws {
     reversal.provenance["colour.printVariants"] = .artistic
     #expect(throws: (any Error).self) { try Profile(metadata: reversal, payloads: payloads(reversal)) }
 }
+
+@Test func halfPayloadsPreserveBitsAndRejectEveryNonfiniteEncoding() throws {
+    let bits: [UInt16] = [0x0000, 0x8000, 0x0001, 0x0400, 0x3c00, 0xbc00, 0x7bff, 0xfbff]
+    let expected = Array(repeating: bits, count: 4).flatMap { $0 }
+    let bytes = Data(expected.flatMap { [UInt8(truncatingIfNeeded: $0), UInt8($0 >> 8)] })
+    let cube = try ColourCube(size: 2, payload: bytes)
+    #expect(cube.rgba.map(\.bitPattern) == expected)
+    #expect(cube.payload == bytes)
+    for invalid: UInt16 in [0x7c00, 0xfc00, 0x7c01, 0x7e00, 0xfe00] {
+        var bad = bytes
+        bad[0] = UInt8(truncatingIfNeeded: invalid)
+        bad[1] = UInt8(invalid >> 8)
+        #expect(throws: FilmError.self) { try ColourCube(size: 2, payload: bad) }
+    }
+}
