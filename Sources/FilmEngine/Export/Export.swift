@@ -46,7 +46,8 @@ extension Renderer {
     public func tilePlan(image: RenderImage, profile: Profile, settings: RenderSettings = .init(),
                          options: ExportOptions = .init()) throws -> TilePlan {
         let source = try texture(for: image)
-        return try tilePlan(source, profile: profile, settings: settings, options: options)
+        return try tilePlan(frameWidth: source.width, frameHeight: source.height, profile: profile,
+                            settings: settings, options: options)
     }
 
     /// How an Export would divide a frame of this size, without decoding one. The
@@ -56,19 +57,38 @@ extension Renderer {
     public func tilePlan(frameWidth: Int, frameHeight: Int, profile: Profile,
                          settings: RenderSettings = .init(),
                          options: ExportOptions = .init()) throws -> TilePlan {
+        try planned(frameWidth: frameWidth, frameHeight: frameHeight, profile: profile,
+                    settings: settings, options: options, grainModel: .procedural).tiles
+    }
+
+    /// The Tile plan and the render Plan every Tile of it shares, resolved together.
+    ///
+    /// Both come from the same reading of the Profile against the frame, so building
+    /// them separately would resolve the Stock, fit the MTF and build the Grain table
+    /// twice before the first Tile is rendered — and again for every Tile after it.
+    /// A Plan is consulted about the Tile for exactly one thing, how deep a Scattering
+    /// Pyramid fits in it, so a padded Tile that can carry the depth the frame
+    /// resolved to renders against the frame's own Plan unchanged.
+    private func planned(frameWidth: Int, frameHeight: Int, profile: Profile, settings: RenderSettings,
+                         options: ExportOptions,
+                         grainModel: GrainModel) throws -> (tiles: TilePlan, render: Plan) {
         try settings.validate()
         guard frameWidth > 0, frameHeight > 0 else { throw FilmError.invalid("Frame must have a positive size") }
         let tiling = try tiling(profile: profile, settings: settings, frameWidth: frameWidth,
-                                frameHeight: frameHeight, scatterFraction: options.apronFraction)
-        return try TilePlan(frameWidth: frameWidth, frameHeight: frameHeight,
-                            apron: tiling.apron, alignment: tiling.alignment,
-                            budgetBytes: options.textureBudgetBytes, minimumCore: options.minimumTileEdge)
-    }
-
-    private func tilePlan(_ source: any MTLTexture, profile: Profile, settings: RenderSettings,
-                          options: ExportOptions) throws -> TilePlan {
-        try tilePlan(frameWidth: source.width, frameHeight: source.height, profile: profile,
-                     settings: settings, options: options)
+                                frameHeight: frameHeight, scatterFraction: options.apronFraction,
+                                grainModel: grainModel)
+        let tiles = try TilePlan(frameWidth: frameWidth, frameHeight: frameHeight,
+                                 apron: tiling.apron, alignment: tiling.alignment,
+                                 budgetBytes: options.resolvedTextureBudgetBytes, minimumCore: options.minimumTileEdge)
+        let available = Scatter.depthAvailable(tileWidth: tiles.paddedWidth, tileHeight: tiles.paddedHeight)
+        guard available < tiling.plan.scatterDepth else { return (tiles, tiling.plan) }
+        // A Tile too small to carry the frame's pyramid resolves a shallower one. Still
+        // once for the Export: every Tile is rendered at the same padded size.
+        let render = try plan(profile: profile, settings: settings,
+                              frame: Frame(width: frameWidth, height: frameHeight),
+                              tileWidth: tiles.paddedWidth, tileHeight: tiles.paddedHeight,
+                              spatial: true, grainModel: grainModel)
+        return (tiles, render)
     }
 
     /// The tiled loop both public entry points share. `sink` receives each Tile's core,
@@ -76,9 +96,11 @@ extension Renderer {
     private func renderTiles(_ source: any MTLTexture, profile: Profile, settings: RenderSettings,
                              options: ExportOptions, progress: (@Sendable (ExportProgress) -> Void)?,
                              sink: (TilePlan.Tile, UnsafeBufferPointer<Float16>) throws -> Void) async throws {
-        let plan = try tilePlan(source, profile: profile, settings: settings, options: options)
         let thermalState = options.resolvedThermalState
         let grainModel = Self.grainModel(profile, path: .export, thermalState: thermalState)
+        let planned = try planned(frameWidth: source.width, frameHeight: source.height, profile: profile,
+                                  settings: settings, options: options, grainModel: grainModel)
+        let plan = planned.tiles
         let input = try decoder.makeTexture(width: plan.paddedWidth, height: plan.paddedHeight)
         let scratch = try decoder.makeTexture(width: plan.paddedWidth, height: plan.paddedHeight)
         var core = [Float16](repeating: 0, count: plan.coreWidth * plan.coreHeight * 4)
@@ -89,8 +111,8 @@ extension Renderer {
             try copy(source, into: input, from: tile, plan: plan)
             let frame = Frame(width: plan.frameWidth, height: plan.frameHeight,
                               originX: tile.originX, originY: tile.originY)
-            let result = try renderTile(input, into: scratch, frame: frame, profile: profile,
-                                        settings: settings, queue: exportQueue, grainModel: grainModel)
+            let result = try renderTile(input, into: scratch, plan: planned.render, frame: frame,
+                                        profile: profile, settings: settings, queue: exportQueue)
             core.withUnsafeMutableBytes {
                 result.getBytes($0.baseAddress!, bytesPerRow: tile.width * 8,
                                 from: MTLRegionMake2D(tile.insetX, tile.insetY, tile.width, tile.height), mipmapLevel: 0)

@@ -55,8 +55,8 @@ public struct TilePlan: Sendable, Equatable {
     /// - Parameters:
     ///   - apron: the furthest any Pass reaches, in pixels, from the render Plan.
     ///   - budgetBytes: how much the padded Tile's textures may occupy. The pipeline
-    ///     holds both Scattering Pyramids, the MTF's three textures and the two
-    ///     ping-pong textures, which comes to about fourteen Tile-sized allocations.
+    ///     holds one Scattering Pyramid, the MTF's three textures and the two
+    ///     ping-pong textures, which comes to about nine Tile-sized allocations.
     ///   - minimumCore: a Tile smaller than this is more overhead than work; a wide
     ///     enough Apron grows the padded Tile past the budget rather than shrinking
     ///     the core below it, because a Tile Seam is a defect and memory is a target.
@@ -80,7 +80,16 @@ public struct TilePlan: Sendable, Equatable {
         // spends more, on more Tiles, and quietly overruns the figure it was given.
         // Where the widest blur reaches further than that allows, the Apron is capped
         // and the truncated tail is a fraction of a code value rather than a seam.
-        self.apron = min(apron, max(0, (budgetEdge - minimumCore) / 2))
+        //
+        // Bounding it only by what the core floor does not claim is a degenerate cap:
+        // when it binds, `budgetEdge - 2 * apron` *is* `minimumCore` by construction,
+        // so the core collapses to its floor and the whole budget goes to Apron at the
+        // same moment. That is the least efficient Tile the plan can produce, and it
+        // arrives exactly on the frames that can least afford it. Bounding the Apron by
+        // a share of the budget edge as well leaves a core proportionate to the Tile:
+        // at a third each the padded Tile is core plus two Aprons and nothing is spent
+        // rendering a margin twelve times the size of what it protects.
+        self.apron = min(apron, max(0, (budgetEdge - minimumCore) / 2), budgetEdge / 3)
         let apron = self.apron
         // A core has to be a whole number of alignment steps, or the origins derived
         // from it cannot stay on the grid. Rounded down against the budget, so the
@@ -106,10 +115,15 @@ public struct TilePlan: Sendable, Equatable {
     }
 
     /// RGBA float16 textures the pass graph holds at Tile size at once: the two
-    /// ping-pong textures, three for the MTF Pass, and a Scattering Pyramid each for
-    /// Bloom and Halation — a raw extract plus levels and scratch, which sum to about
-    /// eight thirds of a Tile once the halving is counted.
-    public static let tileTextureCount = 14
+    /// ping-pong textures, three for the MTF Pass, and one Scattering Pyramid — a raw
+    /// extract plus levels and scratch, which sum to about eight thirds of a Tile once
+    /// the halving is counted — shared between Bloom and Halation, which run at
+    /// different points in the Pass order and never need both resident.
+    ///
+    /// This is a divisor of the Export memory budget, so it is a claim about the
+    /// renderer rather than a comment about it, and
+    /// `theTileTextureBudgetCountsWhatTheRendererActuallyHolds` asserts it as one.
+    public static let tileTextureCount = 9
 
     public func tile(_ index: Int) -> Tile {
         precondition((0..<count).contains(index), "Tile index out of range")
