@@ -143,7 +143,42 @@ that error rather than asserting the Baker's own output against itself.
 CI runs the process-level CLI tests, checks deterministic catalogue bytes and
 validates every Curve Set, uploading the reports. Renderer tests require Metal;
 a missing Metal device is a failure, not a silent test skip. For a custom SwiftPM
-build directory set `PROFILE_BAKER_EXECUTABLE` to its absolute CLI path.
+build directory set `PROFILE_BAKER_EXECUTABLE` to its absolute CLI path. CI uses
+a Release Baker for CPU-heavy spectral integration while keeping renderer tests
+in Debug; byte-for-byte catalogue comparisons and numerical tolerances remain
+the same. To use that faster Baker locally, including in `bake-catalogue.sh`:
+
+```sh
+swift build -c release --product ProfileBaker
+export PROFILE_BAKER_EXECUTABLE="$(swift build -c release --show-bin-path)/ProfileBaker"
+swift test --skip previewRenderAndStockSwitchStayWithinInteractiveBudgets
+swift test --skip-build --filter previewRenderAndStockSwitchStayWithinInteractiveBudgets
+Scripts/bake-catalogue.sh
+```
+
+GitHub runs CI on pull requests and pushes to `main`, with manual runs available
+from Actions. A new PR update cancels its superseded run. On PRs, a lightweight
+Linux job selects checks from the complete diff against the PR base:
+
+| Changed files | Required macOS checks |
+| --- | --- |
+| Only root `README.md` / `CONTEXT.md`, `docs/`, or `design_handoff_dye_editor/` | None |
+| `FilmApp/` or `FilmApp.xcodeproj/` | iOS app build |
+| `Tests/` or `ProfileBaker/` | Engine tests, catalogue bake, and numerical validation |
+| Shared sources/resources, Curve Sets, scripts, configuration, or unfamiliar paths | Both |
+
+Mixed changes combine the required checks. App and engine jobs run concurrently
+on separate runners, and the existing `engine` check reports their combined
+result. It fails if change detection or any required job fails or is cancelled;
+only intentionally unneeded jobs may be skipped. Configure branch protection to
+require `engine`, rather than the conditional `app` or `engine_tests` jobs.
+Pushes to `main` and manual runs always run both jobs.
+
+Run the change-detection regression tests with:
+
+```sh
+python3 -B -m unittest discover -s Scripts -p 'test_ci_*.py'
+```
 
 ## Monochrome Curve Sets
 
