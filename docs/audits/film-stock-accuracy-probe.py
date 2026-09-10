@@ -1,13 +1,15 @@
-"""Read-only CPU probe of shipped colour grain anchors; no Metal required.
+"""Read-only CPU probe of baseline colour grain anchors; no Metal required.
 
 Run from any directory: python3 docs/audits/film-stock-accuracy-probe.py
 This reproduces neutral-axis cube sampling and the grain envelope, not a render.
 Neutral-axis tetrahedral interpolation reduces to interpolation of diagonal nodes.
 """
 
+import argparse
 import json
 from pathlib import Path
 import struct
+import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,9 +27,14 @@ def sample(data, start, size, coordinate):
     return [a + fraction * (b - a) for a, b in zip(node(low), node(low + 1))]
 
 
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--revision', default='98ba1ec', help='Git revision of the audited fused profiles')
+revision = parser.parse_args().revision
+
 print('Stock | middle-gray coordinate | cached gray RGB | actual gray RGB | envelope at actual gray RGB')
 for path in sorted((ROOT / 'Sources/FilmEngine/Catalogue').glob('*.filmprofile')):
-    data = path.read_bytes()
+    data = subprocess.run(['git', 'show', f'{revision}:{path.relative_to(ROOT).as_posix()}'],
+                          cwd=ROOT, check=True, stdout=subprocess.PIPE).stdout
     assert data[:8] == b'FILMPROF'
     version, length = struct.unpack_from('<II', data, 8)
     assert version == 1

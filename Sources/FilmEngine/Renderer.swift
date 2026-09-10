@@ -430,8 +430,8 @@ public actor Renderer {
         } else { offset = 0 }
         // Metering is at True Speed, not Box Speed: a Stock that behaves slower than
         // the box says is given the light a meter set to what it actually is would
-        // have given it. Cinestill 800T and Velvia 50 are the two the Catalogue
-        // records a difference for; for every other Stock this term is zero.
+        // have given it. Only a documented speed difference should make this
+        // term nonzero; emulsion ancestry does not establish one.
         let rating = log2(metadata.nominalISO / metadata.trueISO)
         let gain = Float(pow(2, settings.exposureStops - offset + rating))
         let failure = metadata.reciprocity.gain(seconds: settings.exposureSeconds)
@@ -456,11 +456,11 @@ public actor Renderer {
         if let s = metadata.colour.inputShaper {
             shaper = SIMD4(1, Float(s.minimumLogExposure), Float(1 / (s.maximumLogExposure - s.minimumLogExposure)), Float(s.middleGrayLogExposure))
         }
-        // Spectral cubes already contain the Baker's scan or print; a Density Space
-        // cube is scanned here.
+        // Legacy fused cubes contain the observation. Foundation density cubes
+        // use the simple scanner; new spectral density cubes use their output LUT.
         let scan = stage == .scan && metadata.colour.cubeOutput != .displayLinearRec2020 && metadata.colour.densityOutput == nil
         var observation: Observation?
-        if let output = metadata.colour.densityOutput {
+        if let output = metadata.colour.densityOutput, stage != .none || metadata.process == .e6 {
             let outputs = stage == .print ? output.printVariants! : output.lutVariants
             let lowerOutput = outputs.first { $0.pushStops == lowerVariant!.pushStops }!
             let upperOutput = upperVariant.flatMap { variant in outputs.first { $0.pushStops == variant.pushStops } } ?? lowerOutput

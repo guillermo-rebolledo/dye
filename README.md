@@ -55,15 +55,15 @@ seed fixes the field. See [the Grain Pass](docs/grain.md). The MTF Pass fits eac
 Stock's published response curve with two Gaussians before the Film Response, and
 the Geometry Pass adds a vignette, gate weave and frame borders after the Output
 Stage. See [the MTF and Geometry Passes](docs/mtf-and-geometry.md).
-Spectral Profiles apply their log-exposure shaper at render time; Density Space
-Colour Cubes and Density Curves with a `scan` Output Stage are inverted through
-transmission and auto-balanced so the Stock's mid-grey returns 0.18. Portra's
-scan is baked into its cubes and is not inverted again, and so is its **Print**:
-a colour negative carries a second Colour Cube per Development Offset for the
-enlarger, and `RenderSettings.outputStage` chooses which set the Film Response
-samples. `outputStage: .none` returns Density Space for diagnostics. Reversal
-Stocks use `none` for real rather than for diagnostics: their cubes carry the
-transparency itself, so nothing inverts them and asking for a scan cannot.
+Spectral Profiles apply their log-exposure shaper at render time. New colour
+profiles map exposure to film density, add grain in that domain, then apply a
+separate scan, print or transparency-viewing cube. Scan and Print share developed
+film payloads; `RenderSettings.outputStage` selects the observation.
+`outputStage: .none` exposes a negative's Density Space for diagnostics. Reversal
+Stocks use `none` for transparency viewing and cannot be inverted as negatives.
+Foundation profiles retain their transmission-based scanner, and legacy fused
+profiles remain readable. See [accuracy and validation](docs/accuracy-validation.md)
+for the research, numerical checks and physical calibration still required.
 
 Reciprocity Failure scales each layer separately by its own Schwarzschild
 exponent once the frame is open longer than the Stock's threshold, before the
@@ -127,18 +127,18 @@ Tri-X 400 and T-Max 100 add the **black & white branch**, which bypasses Colour
 Cube sampling entirely: a Monochrome Collapse into one grey channel, then a
 1024-entry Density Curve. Each Stock's **Spectral Weight** is integrated from its
 digitised Kodak spectral sensitivity against the CIE colour matching functions
-rather than assumed from a luminance weighting, so the two Stocks genuinely see
+rather than assumed from a luminance weighting, so the two Stocks see
 colour differently — Tri-X the bluer, T-Max the greener, by about 5 % of scan
 value on a blue or a green subject at matched luminance. Both Stocks' rms
 granularity is measured rather than artistic. **Contrast Filters** — yellow,
 orange, red, green and blue — are a spectral multiply applied *before* the
 collapse, so a red filter darkens blue sky and lightens brick instead of tinting
-the frame, and each carries its published filter factor so the glass costs
+the frame, and each compensates its derived filter factor so the glass costs
 separation and not exposure. They are offered for black & white Stocks alone.
 Derived filter factors are checked against Kodak's published per-film tables in
 CI. See [the black & white branch](docs/monochrome.md), and
-[the Contrast Filters' sources](Curves/contrast-filters/SOURCES.md) for the two
-filters whose residuals are large and why.
+[the Contrast Filters' sources](Curves/contrast-filters/SOURCES.md) for the measured
+WRATTEN 2 transmission curves and remaining factor uncertainty.
 
 The four Kodak **Vision3** motion picture stocks are the **ECN-2 branch**: 50D and
 250D daylight-balanced at 5500 K, 200T and 500T tungsten at 3200 K, each digitised
@@ -157,11 +157,11 @@ separate.
 Every colour negative now offers a **Print Output Stage** beside the Scan: an
 optical enlargement onto RA-4 paper, digitised from Kodak E-4070, in place of the
 scanner's inversion and auto-balance. What an enlarger and a sheet of paper do to
-a negative is a spectral integral, so it is baked where the scan is — a second
-Colour Cube per Development Offset — and the Metal graph is unchanged. The
+a negative is a spectral integral, baked into a separate density-to-output cube
+per Development Offset. Grain perturbs the film before this observation. The
 enlarger's dichroic filter pack and exposure are *solved* per offset so the Curve
 Set's own reference neutral prints neutral, the way a lab prints each roll. The
-result is a genuinely different picture rather than a filter over the scan:
+result has a different tone response:
 steeper through the midtones, several stops less shadow latitude, and highlights
 that end at paper white instead of rolling off. **Scan stays the default**,
 because most people's mental image of a Stock is a scan and a correct print reads

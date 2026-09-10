@@ -57,7 +57,7 @@ struct CharacteristicCurve {
 struct CurveSet {
     let metadata: FilmProfile
     /// Where the CSVs live. A derived Stock reads its parent's, because it models the
-    /// same Emulsion; nothing else about a derivation may reach the spectral model.
+    /// same Emulsion. Explicit process characteristic curves may override sensitometry.
     let directory: URL
     /// The authored override document, for a Stock derived from another Profile.
     private let derivation: Data?
@@ -107,8 +107,8 @@ struct CurveSet {
         return result
     }
 
-    /// Remjet removal changes what light does inside the film and what the box says.
-    /// Everything the Colour Cubes are baked from stays with the parent Curve Set.
+    /// A derivation shares spectral sources while recording process-specific
+    /// sensitometry, supported rendering resolution and explicit source provenance.
     static let derivableKeys: Set<String> = ["derivedFrom", "id", "displayName", "process",
                                              "nominalISO", "trueISO", "bloom", "halation", "provenance", "characteristicSource", "colour"]
 
@@ -161,8 +161,8 @@ struct CurveSet {
         guard metadata.colour.sourceFingerprint == nil else {
             throw FilmError.invalid("Source fingerprints are derived by the Baker, not authored in stock.json")
         }
-        // 65³ is for a Stock whose curve turns faster than 33 nodes can follow;
-        // it costs eight times the payload, so it is the Curve Set's choice, not a default.
+        // Resolution is chosen against the numerical gate. Each doubling costs
+        // roughly eight times the payload, so it remains an explicit source choice.
         guard [33, 65, 129].contains(metadata.colour.lutSize) else {
             throw FilmError.invalid("The Baker emits 33³, 65³ or 129³ Colour Cubes")
         }

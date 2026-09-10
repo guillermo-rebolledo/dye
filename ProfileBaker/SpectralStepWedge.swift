@@ -30,10 +30,16 @@ func spectralStepWedge(curves: CurveSet, profile: Profile) async throws -> [Step
     let coordinates = spectralValidationCoordinates()
     // Coordinates are already shaped, so undo the runtime shaper by feeding
     // scene-linear light.
-    let scene = coordinates.flatMap { c in
+    var scene = coordinates.flatMap { c in
         (0..<3).map { Float16(model.exposure(at: c[$0]) / pow(10, model.shaper.middleGrayLogExposure) * 0.18) } + [1]
     }
-    let light = try LinearImage(width: coordinates.count, height: 1, rgba: scene)
+    // Keep the chart below the measured MTF's resolvable range. A 649-pixel
+    // strip resolves film detail and legitimately mixes adjacent colour probes;
+    // a compact grid tests point colour without altering the shipped Profile.
+    let width = Int(Double(coordinates.count).squareRoot().rounded(.up))
+    let height = (coordinates.count + width - 1) / width
+    for _ in coordinates.count..<(width * height) { scene += [0.18, 0.18, 0.18, 1] }
+    let light = try LinearImage(width: width, height: height, rgba: scene)
     for variant in curves.metadata.colour.lutVariants {
         let rendered = try await renderer.render(image: .linear(light), profile: profile,
             settings: wedgeSettings(balancedFor: profile, offset: variant.pushStops))

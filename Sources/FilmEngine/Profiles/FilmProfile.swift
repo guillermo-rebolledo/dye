@@ -109,8 +109,9 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         /// the Stock has one: the same negative read by an enlarger and RA-4 paper
         /// instead of by a scanner. Nil is a Stock with no Print, which the renderer
         /// refuses rather than approximating with the scan. Like the scan cubes of a
-        /// spectral negative these are `displayLinearRec2020`, because the print is
-        /// the final image the way a Transparency is.
+        /// legacy spectral negative these are `displayLinearRec2020`. With
+        /// `densityOutput`, both stages share film density payloads and the print
+        /// observation lives in `densityOutput.printVariants`.
         public var printVariants: [Variant]?
         public var lutSize: Int
         public var outputStage: OutputStage

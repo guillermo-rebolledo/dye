@@ -58,7 +58,8 @@ Reading the committed normal-development scan/viewing cubes gives:
 | Vision3 500T | 0.492157 | 0.005336 | 0.180594 | 0 / 0 / 0 |
 | CineStill 800T | 0.492157 | 0.005336 | 0.180594 | 0 / 0 / 0 |
 
-Reproduce with `python3 docs/audits/film-stock-accuracy-probe.py`. This standard
+Reproduce with `python3 docs/audits/film-stock-accuracy-probe.py` (reads Git baseline
+`98ba1ec`, not the newly baked profiles). This standard
 library script reads float16 payloads and reproduces neutral-axis tetrahedral
 interpolation and the envelope calculation. It does **not** execute Metal or
 measure a photograph. Values describe middle-gray light entering Film Response,
