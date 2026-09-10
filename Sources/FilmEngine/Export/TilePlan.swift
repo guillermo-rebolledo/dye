@@ -109,7 +109,7 @@ public struct TilePlan: Sendable, Equatable {
     /// ping-pong textures, three for the MTF Pass, and a Scattering Pyramid each for
     /// Bloom and Halation — a raw extract plus levels and scratch, which sum to about
     /// eight thirds of a Tile once the halving is counted.
-    static let tileTextureCount = 14
+    public static let tileTextureCount = 14
 
     public func tile(_ index: Int) -> Tile {
         precondition((0..<count).contains(index), "Tile index out of range")

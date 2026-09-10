@@ -96,7 +96,8 @@ public actor Renderer {
             scratch = try decoder.makeTexture(width: input.width, height: input.height)
         }
         let frame = Frame(width: input.width, height: input.height)
-        let plan = try plan(profile: profile, settings: settings, frame: frame, tile: input, spatial: true,
+        let plan = try plan(profile: profile, settings: settings, frame: frame,
+                            tileWidth: input.width, tileHeight: input.height, spatial: true,
                             grainModel: Self.grainModel(profile, path: .preview, thermalState: .nominal))
         // The pass graph writes both preview textures. Finish cold profile uploads
         // before refreshing the source: uploading earlier can leave the previous
@@ -143,7 +144,8 @@ public actor Renderer {
     func renderTile(_ input: any MTLTexture, into scratch: any MTLTexture, frame: Frame,
                     profile: Profile, settings: RenderSettings, queue: any MTLCommandQueue,
                     spatial: Bool = true, grainModel: GrainModel = .procedural) throws -> any MTLTexture {
-        let plan = try plan(profile: profile, settings: settings, frame: frame, tile: input,
+        let plan = try plan(profile: profile, settings: settings, frame: frame,
+                            tileWidth: input.width, tileHeight: input.height,
                             spatial: spatial, grainModel: grainModel)
         return try execute(plan, input: input, scratch: scratch, frame: frame,
                            profile: profile, settings: settings, queue: queue)
@@ -405,7 +407,8 @@ public actor Renderer {
     /// Halation radius, a grain cell and a vignette all have to be the frame's.
     /// `tile` is consulted only for how deep a Scattering Pyramid will fit in it.
     private func plan(profile: Profile, settings: RenderSettings, frame: Frame,
-                      tile: any MTLTexture, spatial: Bool, grainModel: GrainModel = .procedural) throws -> Plan {
+                      tileWidth: Int, tileHeight: Int, spatial: Bool,
+                      grainModel: GrainModel = .procedural) throws -> Plan {
         let metadata = profile.metadata
         let width = frame.width, height = frame.height
         let whiteBalance = WhiteBalance.matrix(sceneKelvin: settings.temperatureKelvin, tint: settings.tint, stockBalanceKelvin: metadata.balance)
@@ -495,8 +498,10 @@ public actor Renderer {
                     grayDensity: SIMD4(Float(gray.x), Float(gray.y), Float(gray.z), scan ? 1 : 0),
                     baseDensity: SIMD4(Float(base.x), Float(base.y), Float(base.z), 0),
                     adjustments: Self.adjustments(settings.adjustments),
-                    bloom: spatial ? bloom(profile: profile, settings: settings, frame: frame, tile: tile) : nil,
-                    halation: spatial ? halation(profile: profile, settings: settings, frame: frame, tile: tile) : nil,
+                    bloom: spatial ? bloom(profile: profile, settings: settings, frame: frame,
+                                           tileWidth: tileWidth, tileHeight: tileHeight) : nil,
+                    halation: spatial ? halation(profile: profile, settings: settings, frame: frame,
+                                                 tileWidth: tileWidth, tileHeight: tileHeight) : nil,
                     mtf: spatial ? mtf(profile: profile, width: width, height: height) : nil,
                     grain: spatial ? grain(profile: profile, settings: settings, width: width, height: height,
                                            base: base, gray: gray, model: grainModel) : nil,
@@ -523,8 +528,15 @@ public actor Renderer {
     /// they will ever be and both answers bound what any smaller Tile asks for.
     func tiling(profile: Profile, settings: RenderSettings, source: any MTLTexture,
                 scatterFraction: Double) throws -> (apron: Int, alignment: Int) {
+        try tiling(profile: profile, settings: settings, frameWidth: source.width,
+                   frameHeight: source.height, scatterFraction: scatterFraction)
+    }
+
+    func tiling(profile: Profile, settings: RenderSettings, frameWidth: Int, frameHeight: Int,
+                scatterFraction: Double) throws -> (apron: Int, alignment: Int) {
         let plan = try plan(profile: profile, settings: settings,
-                            frame: Frame(width: source.width, height: source.height), tile: source, spatial: true)
+                            frame: Frame(width: frameWidth, height: frameHeight),
+                            tileWidth: frameWidth, tileHeight: frameHeight, spatial: true)
         let scatter = Int((plan.scatterReach * min(max(scatterFraction, 0), 1)).rounded(.up))
         return (max(plan.exactReach, scatter), plan.alignment)
     }
@@ -710,7 +722,8 @@ public actor Renderer {
     /// The lens spreads a fraction of all the light across the frame, so Bloom has no
     /// threshold, no tint and one radius, and replaces what it takes rather than adding
     /// to it. Nil when the modelled lens or the user has nothing to diffuse.
-    private func bloom(profile: Profile, settings: RenderSettings, frame: Frame, tile: any MTLTexture) -> Scatter? {
+    private func bloom(profile: Profile, settings: RenderSettings, frame: Frame,
+                       tileWidth: Int, tileHeight: Int) -> Scatter? {
         let metadata = profile.metadata.bloom
         // Keep 0...100% faithful to the lens. Above the detent, open up a
         // useful diffusion range even for stocks whose baseline is only 2%.
@@ -721,12 +734,14 @@ public actor Renderer {
         // A zero threshold with the narrowest knee takes every positive value: light a
         // lens cannot have received is not light it can diffuse.
         return scatter(profile: profile, radiusMicrons: [Double](repeating: metadata.radiusMicrons, count: 3),
-                       parameters: SIMD4(0, 1e-4, Float(strength), 1), tint: [1, 1, 1], frame: frame, tile: tile)
+                       parameters: SIMD4(0, 1e-4, Float(strength), 1), tint: [1, 1, 1], frame: frame,
+                       tileWidth: tileWidth, tileHeight: tileHeight)
     }
 
     /// Resolves the Profile's Film-Plane Micron radii against this image, or nil when
     /// the Stock or the user has no Halation to add.
-    private func halation(profile: Profile, settings: RenderSettings, frame: Frame, tile: any MTLTexture) -> Scatter? {
+    private func halation(profile: Profile, settings: RenderSettings, frame: Frame,
+                          tileWidth: Int, tileHeight: Int) -> Scatter? {
         let metadata = profile.metadata.halation
         let boost = max(0, settings.halationIntensity - 1)
         let strength = metadata.strength * settings.halationIntensity
@@ -738,14 +753,14 @@ public actor Renderer {
         let threshold = metadata.threshold + (min(metadata.threshold, 0.4) - metadata.threshold) * boost * boost
         return scatter(profile: profile, radiusMicrons: metadata.radiusMicrons,
                        parameters: SIMD4(Float(threshold), Float(max(threshold / 2, 1e-4)), Float(strength), 0),
-                       tint: metadata.tint, frame: frame, tile: tile)
+                       tint: metadata.tint, frame: frame, tileWidth: tileWidth, tileHeight: tileHeight)
     }
 
     /// Splits each channel's requested radius across the pyramid's levels. Film-Plane
     /// Microns become pixels through the Stock's Frame Width, so what is scattered
     /// covers the same fraction of the frame at any resolution.
     private func scatter(profile: Profile, radiusMicrons: [Double], parameters: SIMD4<Float>,
-                         tint: [Double], frame: Frame, tile: any MTLTexture) -> Scatter {
+                         tint: [Double], frame: Frame, tileWidth: Int, tileHeight: Int) -> Scatter {
         let pixelsPerMicron = Self.pixelsPerMicron(profile, width: frame.width, height: frame.height)
         let largest = radiusMicrons.max()! * pixelsPerMicron
         // Deep enough for the widest channel, and never deeper than the Tile allows:
@@ -753,7 +768,7 @@ public actor Renderer {
         // radius above comes from the frame and the depth cap here from the Tile,
         // which is what keeps a Tile's halo the same size as the untiled one's.
         let reach = Self.scatterLevelSigmas.firstIndex { $0 >= largest } ?? Self.maximumScatterLevels
-        let count = min(max(reach, 1), max(1, Int(log2(Double(min(tile.width, tile.height))))))
+        let count = min(max(reach, 1), max(1, Int(log2(Double(min(tileWidth, tileHeight))))))
         let sigmas = Array(Self.scatterLevelSigmas.prefix(count + 1))
         var weights = [SIMD4<Float>](repeating: .zero, count: count + 1)
         for channel in 0..<3 {

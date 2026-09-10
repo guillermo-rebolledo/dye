@@ -49,14 +49,26 @@ extension Renderer {
         return try tilePlan(source, profile: profile, settings: settings, options: options)
     }
 
-    private func tilePlan(_ source: any MTLTexture, profile: Profile, settings: RenderSettings,
-                          options: ExportOptions) throws -> TilePlan {
+    /// How an Export would divide a frame of this size, without decoding one. The
+    /// Tile plan depends on the frame's dimensions and on the Profile's reach, never
+    /// on its pixels, so the regression table can span the sizes a phone actually
+    /// hands the Export without allocating a 372MB texture for each of them.
+    public func tilePlan(frameWidth: Int, frameHeight: Int, profile: Profile,
+                         settings: RenderSettings = .init(),
+                         options: ExportOptions = .init()) throws -> TilePlan {
         try settings.validate()
-        let tiling = try tiling(profile: profile, settings: settings, source: source,
-                                scatterFraction: options.apronFraction)
-        return try TilePlan(frameWidth: source.width, frameHeight: source.height,
+        guard frameWidth > 0, frameHeight > 0 else { throw FilmError.invalid("Frame must have a positive size") }
+        let tiling = try tiling(profile: profile, settings: settings, frameWidth: frameWidth,
+                                frameHeight: frameHeight, scatterFraction: options.apronFraction)
+        return try TilePlan(frameWidth: frameWidth, frameHeight: frameHeight,
                             apron: tiling.apron, alignment: tiling.alignment,
                             budgetBytes: options.textureBudgetBytes, minimumCore: options.minimumTileEdge)
+    }
+
+    private func tilePlan(_ source: any MTLTexture, profile: Profile, settings: RenderSettings,
+                          options: ExportOptions) throws -> TilePlan {
+        try tilePlan(frameWidth: source.width, frameHeight: source.height, profile: profile,
+                     settings: settings, options: options)
     }
 
     /// The tiled loop both public entry points share. `sink` receives each Tile's core,
