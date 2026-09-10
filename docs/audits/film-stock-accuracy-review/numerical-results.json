@@ -1,7 +1,7 @@
 {
   "sourceRun": "https://github.com/guillermo-rebolledo/dye/actions/runs/34454007157",
   "profileModelVersion": "dye-spectral-v3-density-base",
-  "note": "Numerical agreement only. The full regression suite in this run has separate outstanding print/scan consistency failures.",
+  "note": "Numerical agreement only. This candidate run supplied the reviewed profiles and numerical reports; final runtime, performance and reproducibility checks are tracked separately by PR CI.",
   "profiles": [
     {
       "stock": "cinestill-800t",

@@ -98,7 +98,9 @@ public actor Renderer {
         let frame = Frame(width: input.width, height: input.height)
         let plan = try plan(profile: profile, settings: settings, frame: frame, tile: input, spatial: true,
                             grainModel: Self.grainModel(profile, path: .preview, thermalState: .nominal))
-        // Prepare profile resources before refreshing the reused ping-pong source.
+        // The pass graph writes both preview textures. Finish cold profile uploads
+        // before refreshing the source: uploading earlier can leave the previous
+        // frame visible to Metal when switching to a large uncached response.
         if case .linear(let image) = image {
             image.rgba.withUnsafeBytes {
                 input.replace(region: MTLRegionMake2D(0, 0, image.width, image.height), mipmapLevel: 0,
@@ -413,10 +415,9 @@ public actor Renderer {
         // is how a negative is read in Density Space, not a way to add a stage.
         let stage = metadata.colour.outputStage == OutputStage.none
             ? OutputStage.none : (settings.outputStage ?? metadata.colour.outputStage)
-        // The Print is a second set of baked Colour Cubes rather than a Pass: what
-        // the enlarger and the paper do to a negative is a spectral integral, so it
-        // is resolved where the scan's is. A Stock with no Print is told so rather
-        // than given the scan's cubes under the print's name.
+        // Legacy profiles bake the Print into their response cubes; density-output
+        // profiles select a separate observation cube. Both require an explicit
+        // Print variant instead of silently substituting the Scan.
         guard stage != .print || metadata.colour.printVariants != nil else {
             throw FilmError.invalid("Profile \(metadata.id): no Print Output Stage")
         }
@@ -948,7 +949,10 @@ public actor Renderer {
             responseCache.append(entry)
             return entry
         }
+        let clock = ContinuousClock()
+        let begin = clock.now
         let payload = try profile.readPayload(name)
+        let readEnd = clock.now
         let entry: ResponseEntry
         if profile.metadata.monochrome != nil {
             let values = try decodeHalfValues(payload)
@@ -978,11 +982,13 @@ public actor Renderer {
             let outputNames = (output?.lutVariants ?? []) + (output?.printVariants ?? [])
             let size = outputNames.contains { $0.lut == name } ? output!.lutSize : profile.metadata.colour.lutSize
             let cube = try ColourCube(size: size, payload: payload)
+            print("[DEBUG-profile-load] \(profile.id) \(name): decode \(clock.now - readEnd)")
             let coordinate = Self.responseCoordinate(0.18, shaper: profile.metadata.colour.inputShaper)
             let baseCoordinate = profile.metadata.process == .e6 && output != nil ? 1.0 : 0.0
             entry = ResponseEntry(id: profile.cacheID, name: name, texture: try makeColourCube(cube),
                                   grayDensity: cube.sample(SIMD3(repeating: coordinate)), baseDensity: cube.sample(SIMD3(repeating: baseCoordinate)))
         }
+        print("[DEBUG-profile-load] \(profile.id) \(name): read \(readEnd - begin), total \(clock.now - begin)")
         responseCache.append(entry)
         if responseCache.count > textureCacheCapacity { responseCache.removeFirst() }
         return entry

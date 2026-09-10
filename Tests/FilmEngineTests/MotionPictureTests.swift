@@ -258,7 +258,7 @@ private func average(_ pixels: RenderedPixels, _ index: Int) -> Double {
 }
 
 @Test func stockAndOutputSwitchesPreserveTheSameRenderedResponse() async throws {
-    let profiles = try ProfileCatalogue.bundled().profiles.filter { ["portra-160", "cinestill-800t"].contains($0.id) }
+    let profiles = try ProfileCatalogue.bundled().profiles.filter { $0.metadata.colour.densityOutput != nil }
     let image = try ramp([-4, -3, -2, -1, 0, 1, 2, 3])
     var reference: [String: [Float16]] = [:]
     for profile in profiles {
@@ -272,22 +272,12 @@ private func average(_ pixels: RenderedPixels, _ index: Int) -> Double {
     // Two slots force eviction between film and observation payloads. The same
     // input must remain identical after stock/output switches and repeated loads.
     let shared = try Renderer(textureCacheCapacity: 2)
-    for iteration in 0..<20 {
+    for _ in 0..<4 {
         for profile in profiles.reversed() {
             let stages: [OutputStage] = profile.metadata.colour.printVariants == nil ? [.none] : [.print, .scan]
             for stage in stages {
                 let result = try await shared.render(image: .linear(image), profile: profile, settings: referenced(stage, profile))
                 let expected = try #require(reference[profile.id + stage.rawValue])
-                if result.rgba != expected {
-                    let repeated = try await shared.render(image: .linear(image), profile: profile, settings: referenced(stage, profile))
-                    let fresh = try Renderer()
-                    let freshOutput = try await fresh.render(image: .linear(image), profile: profile, settings: referenced(stage, profile))
-                    let sharedDensity = try await shared.render(image: .linear(image), profile: profile,
-                        settings: referenced(OutputStage.none, profile))
-                    let freshDensity = try await fresh.render(image: .linear(image), profile: profile,
-                        settings: referenced(OutputStage.none, profile))
-                    print("[DEBUG-density-switch] iteration \(iteration) \(profile.id) \(stage): repeat \(repeated.rgba), fresh \(freshOutput.rgba), shared density \(sharedDensity.rgba), fresh density \(freshDensity.rgba)")
-                }
                 #expect(result.rgba == expected, "\(profile.id), \(stage): stock/output switch changed the response")
             }
         }

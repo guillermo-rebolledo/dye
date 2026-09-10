@@ -29,6 +29,10 @@ one does not establish the others.
   three-vector dot product. RGB reconstruction remains a metamer assumption.
 - Published RGB MTF data are retained and fitted per channel. The two-Gaussian
   spatial approximation and the mapping to working RGB still need empirical checks.
+- Preview prepares cold profile resources before refreshing its reused input.
+  A native stock/output-switch regression exposed CineStill applying its response
+  to the previous Portra render. Preparing first fixes the reproduced failure;
+  bit-exact comparisons cover repeated stock switches with cache eviction.
 - Borrowed Velvia dyes and Vision3 250D spectra now carry approximation provenance.
 
 ## Disposition of every audit finding
