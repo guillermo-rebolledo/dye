@@ -32,9 +32,15 @@ extension Renderer {
         let width = source.width, height = source.height
         var rgba = [Float16](repeating: 0, count: width * height * 4)
         try await renderTiles(source, profile: profile, settings: settings, options: options, progress: progress) { tile, pixels in
-            for row in 0..<tile.height {
-                let destination = ((tile.y + row) * width + tile.x) * 4
-                for index in 0..<(tile.width * 4) { rgba[destination + index] = pixels[row * tile.width * 4 + index] }
+            // A row at a time rather than a component at a time: the Tile's rows are
+            // contiguous and so are the frame's, and only where they meet differs.
+            rgba.withUnsafeMutableBufferPointer { frame in
+                for row in 0..<tile.height {
+                    let destination = ((tile.y + row) * width + tile.x) * 4
+                    let source = row * tile.width * 4
+                    UnsafeMutableBufferPointer(rebasing: frame[destination..<(destination + tile.width * 4)])
+                        .update(from: UnsafeBufferPointer(rebasing: pixels[source..<(source + tile.width * 4)]))
+                }
             }
         }
         return RenderedPixels(width: width, height: height, rgba: rgba, output: settings.output)

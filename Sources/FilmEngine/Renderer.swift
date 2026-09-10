@@ -11,8 +11,13 @@ public actor Renderer {
     let exportQueue: any MTLCommandQueue
     private let pipelines: [String: any MTLComputePipelineState]
     let decoder: ImageDecoder
-    private let textureCacheCapacity: Int
+    private let responseCacheBudgetBytes: Int
     private var responseCache: [ResponseEntry] = []
+    /// Which Plan an entry was last handed to. A Plan can ask for four cubes at once —
+    /// lower and upper Film Response for a fractional Development Offset, and the same
+    /// pair again for the Output Stage — so a budget that let the fourth evict the
+    /// first would hand the Plan a texture it had already released.
+    private var planEpoch = 0
     /// One pyramid, not one per Scattering Pass. Bloom and Halation ask for different
     /// radii and so resolve to different depths, but that is a sizing question rather
     /// than a lifetime one: they run at different points in the Pass order and Bloom's
@@ -27,15 +32,29 @@ public actor Renderer {
         let id: UUID
         let name: String
         let texture: any MTLTexture
+        /// What holding this entry costs, which is what the budget is counted in.
+        /// Entry counts cannot know that one Stock's cube is eight times another's.
+        let bytes: Int
+        /// The Plan that last asked for it; never evicted while that Plan is building.
+        var epoch: Int
         /// Density Space value of Working Space mid-grey, the scan's auto-balance reference.
         let grayDensity: SIMD3<Double>
         /// Density Space value of zero exposure, the scan's black point.
         let baseDensity: SIMD3<Double>
     }
 
-    public init(textureCacheCapacity: Int = 4) throws {
-        guard (2...32).contains(textureCacheCapacity) else { throw FilmError.invalid("Texture cache capacity must be 2...32") }
-        self.textureCacheCapacity = textureCacheCapacity
+    /// - Parameter responseCacheBudgetBytes: how much Colour Cube and Density Curve
+    ///   texture the Renderer may keep resident. Counted in bytes rather than in
+    ///   entries because the Catalogue's cubes are not the same size: a 65³ cube is
+    ///   2.10MB and Cinestill's 129³ is 16.38MB, so four entries is anywhere between
+    ///   8KB and 65MB. The default holds a whole Catalogue sweep at default settings,
+    ///   which is what stops a filmstrip or a Contact Sheet evicting its own earlier
+    ///   reads and paying the full sweep again on the next open.
+    public init(responseCacheBudgetBytes: Int = 96 << 20) throws {
+        guard responseCacheBudgetBytes >= 16 << 20 else {
+            throw FilmError.invalid("The Colour Cube budget must be at least 16MB")
+        }
+        self.responseCacheBudgetBytes = responseCacheBudgetBytes
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue(),
               let exportQueue = device.makeCommandQueue() else {
             throw FilmError.invalid("Metal is unavailable")
@@ -469,6 +488,8 @@ public actor Renderer {
               tileWidth: Int, tileHeight: Int, spatial: Bool,
               grainModel: GrainModel = .procedural) throws -> Plan {
         counters.plansBuilt += 1
+        planEpoch += 1
+        defer { evictResponsesOverBudget() }
         let metadata = profile.metadata
         let width = frame.width, height = frame.height
         let whiteBalance = WhiteBalance.matrix(sceneKelvin: settings.temperatureKelvin, tint: settings.tint, stockBalanceKelvin: metadata.balance)
@@ -1037,7 +1058,8 @@ public actor Renderer {
     private func responseEntry(for profile: Profile, name: String?) throws -> ResponseEntry {
         guard let name else { throw FilmError.invalid("Profile has no Film Response payload") }
         if let index = responseCache.firstIndex(where: { $0.id == profile.cacheID && $0.name == name }) {
-            let entry = responseCache.remove(at: index)
+            var entry = responseCache.remove(at: index)
+            entry.epoch = planEpoch
             responseCache.append(entry)
             return entry
         }
@@ -1064,7 +1086,8 @@ public actor Renderer {
             let gray = Double(values[low]) + (position - Double(low)) * (Double(values[low + 1]) - Double(values[low]))
             let blackPoint = Self.responseCoordinate(0, shaper: profile.metadata.colour.inputShaper) * 1023
             let base = Double(values[min(Int(blackPoint), 1023)])
-            entry = ResponseEntry(id: profile.cacheID, name: name, texture: curve, grayDensity: SIMD3(repeating: gray),
+            entry = ResponseEntry(id: profile.cacheID, name: name, texture: curve, bytes: 1024 * 2,
+                                  epoch: planEpoch, grayDensity: SIMD3(repeating: gray),
                                   baseDensity: SIMD3(repeating: base))
         } else {
             let output = profile.metadata.colour.densityOutput
@@ -1074,11 +1097,37 @@ public actor Renderer {
             let coordinate = Self.responseCoordinate(0.18, shaper: profile.metadata.colour.inputShaper)
             let baseCoordinate = profile.metadata.process == .e6 && output != nil ? 1.0 : 0.0
             entry = ResponseEntry(id: profile.cacheID, name: name, texture: try makeColourCube(cube),
+                                  bytes: cube.size * cube.size * cube.size * 8, epoch: planEpoch,
                                   grayDensity: cube.sample(SIMD3(repeating: coordinate)), baseDensity: cube.sample(SIMD3(repeating: baseCoordinate)))
         }
         responseCache.append(entry)
-        if responseCache.count > textureCacheCapacity { responseCache.removeFirst() }
+        evictResponsesOverBudget()
         return entry
+    }
+
+    /// Least recently used first, and never an entry the Plan being built is holding:
+    /// a Plan's own inputs are alive until it is encoded, whatever the budget says.
+    private func evictResponsesOverBudget() {
+        var held = responseCache.reduce(0) { $0 + $1.bytes }
+        while held > responseCacheBudgetBytes,
+              let index = responseCache.firstIndex(where: { $0.epoch != planEpoch }) {
+            held -= responseCache[index].bytes
+            responseCache.remove(at: index)
+        }
+    }
+
+    /// Colour Cube and Density Curve texture the Renderer is holding right now.
+    public var retainedResponseBytes: Int { responseCache.reduce(0) { $0 + $1.bytes } }
+
+    /// Drops every cached Colour Cube and the Scattering Pyramid. Nothing is lost but
+    /// the reading of them: a render that needs one reads it again. This is what a
+    /// memory-pressure warning calls, and what an editor that has gone away can call
+    /// rather than holding a few hundred megabytes for a re-render that may not come.
+    public func releaseCaches() {
+        responseCache.removeAll()
+        scatterPyramid = nil
+        mtfTextures = nil
+        previewTextures = nil
     }
 
     /// Where scene-linear grey lands in a Density Curve, in [0, 1]. A Curve Set with
