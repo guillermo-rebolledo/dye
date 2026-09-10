@@ -31,6 +31,22 @@ one does not establish the others.
   spatial approximation and the mapping to working RGB still need empirical checks.
 - Borrowed Velvia dyes and Vision3 250D spectra now carry approximation provenance.
 
+## Disposition of every audit finding
+
+| Finding | Implemented response | Remaining dependency |
+| --- | --- | --- |
+| 1. Grain reference coordinate | Shared log-shaper sampling; all-stock, all-stage grain regression | Physical spatial calibration |
+| 2. Independent validation | Expanded numerical probes, hashed Lab/density scorer and held-out capture manifest | Actual film captures and repeatability-derived limits |
+| 3. CineStill process | Manufacturer Cs41 curves, explicit lineage/provenance, normal EI 800 | Fully specified C-41 process measurements and exposure units |
+| 4. Vision3 measurements | Digitized isolated dye/mask curves and channel sigma(D); constrained aggregate fit | Densitometer-weighted amount fit and additional stock measurements |
+| 5. Grain/output order | Film density → grain → observation; matching preview/export algorithms | Measured grain PSD/covariance and device checks |
+| 6. Input and scanner | Benchmark requires explicit input/output workflow and separates input kinds | Controlled RAW/rendered pairs and locked scanner calibration |
+| 7. Spectra/provenance | Consistent nonnegative projection; borrowed data classified as approximations | Reflectance/illuminant references, Status A/M weights |
+| 8. Secondary controls | WRATTEN 2 transmission and RGB MTF retained; artistic controls documented | Process-specific development, reciprocity and halo/lens measurements |
+
+No missing physical measurements were replaced with invented constants. Dependencies
+in the last column are follow-up experiments, not claims that calibration is complete.
+
 ## Numerical checks
 
 `ProfileBaker validate` still traverses the public renderer. It compares neutral
@@ -47,7 +63,13 @@ It is a numerical interpolation test, never an independent film reference.
 The denser coverage exposes errors that four chromatic probes missed. Cube
 resolution is selected per source set against the same tolerance. Higher resolution
 costs payload size and texture memory; observation and film-density payloads are
-shared across variants/stages where the transform is identical.
+shared across variants/stages where the transform is identical. The uncompressed
+Catalogue grows from 24.43 MiB to 209.74 MiB (CineStill: 75.99 MiB). Profiles load
+metadata first and upload only the selected payloads; the texture cache remains
+bounded. The existing preview performance budget is still enforced in CI.
+
+The [native contact-sheet review](audits/film-stock-accuracy-review/README.md)
+records the accepted visual differences and the limits of an SDR synthetic review.
 
 The normal CI job enforces committed profile bytes and bit-exact golden images.
 The optional **Film profile candidates** workflow is requested with the

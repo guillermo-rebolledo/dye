@@ -174,7 +174,7 @@ struct CurveSet {
         get throws {
             guard metadata.colour.inputShaper != nil else { return metadata }
             var hash = SHA256()
-            hash.update(data: Data("dye-spectral-v2-density-output\0".utf8))
+            hash.update(data: Data("dye-spectral-v3-density-base\0".utf8))
             // The two spectral branches consume different sources, so each hashes its
             // own list. A Stock cannot change branch without changing its fingerprint.
             var sources = metadata.process.isMonochrome

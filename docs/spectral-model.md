@@ -82,7 +82,7 @@ roughly 13.6 stops; Vision3 500T's are −4.05…1.05 with reference gray at −
 and above that domain the renderer clamps to the endpoints. The renderer applies
 this shaper itself whenever `colour.inputShaper` is present, after White Balance
 and Exposure, so callers always supply scene-linear Working Space light. The
-Development Offset blends the two nearest variants linearly and rates the Stock
+Development Offset blends the two nearest film-density variants linearly and rates the Stock
 faster by the same number of stops; the validation harness passes an equal
 `exposureStops` so each variant is probed at the CSV's physical exposure.
 

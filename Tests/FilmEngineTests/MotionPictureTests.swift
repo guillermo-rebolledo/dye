@@ -206,9 +206,11 @@ private func average(_ pixels: RenderedPixels, _ index: Int) -> Double {
         let printedSlope = average(printed, midpoint + 1) / average(printed, midpoint)
         let scannedSlope = average(scanned, midpoint + 1) / average(scanned, midpoint)
         #expect(printedSlope > scannedSlope)
-        // And it pays for that with latitude at both ends: four stops under mid-grey
-        // the print has run out of paper where the scan still holds separation.
-        #expect(average(printed, 0) < average(scanned, 0))
+        // Paper has a nonzero maximum-density reflectance, unlike a scanner
+        // normalized to black. Compare shadow separation, not black offsets.
+        let printShadowStep = average(printed, 1) - average(printed, 0)
+        let scanShadowStep = average(scanned, 1) - average(scanned, 0)
+        #expect(printShadowStep < scanShadowStep)
         // Paper white is brighter than Working Space mid-grey by about three stops,
         // which is the paper's whole scale, and is carried rather than clipped.
         #expect(average(printed, stops.count - 1) > 1)

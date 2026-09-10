@@ -170,6 +170,7 @@ private func flattening(_ profile: Profile) throws -> Profile {
         var mtf = try #require(metadata["mtf"] as? [String: Any])
         let cycles: [Double] = try #require(mtf["cyclesPerMM"] as? [Double])
         mtf["response"] = [Double](repeating: 1, count: cycles.count)
+        mtf["channelResponse"] = nil
         metadata["mtf"] = mtf
     }
 }

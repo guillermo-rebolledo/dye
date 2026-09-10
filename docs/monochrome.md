@@ -59,13 +59,10 @@ nothing like Rec.2020 luma's 0.678 on green. Tri-X is the bluer of the two and
 T-Max the greener, and against a luminance-matched neutral that is worth about
 5 % of scan value each way on a blue or a green subject.
 
-**On MEM-248's red target.** The ticket expected a red subject to be the clearest
-evidence and expected Tri-X to render it darker. Through the digitised F-4017 and
-F-4016 curves it is neither: the two Stocks separate a red subject by well under
-one per cent, with Tri-X very slightly the *lighter*. Red is where these two films
-agree; blue and green are where they do not. `MonochromeTests` asserts the
-measured direction and says so at the assertion, and the Curve Sets' SOURCES.md
-carry the numbers.
+**Red-target agreement.** The two stocks separate the test's red subject by less
+than one per cent. The tiny direction changes with nonnegative spectral projection
+and is not evidence of a meaningful film distinction. Blue and green separate
+more strongly; both stocks darken red against the test's luminance-matched neutral.
 
 ## Contrast Filters
 

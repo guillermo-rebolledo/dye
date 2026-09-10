@@ -22,7 +22,9 @@ func aBlackAndWhiteStockCarriesADensityCurveAndNoColourCube(id: String) throws {
     #expect(profile.metadata.colour.cubeOutput == nil)
     let monochrome = try #require(profile.metadata.monochrome)
     // A 1024-entry float16 Density Curve is the whole Film Response payload.
-    #expect(try ProfileContainer.encode(profile).count < 8 * 1024)
+    let encoded = try ProfileContainer.encode(profile)
+    let headerLength = Int(encoded[12]) | Int(encoded[13]) << 8 | Int(encoded[14]) << 16 | Int(encoded[15]) << 24
+    #expect(encoded.count == 16 + headerLength + 2048)
     let weight = try #require(monochrome.weight(for: .none))
     #expect(abs(weight.reduce(0, +) - 1) < 1e-9)
     // Not a luminance weighting: Rec.2020 luma would put roughly two thirds of the
@@ -72,16 +74,12 @@ private func hueAgainstMatchedNeutral(_ renderer: Renderer, _ id: String, _ hue:
     let greenOnTriX = try await ratio("tri-x-400", [0.06, 0.30, 0.06])
     let greenOnTMax = try await ratio("t-max-100", [0.06, 0.30, 0.06])
     #expect(greenOnTMax > greenOnTriX * 1.03)
-    // MEM-248 expected a red target to be the clearest case and to run the other way.
-    // It is neither. Through the digitised F-4017 and F-4016 spectral sensitivity
-    // curves the two Stocks separate a red subject by well under one per cent, with
-    // Tri-X very slightly the *lighter* — so this asserts what the datasheets give,
-    // which is that red is where these two Stocks agree. Curves/tri-x-400/SOURCES.md
-    // records the numbers; a red subject is still darker than a neutral on both.
+    // Red is where these two measured sensitivities nearly agree. The tiny
+    // direction changes with the nonnegative metamer projection, so it is not
+    // evidence of a meaningful stock distinction. Both darken it versus neutral.
     let redOnTriX = try await ratio("tri-x-400", [0.50, 0.06, 0.06])
     let redOnTMax = try await ratio("t-max-100", [0.50, 0.06, 0.06])
-    #expect(redOnTriX >= redOnTMax)
-    #expect(redOnTriX < redOnTMax * 1.01)
+    #expect(abs(redOnTriX / redOnTMax - 1) < 0.01)
     #expect(redOnTriX < 0.95 && redOnTMax < 0.95)
 }
 
@@ -203,7 +201,8 @@ func aContrastFilterMovesTonalSeparationAndNotExposure(id: String) async throws 
     // Both still derive the five Contrast Filters; only the evidence differs.
     #expect(foma.metadata.monochrome?.contrastFilters?.count == 5)
     #expect(foma.metadata.provenance["spectral.contrastFilters"] == .approximation)
-    #expect(triX.metadata.provenance["spectral.contrastFilters"] == .artistic)
+    #expect(triX.metadata.provenance["spectral.contrastFilters"] == .approximation)
+    #expect(triX.metadata.provenance["spectral.contrastFilterData"] == .measured)
     #expect(foma.metadata.isApproximation)
-    #expect(!triX.metadata.isApproximation)
+    #expect(triX.metadata.isApproximation)
 }

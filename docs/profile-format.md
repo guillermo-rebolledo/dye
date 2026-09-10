@@ -119,7 +119,7 @@ A Colour Cube is red-fastest, then green, then blue, RGBA little-endian float16;
 its byte length is `lutSize³ × 8`. The Baker emits 33, 65 or 129; higher resolution is for a Stock
 whose Characteristic Curve turns faster than 33 nodes can follow between them,
 which Velvia 50 does, and it costs eight times the payload. Calibration
-cubes may use any size 2…65. A Density Curve is 1024 little-endian float16 values,
+cubes may use any size 2…129. A Density Curve is 1024 little-endian float16 values,
 2048 bytes. Alpha is carried by the input, not taken from the Colour Cube.
 
 The codec emits sorted JSON keys and sorts payloads by name for deterministic
@@ -130,7 +130,7 @@ payload values. Metadata-only loading validates the header and byte ranges;
 actual payload values are checked when loaded for rendering.
 
 `ProfileCatalogue.bundled()` reads only metadata at launch. The renderer lazily
-uploads Colour Cubes and keeps the three most recently used textures by default.
+uploads Colour Cubes and keeps four recently used textures by default.
 Cache keys identify loaded content, so identical ids in different files and
 renamed Display Names cannot accidentally reuse stale textures. The cache holds
 four entries so a blended Development Offset keeps both neighbouring cubes warm.
@@ -142,8 +142,9 @@ Optional `colour.inputShaper` contains `minimumLogExposure`, `maximumLogExposure
 and `middleGrayLogExposure` in log10 lux-seconds. They are finite, ordered and
 bounded to −10…10. With this shaper, Output Stage must be `scan` — or `none` for
 E-6, whose cube carries the transparency itself rather than a scan of a negative.
-`colour.cubeOutput` must be `displayLinearRec2020` for a colour Profile and absent
-for a B&W one, which has no cube whose output to describe. A display-linear cube
+`colour.cubeOutput` is `density` when `densityOutput` supplies the observation,
+or `displayLinearRec2020` for a legacy fused colour Profile. It is absent for B&W,
+which has no cube whose output to describe. A display-linear cube
 without a shaper is rejected. Absent extensions
 retain the existing linear [0, 1] input / Density Space output contract.
 
@@ -155,8 +156,8 @@ Provenance paths describe measured source arrays and artistic model parameters.
 
 The binary payload layout is unchanged. The renderer applies the shaper at render
 time and treats `displayLinearRec2020` cubes as already scanned, so the Scan
-Output Stage passes them through. Density Space cubes with `outputStage: scan`
-are inverted and auto-balanced by the renderer instead.
+Output Stage passes them through. New spectral density cubes use `densityOutput`;
+foundation Density Space cubes use the renderer's simple transmission scanner.
 
 ## The Print Output Stage (MEM-249)
 
@@ -166,5 +167,5 @@ and `spectral.enlarger` for the RA-4 paper's measured charts and the modelled
 darkroom around them. The paper's three
 CSVs join that Profile's source fingerprint, so a Profile baked against one paper
 does not validate against another. Payload byte lengths and the container layout
-are unchanged; a printing Profile simply carries twice as many Colour Cubes, and
+are unchanged. New profiles share film-density payloads across Scan and Print, and
 the container loads them lazily like any other.

@@ -76,7 +76,9 @@ jobs:
         if: always()
         with:
           name: step-wedges
-          path: .build/step-wedges
+          path: |
+            .build/step-wedges
+            .build/golden-failures
 
   app:
     needs: changes

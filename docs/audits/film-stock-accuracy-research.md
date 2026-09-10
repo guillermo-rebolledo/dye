@@ -2,6 +2,9 @@
 
 Research date: 2026-09-10. Scope: the colour emulation model, manufacturer measurements, and a practical independent validation programme. This is a research proposal, not a measured photographic accuracy report. **Verified** means supported by the linked manufacturer/standards source or the repository file; **inference/proposal** means our interpretation or suggested experiment. No physical film measurements were made.
 
+Repository-gap descriptions below refer to audit baseline `98ba1ec`. See
+[the implemented changes and remaining limits](../accuracy-validation.md) for the current state.
+
 ## What “accurate” should mean
 
 Choose a complete reference workflow: stock and batch, exposure, development, scanner or print/viewer, and final colour rendering. A manufacturer curve match, a neutral scan, and a lab scan match answer different questions. ICC distinguishes film rendering (negative measurements to a reproduction) from film unrendering (negative measurements to estimated scene values), and distinguishes colour rendering from colour-space conversion. [ICC glossary, pp. 1–3](https://www.color.org/ICC_white_paper5glossary.pdf).

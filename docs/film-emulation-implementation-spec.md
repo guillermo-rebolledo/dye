@@ -2,6 +2,9 @@
 
 Repository reviewed at commit [`d65e61c`](https://github.com/guillermo-rebolledo/dye/tree/d65e61cfe9374401666e59d59db66b3ebc1405bf), 9 September 2026.
 
+The subsequent [accuracy audit and implementation](accuracy-validation.md) supersedes
+this baseline's cube architecture and CineStill calibration assumptions.
+
 ## Executive decision
 
 Dye already implements the layered model the original proposal recommended. The film look is not represented by a flat collection of preset sliders: it is baked from measured or explicitly artistic film data into a `FilmProfile`, then rendered through a fixed physical pipeline. The 30-stock project should therefore be implemented primarily as a **catalogue and calibration expansion**, not as a renderer or preset-system rewrite.

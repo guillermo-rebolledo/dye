@@ -20,6 +20,12 @@ import FilmEngine
         // has moved is exactly when nobody wants to wait. The comparison is the same
         // bit-exact one; only the reporting is cheap.
         if bytes != expected {
+            let failures = directory.deletingLastPathComponent().deletingLastPathComponent()
+                .deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent(".build/golden-failures")
+            try FileManager.default.createDirectory(at: failures, withIntermediateDirectories: true)
+            try bytes.write(to: failures.appendingPathComponent("\(profile.id).actual.rgba16"), options: .atomic)
+            try expected.write(to: failures.appendingPathComponent("\(profile.id).expected.rgba16"), options: .atomic)
             let offset = zip(bytes, expected).enumerated().first { $0.element.0 != $0.element.1 }?.offset
             let site = offset.map { "first differs at byte \($0) of \(expected.count)" } ?? "lengths differ"
             let advice = "Review the Contact Sheet and follow docs/golden-images.md; never update automatically."

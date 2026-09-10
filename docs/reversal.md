@@ -39,29 +39,22 @@ left to lose and stops responding entirely, where a colour negative's twelve-plu
 stops are still climbing. `reversalClipsHighlightsHarderThanColourNegativeAtMatchedExposure`
 asserts exactly that difference.
 
-## Dyes, and Velvia’s 65³ cubes
+## Dyes and interpolation resolution
 
-Fujifilm publishes the **isolated** cyan, magenta and yellow dye densities where
-Kodak publishes an aggregate minimum and midscale neutral pair, so the reversal
-branch consumes a `wavelengthNM,cyan,magenta,yellow` CSV and skips the artistic
-Gaussian separation entirely. The charts are drawn peak-normalised, so they give
-the dyes' shapes and not their amplitudes; rather than author three numbers, the
-model solves for the amplitudes that reproduce the Curve Set's own measured
-density above base at the reference neutral, read at each dye's own peak
-wavelength where that dye dominates. Three equations from three measurements, and
-no free parameter — what a Stock's saturation then comes from is its curve's
-contrast and its DIR couplers, which is where it comes from on film.
-Reversal film has no Orange Mask, so its base is modelled as spectrally flat at
-the mean of the three measured minimum densities.
+Fujifilm publishes peak-normalized isolated cyan, magenta and yellow dye shapes.
+These provide shape, not absolute dye amounts. The current model uses three
+cross-absorption equations at the dye peaks to fit characteristic density above
+base. That mapping from integrated Status A readings to peak amplitudes remains
+an approximation until the appropriate measurement weighting functions are
+available. Reversal base is approximated as spectrally flat at mean minimum density.
+Vision3 500T also publishes isolated dye/mask difference curves; its negative
+branch now consumes those separately from the aggregate minimum/midscale data.
 
-Velvia bakes 65³ Colour Cubes rather than 33³, and Provia does not. A reversal
-curve turns much more sharply than a negative's, and Velvia's turns fastest: at
-33 nodes the linear interpolation between them misses its D-max shoulder by
-0.025 density against the Step Wedge's 0.03 bound, and a gate that is nearly
-failing tells a reviewer nothing. 65³ takes that to 0.013 and Provia holds 0.016
-at 33³. The extra nodes cost eight times the payload and eight times the bake, so
-this is the Curve Set's own choice rather than a property of the branch; the cube
-evaluation runs concurrently, which is what keeps the choice affordable at all.
+Both Provia and Velvia now use 65³ film-density cubes. The expanded off-grid
+colour checks, including the separate observation transform, require more samples
+than the original neutral-density gate alone. Resolution remains a per-source
+choice against the unchanged 0.03 numerical limit; it is not a film-match score.
+See [accuracy validation](accuracy-validation.md).
 
 ## The Reciprocity Pass
 

@@ -34,10 +34,10 @@ the Scene Illuminant by temperature and tint and adapts it toward the Stock
 Balance with a Bradford von Kries scaling, so a daylight scene through a tungsten
 Stock is blue and matching illuminants are an exact pass-through. Exposure is a
 scalar multiply in linear light before the Film Response, and metering is at
-**True Speed** rather than Box Speed: a Stock the box overstates — Cinestill 800T,
-which is Vision3 500T's emulsion, and Velvia 50 — is given the light a meter set
-to what it actually is would have given it. The Development Offset
-blends the two nearest baked Colour Cubes linearly and, as on a pushed roll,
+**True Speed** rather than Box Speed where a profile records a difference.
+Velvia's EI 40 assumption is artistic; CineStill uses its normal EI 800 without
+an ancestry-based exposure adjustment. The Development Offset blends the two
+nearest film-density cubes linearly and, as on a pushed roll,
 rates the Stock faster: push +1 is −1 EV of exposure with the +1 curve shape.
 Halation scatters above-threshold light back into the linear signal **before** the
 Film Response, through a six-level float16 Scattering Pyramid whose per-channel

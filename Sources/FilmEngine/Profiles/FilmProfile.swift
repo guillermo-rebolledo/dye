@@ -376,7 +376,7 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
                 curve.count >= 2 && curve.allSatisfy { $0.density.isFinite && $0.density >= 0 && $0.rms.isFinite && $0.rms >= 0 }
                     && zip(curve, curve.dropFirst()).allSatisfy { $0.density < $1.density }
             }, "invalid measured density/granularity curves")
-            try require(colour.densityOutput != nil, "measured grain requires a Density Space response")
+            try require(colour.cubeOutput != .displayLinearRec2020, "measured grain requires a Density Space response")
         }
         try require(nonnegative([bloom.strength, bloom.radiusMicrons], count: 2) && bloom.strength <= 1 &&
                     bloom.radiusMicrons <= 5000, "invalid Bloom parameters")

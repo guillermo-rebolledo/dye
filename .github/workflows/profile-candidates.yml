@@ -51,3 +51,4 @@ jobs:
             Sources/FilmEngine/Catalogue
             Tests/FilmEngineTests/Fixtures/GoldenImages
             .build/accuracy-reports
+            .build/golden-failures

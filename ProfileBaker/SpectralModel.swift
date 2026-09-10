@@ -360,9 +360,16 @@ struct SpectralModel {
                                               exposure(at: Double(b) / last)), offset: offset)
                         let value = densityOnly ? d : (paper.map { $0.print(d, negative: self) } ?? output(d))
                         let texel = ((b * size + g) * size + r) * 4
-                        texels[texel] = Float16(value.x)
-                        texels[texel + 1] = Float16(value.y)
-                        texels[texel + 2] = Float16(value.z)
+                        for channel in 0..<3 {
+                            var stored = Float16(value[channel])
+                            // Quantizing unexposed film upward invents developed
+                            // dye and a nonzero scan black. Keep base on the clear
+                            // side of the observation's physical-density clamp.
+                            if densityOnly && value[channel] <= base[channel] + 1e-12 && Double(stored) > base[channel] {
+                                stored = stored.nextDown
+                            }
+                            texels[texel + channel] = stored
+                        }
                     }
                 }
             }
