@@ -19,8 +19,6 @@ struct DeckView: View {
         let parameters = model.dialParameters
         let active = selection.activeParameter(in: parameters)
         VStack(spacing: 0) {
-            stockHeader
-                .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 112 : 56)
             ActiveControl(parameter: active, model: model, isEnabled: hasPhoto)
                 .padding(.horizontal, 16).frame(height: 34)
             ParameterRail(model: model, selection: selection, parameters: parameters)
@@ -41,83 +39,12 @@ struct DeckView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 8)
         }
+        .padding(.top, 12)
         .frame(maxWidth: .infinity)
         .frame(minHeight: Tokens.Deck.height + Tokens.Deck.extraHeight(for: dynamicTypeSize), alignment: .top)
         .background(Tokens.Palette.deck.ignoresSafeArea(edges: .bottom))
         .onChange(of: parameters.map(\.id), initial: true) { selection.reconcile(with: model.dialParameters) }
-        .sheet(isPresented: Binding(get: { selection.isFilmstripOpen }, set: { selection.isFilmstripOpen = $0 })) {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Stock").font(.title2.bold())
-                Text(model.profile.metadata.displayName).font(.headline)
-                Filmstrip(catalogue: model.catalogue, thumbnails: model.thumbnails,
-                          selectedStock: Binding(get: { model.selectedStock }, set: { model.selectedStock = $0 }),
-                          close: { selection.isFilmstripOpen = false })
-            }
-            .padding(.vertical, 24)
-            .padding(.horizontal, 16)
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
-            .presentationBackground(Tokens.Palette.deck)
-        }
-        .sheet(isPresented: Binding(get: { selection.isOutputBrowserOpen }, set: { selection.isOutputBrowserOpen = $0 })) {
-            VStack(spacing: 24) {
-                Text("Output").font(.title2.bold())
-                OutputStageCards(model: model)
-                Button("Done") { selection.isOutputBrowserOpen = false }
-                    .frame(minHeight: 44)
-            }
-            .padding(24)
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
-            .presentationBackground(Tokens.Palette.deck)
-        }
-    }
 
-    private var stockHeader: some View {
-        HStack(spacing: 12) {
-            Button { selection.isFilmstripOpen = true } label: {
-                HStack(spacing: 10) {
-                    Group {
-                        if let pixels = model.thumbnails[model.selectedStock] {
-                            FilmCanvas(image: pixels)
-                                .aspectRatio(CGFloat(pixels.width) / CGFloat(pixels.height), contentMode: .fill)
-                        } else { DevelopingFrame(showsCaption: false) }
-                    }
-                    .frame(width: 40, height: 40).clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(model.profile.metadata.displayName)
-                            .font(.headline).lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                        Text(model.selectedStock == "identity" ? "No stock response" : model.profile.metadata.process.displayName)
-                            .font(.caption).foregroundStyle(Tokens.Deck.captionInk)
-                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                    }
-                    Image(systemName: "chevron.down").font(.caption)
-                    Spacer(minLength: 0)
-                }
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Stock")
-            .accessibilityValue(model.profile.metadata.displayName)
-            .accessibilityHint("Browse stocks")
-            if !model.outputStages.isEmpty {
-                Button { selection.isOutputBrowserOpen = true } label: {
-                    VStack(spacing: 3) {
-                        Text(model.outputStage.displayName).font(.subheadline)
-                        Image(systemName: "chevron.down").font(.caption2)
-                    }
-                    .frame(minWidth: 44, minHeight: 44)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Output")
-                .accessibilityValue(model.outputStage.displayName)
-            }
-        }
-        .foregroundStyle(Tokens.Palette.textPrimary)
-        .padding(.horizontal, 16)
-        .disabled(!hasPhoto)
     }
 
     private var groupMenu: some View {
@@ -179,9 +106,7 @@ struct DeckPreview: View {
 
     var body: some View {
         VStack(spacing: Tokens.Metrics.space16) {
-            Picker("Stock", selection: $model.selectedStock) {
-                ForEach(model.catalogueWithIdentity) { Text($0.metadata.displayName).tag($0.id) }
-            }
+            EditorPickers(model: model, selection: selection, hasPhoto: hasPhoto)
             Toggle("Photo loaded", isOn: $hasPhoto)
             Toggle("Filmstrip requested", isOn: $selection.isFilmstripOpen)
             Text("Deck: \(measuredHeight, specifier: "%.0f") pt").typeStyle(.unit)
@@ -204,22 +129,22 @@ struct DeckPreview: View {
     }
 }
 
-#Preview("318 pt · Portra · Film") { DeckPreview().preferredColorScheme(.dark) }
-#Preview("318 pt · Tri-X · Film") { DeckPreview(stock: "tri-x-400").preferredColorScheme(.dark) }
-#Preview("318 pt · Velvia · Lab") { DeckPreview(stock: "velvia-50", stage: .lab).preferredColorScheme(.dark) }
-#Preview("318 pt · Identity · Lab") { DeckPreview(stock: "identity", stage: .lab).preferredColorScheme(.dark) }
-#Preview("318 pt · Portra · Adjust") { DeckPreview(stage: .adjust).preferredColorScheme(.dark) }
-#Preview("318 pt · Velvia · Adjust") { DeckPreview(stock: "velvia-50", stage: .adjust).preferredColorScheme(.dark) }
+#Preview("274 pt · Portra · Film") { DeckPreview().preferredColorScheme(.dark) }
+#Preview("274 pt · Tri-X · Film") { DeckPreview(stock: "tri-x-400").preferredColorScheme(.dark) }
+#Preview("274 pt · Velvia · Lab") { DeckPreview(stock: "velvia-50", stage: .lab).preferredColorScheme(.dark) }
+#Preview("274 pt · Identity · Lab") { DeckPreview(stock: "identity", stage: .lab).preferredColorScheme(.dark) }
+#Preview("274 pt · Portra · Adjust") { DeckPreview(stage: .adjust).preferredColorScheme(.dark) }
+#Preview("274 pt · Velvia · Adjust") { DeckPreview(stock: "velvia-50", stage: .adjust).preferredColorScheme(.dark) }
 
-#Preview("318 pt · No photo") { DeckPreview(photoLoaded: false).preferredColorScheme(.dark) }
+#Preview("274 pt · No photo") { DeckPreview(photoLoaded: false).preferredColorScheme(.dark) }
 
-#Preview("388 pt · largest text · all Stocks") {
+#Preview("344 pt · largest text · all Stocks") {
     DeckPreview().dynamicTypeSize(.accessibility5)
         .preferredColorScheme(.dark)
 }
-#Preview("388 pt · largest text · no photo") {
+#Preview("344 pt · largest text · no photo") {
     DeckPreview(photoLoaded: false).dynamicTypeSize(.accessibility5).preferredColorScheme(.dark)
 }
-#Preview("388 pt · largest text · filmstrip") {
+#Preview("344 pt · largest text · filmstrip") {
     DeckPreview(filmstripOpen: true).dynamicTypeSize(.accessibility5).preferredColorScheme(.dark)
 }

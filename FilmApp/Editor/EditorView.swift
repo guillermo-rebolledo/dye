@@ -88,20 +88,24 @@ private struct EditorScreen: View {
     }
 
     private var editor: some View {
-        GeometryReader { geometry in
-            if geometry.size.width > geometry.size.height {
-                HStack(spacing: 0) {
-                    photoCanvas
-                    ScrollView { controls.fixedSize(horizontal: false, vertical: true) }.frame(width: min(393, geometry.size.width * 0.46))
-                        .frame(maxHeight: .infinity, alignment: .bottom)
-                        .background(Tokens.Palette.deck)
-                }
-            } else {
-                VStack(spacing: 0) {
-                    photoCanvas
-                    controls.frame(maxWidth: 560)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity).background(Tokens.Palette.deck)
+        VStack(spacing: 0) {
+            EditorPickers(model: model, selection: selection, hasPhoto: canvas.hasPhoto)
+                .opacity(isComparing ? Tokens.Canvas.comparingDeckOpacity : 1)
+            GeometryReader { geometry in
+                if geometry.size.width > geometry.size.height {
+                    HStack(spacing: 0) {
+                        photoCanvas
+                        ScrollView { controls.fixedSize(horizontal: false, vertical: true) }.frame(width: min(393, geometry.size.width * 0.46))
+                            .frame(maxHeight: .infinity, alignment: .bottom)
+                            .background(Tokens.Palette.deck)
+                    }
+                } else {
+                    VStack(spacing: 0) {
+                        photoCanvas
+                        controls.frame(maxWidth: 560)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity).background(Tokens.Palette.deck)
+                    }
                 }
             }
         }
