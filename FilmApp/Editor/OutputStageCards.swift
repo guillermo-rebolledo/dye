@@ -1,11 +1,12 @@
 import SwiftUI
 import FilmEngine
 
-/// The cards occupy the combined readout + track slot (34 + 28), as in screen 1f.
-/// A 62 pt card cannot fit inside the track alone; the caption remains reserved.
+/// Two real output previews occupy the rail takeover without moving the bar.
 struct OutputStageCards: View {
     let model: EditorModel
     var isEnabled = true
+    @State private var thumbnails: [OutputStage: RenderedPixels] = [:]
+    @State private var error: String?
 
     var body: some View {
         HStack(spacing: Tokens.Metrics.segmentRadius) {
@@ -15,15 +16,20 @@ struct OutputStageCards: View {
                     model.outputStage = stage
                     Haptics.step()
                 } label: {
-                    VStack(alignment: .leading, spacing: Tokens.Metrics.space4) {
+                    ZStack(alignment: .bottomLeading) {
+                        if let pixels = thumbnails[stage] {
+                            FilmCanvas(image: pixels)
+                                .aspectRatio(CGFloat(pixels.width) / CGFloat(pixels.height), contentMode: .fill)
+                                .frame(height: 86).clipped()
+                        } else { DevelopingFrame(showsCaption: false) }
                         Text(stage.displayName).typeStyle(.chipName)
                             .foregroundStyle(Tokens.Palette.textPrimary)
+                            .padding(8).background(.black.opacity(0.55), in: Capsule())
 
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, Tokens.Metrics.space10)
-                    .frame(height: Tokens.Discrete.cardHeight)
-                    .modifier(DeckFace(selected: model.outputStage == stage && isEnabled))
+                    .frame(height: 86)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                     .overlay(RoundedRectangle(cornerRadius: Tokens.Metrics.chipRadius)
                         .strokeBorder(model.outputStage == stage ? Tokens.Discrete.cardAccent : .clear,
                                       lineWidth: Tokens.Discrete.cardRing))
@@ -35,12 +41,40 @@ struct OutputStageCards: View {
                 .accessibilityAddTraits(model.outputStage == stage ? .isSelected : [])
             }
         }
-        .frame(height: Tokens.Discrete.cardHeight)
+        .frame(height: 86)
+        .task(id: previewKey) {
+            thumbnails = [:]
+            error = nil
+            do {
+                for stage in model.outputStages {
+                    let pixels = try await model.outputThumbnail(for: stage)
+                    try Task.checkCancellation()
+                    thumbnails[stage] = pixels
+                }
+            } catch is CancellationError { }
+            catch { self.error = error.localizedDescription }
+        }
+        .overlay(alignment: .top) {
+            if error != nil {
+                Text("Preview unavailable").font(.caption2).foregroundStyle(Tokens.Palette.textPrimary)
+            }
+        }
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : Tokens.Deck.unavailableOpacity)
     }
 
+    private var previewKey: PreviewKey {
+        var settings = model.settings
+        // Both pictures explicitly override output; selecting one does not
+        // invalidate either preview or flash the cards back to placeholders.
+        settings.outputStage = nil
+        return PreviewKey(stock: model.selectedStock, settings: settings)
+    }
 
+    private struct PreviewKey: Equatable {
+        let stock: String
+        let settings: RenderSettings
+    }
 }
 
 private struct OutputStagePreview: View {

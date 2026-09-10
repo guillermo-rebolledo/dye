@@ -18,9 +18,8 @@
 		25300000000000000000001D /* EditorSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25300000000000000000001C /* EditorSelection.swift */; };
 		25300000000000000000001F /* ParameterDial.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25300000000000000000001E /* ParameterDial.swift */; };
 		253000000000000000000021 /* DeckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 253000000000000000000020 /* DeckView.swift */; };
-		253000000000000000000023 /* StageSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 253000000000000000000022 /* StageSelector.swift */; };
 		253000000000000000000025 /* ActionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 253000000000000000000024 /* ActionRow.swift */; };
-		253000000000000000000027 /* ParameterRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 253000000000000000000026 /* ParameterRow.swift */; };
+		253000000000000000000027 /* ParameterRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 253000000000000000000026 /* ParameterRail.swift */; };
 		253000000000000000000029 /* ActiveControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 253000000000000000000028 /* ActiveControl.swift */; };
 		25300000000000000000002B /* ContrastFilterDiscs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25300000000000000000002A /* ContrastFilterDiscs.swift */; };
 		25300000000000000000002D /* OutputStageCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25300000000000000000002C /* OutputStageCards.swift */; };
@@ -45,9 +44,8 @@
 		25300000000000000000001C /* EditorSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorSelection.swift; sourceTree = "<group>"; };
 		25300000000000000000001E /* ParameterDial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParameterDial.swift; sourceTree = "<group>"; };
 		253000000000000000000020 /* DeckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeckView.swift; sourceTree = "<group>"; };
-		253000000000000000000022 /* StageSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StageSelector.swift; sourceTree = "<group>"; };
 		253000000000000000000024 /* ActionRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionRow.swift; sourceTree = "<group>"; };
-		253000000000000000000026 /* ParameterRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParameterRow.swift; sourceTree = "<group>"; };
+		253000000000000000000026 /* ParameterRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParameterRail.swift; sourceTree = "<group>"; };
 		253000000000000000000028 /* ActiveControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveControl.swift; sourceTree = "<group>"; };
 		25300000000000000000002A /* ContrastFilterDiscs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContrastFilterDiscs.swift; sourceTree = "<group>"; };
 		25300000000000000000002C /* OutputStageCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputStageCards.swift; sourceTree = "<group>"; };
@@ -91,9 +89,8 @@
 				25300000000000000000001C /* EditorSelection.swift */,
 				25300000000000000000001E /* ParameterDial.swift */,
 				253000000000000000000020 /* DeckView.swift */,
-				253000000000000000000022 /* StageSelector.swift */,
 				253000000000000000000024 /* ActionRow.swift */,
-				253000000000000000000026 /* ParameterRow.swift */,
+				253000000000000000000026 /* ParameterRail.swift */,
 				253000000000000000000028 /* ActiveControl.swift */,
 				25300000000000000000002A /* ContrastFilterDiscs.swift */,
 				25300000000000000000002C /* OutputStageCards.swift */,
@@ -211,9 +208,8 @@
 				25300000000000000000001D /* EditorSelection.swift in Sources */,
 				25300000000000000000001F /* ParameterDial.swift in Sources */,
 				253000000000000000000021 /* DeckView.swift in Sources */,
-				253000000000000000000023 /* StageSelector.swift in Sources */,
 				253000000000000000000025 /* ActionRow.swift in Sources */,
-				253000000000000000000027 /* ParameterRow.swift in Sources */,
+				253000000000000000000027 /* ParameterRail.swift in Sources */,
 				253000000000000000000029 /* ActiveControl.swift in Sources */,
 				25300000000000000000002B /* ContrastFilterDiscs.swift in Sources */,
 				25300000000000000000002D /* OutputStageCards.swift in Sources */,

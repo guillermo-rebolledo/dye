@@ -104,7 +104,7 @@ extension Tokens {
     enum Palette {
         // Surfaces
         static let canvas = Colour.hex(0x05_05_05).color
-        static let deck = dynamic(dark: .hex(0x12_12_14), light: .hex(0xF4_F2_EE))
+        static let deck = dynamic(dark: .hex(0x0B_0B_0C), light: .hex(0xF4_F2_EE))
         static let sheet = dynamic(dark: .hex(0x14_14_16), light: .hex(0xF4_F2_EE))
         /// The trough a segmented control sits in.
         static let wellSegment = dynamic(dark: .hex(0x0D_0D_0F), light: .hex(0xE4_E1_DC))
@@ -263,7 +263,7 @@ extension Tokens {
 extension Tokens.TypeStyle {
     /// The active control's value. Fixed width, one line, unit in a separate run.
     static let accessibleReadout = Self(size: 28, weight: .medium, isMono: true, lineHeight: 34, tracking: -0.5)
-    static let readout = Self(size: 34, weight: .medium, isMono: true, lineHeight: 34, tracking: -0.5)
+    static let readout = Self(size: 32, weight: .medium, isMono: true, lineHeight: 34, tracking: -0.5)
     /// The unit beside a readout, and any secondary numeral.
     static let unit = Self(size: 15, weight: .medium, isMono: true)
     /// The number on a parameter chip.
@@ -361,7 +361,7 @@ extension Tokens {
         /// so ±100 costs about the same travel as Grain's 0…200 %.
         static let adjustmentPointsPerStep: CGFloat = 1.8
         static let dialMajorTickHeight: CGFloat = 10
-        static let height: CGFloat = 28
+        static let height: CGFloat = 20
         /// A tick, an anchor and an end wall, in the widths the handoff gives.
         static let tickWidth: CGFloat = 1
         static let tickInsetMinor: CGFloat = 6
@@ -580,33 +580,18 @@ private struct TokenCatalogue: View {
 
 extension Tokens {
     enum Deck {
-        static let height: CGFloat = 268
+        static let height: CGFloat = 262
         /// Give large readouts extra breathing room at accessibility sizes.
         static func extraHeight(for size: DynamicTypeSize) -> CGFloat {
             size.isAccessibilitySize ? 14 : 0
         }
-        static let selectorHeight: CGFloat = 36
-        static let segmentHeight: CGFloat = 30
-        static let segmentPadding: CGFloat = 3
-        static let parameterAreaHeight: CGFloat = 128
-        static let controlHeight: CGFloat = 84
-        static let headerHeight: CGFloat = 16
         static let readoutHeight: CGFloat = 34
-        // Header, readout and dial total 78 points, plus a six-point gap.
-        static let headerGap: CGFloat = 6
-        static let actionHeight: CGFloat = 44
+        static let actionHeight: CGFloat = 58
         static let actionIconWidth: CGFloat = 40
         static let actionIconHeight: CGFloat = 26
-        static let chipPadding: CGFloat = 9
         static let modifiedDot: CGFloat = 5
         static let unavailableOpacity: Double = 0.35
-        static let overflowStart: CGFloat = 0.92
-        static let thumbnailWidth: CGFloat = 26
-        static let thumbnailHeight: CGFloat = 24
-        static let processEdge: CGFloat = 2
-        static let stockWidth: CGFloat = 104
-        static let compactChipWidth: CGFloat = 48
-        static let readoutNumberWidth: CGFloat = 142
+        static let readoutNumberWidth: CGFloat = 96
         static let border = Colour.hex(0xFFFFFF, alpha: 0.08).color
         static let captionInk = Palette.textPrimary.opacity(0.62)
         static let quietInk = Palette.textPrimary.opacity(0.62)
@@ -692,13 +677,13 @@ extension Tokens.TypeStyle {
 
 extension Tokens {
     enum Filmstrip {
-        static let height: CGFloat = 156
-        static let stripHeight: CGFloat = 124
+        static let height: CGFloat = 140
+        static let stripHeight: CGFloat = 104
         static let footerGap: CGFloat = 8
         static let footerHeight: CGFloat = 24
         static let footerLineHeight: CGFloat = 12
-        static let cellWidth: CGFloat = 100
-        static let cellHeight: CGFloat = 80
+        static let cellWidth: CGFloat = 96
+        static let cellHeight: CGFloat = 60
         static let processEdge: CGFloat = 3
         static let selectionRing: CGFloat = 1.5
         static let selectionHalo: CGFloat = 4
@@ -711,10 +696,10 @@ extension Tokens {
         static let controlsPadding: CGFloat = 12
         static let fadeStart: CGFloat = 0.88
         static let indexShadowRadius: CGFloat = 1.5
-        static let base = Colour.hex(0x0B0B0D).color
+        static let base = Colour.hex(0x141416).color
         static let sprocket = Colour.hex(0x1E1E22).color
-        static let hatchBase = Colour.hex(0x17171A).color
-        static let hatchStripe = Colour.hex(0x1C1C20).color
+        static let hatchBase = Colour.hex(0x141416).color
+        static let hatchStripe = Colour.hex(0x17171A).color
         static let indexInk = Colour.hex(0xFFFFFF, alpha: 0.75).color
         static let indexShadow = Colour.hex(0x000000, alpha: 0.8).color
     }

@@ -64,7 +64,7 @@ struct Parameter: Identifiable {
     /// `EditorSelection` remembers and what a chip is keyed by.
     enum Identity: String, CaseIterable, Hashable {
         case exposure, temperature, tint, exposureTime
-        case contrastFilter, development, bloom, halation, grain
+        case stock, contrastFilter, development, bloom, halation, grain
         case outputStage, vignette, gateWeave, frameBorder
         case brilliance, highlights, shadows, contrast, brightness, blackPoint, saturation, vibrance
     }
@@ -76,6 +76,7 @@ struct Parameter: Identifiable {
         case shutterDial
         case contrastFilterDiscs
         case outputStageCards
+        case filmstrip
     }
 
     /// The tag on the right of the active control's header.
@@ -198,7 +199,7 @@ extension Parameter {
         case .vignette: return defaults.vignette
         case .gateWeave: return defaults.gateWeave
         case .frameBorder: return defaults.frameBorder
-        case .contrastFilter, .outputStage: return 0
+        case .stock, .contrastFilter, .outputStage: return 0
         // Every Adjustment defaults to not applied, and the deck shows it at ×100.
         case .brilliance: return defaults.adjustments.brilliance * 100
         case .highlights: return defaults.adjustments.highlights * 100
@@ -296,7 +297,11 @@ extension EditorModel {
     }
 
     private var filmParameters: [Parameter] {
-        var parameters: [Parameter] = []
+        var parameters: [Parameter] = [
+            Parameter(id: .stock, name: "Stock", stage: .film, value: .constant(0),
+                      range: 0...0, step: 1, control: .filmstrip,
+                      format: { [weak self] _ in self?.profile.metadata.displayName ?? "Stock" })
+        ]
         if !contrastFilters.isEmpty {
             let filters = contrastFilters
             parameters.append(
@@ -761,6 +766,7 @@ private struct ParameterCatalogue: View {
                 ParameterDial(parameter: parameter)
             case .contrastFilterDiscs:
                 ContrastFilterDiscs(parameter: parameter, filters: model.contrastFilters)
+            case .filmstrip: Text(parameter.readout)
             case .outputStageCards:
                 OutputStageCards(model: model)
             }

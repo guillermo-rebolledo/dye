@@ -1,68 +1,26 @@
 import SwiftUI
 
+/// Readout and tape are separate slots: the rail owns selection between them.
 struct ActiveControl: View {
     let parameter: Parameter?
     let model: EditorModel
     var isEnabled = true
+    var showsTrack = false
+    var onDragging: (Bool) -> Void = { _ in }
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: 0) {
-            header.frame(height: Tokens.Deck.headerHeight)
-            Color.clear.frame(height: Tokens.Deck.headerGap)
-            Group {
-                if let parameter, parameter.control == .outputStageCards {
-                    OutputStageCards(model: model, isEnabled: isEnabled)
-                } else {
-                    VStack(spacing: 0) {
-                        readout.frame(height: Tokens.Deck.readoutHeight)
-                        track.frame(height: Tokens.Track.height)
-                    }
-                }
-            }
-            .id(parameter?.id)
-            .transition(.opacity)
-            .animation(Tokens.Motion.ease(Tokens.Motion.parameterSwitch, reduceMotion: reduceMotion), value: parameter?.id)
+        Group {
+            if showsTrack { track }
+            else { readout }
         }
-        .frame(height: Tokens.Deck.controlHeight + Tokens.Deck.extraHeight(for: dynamicTypeSize))
-        .onChange(of: parameter?.id) {
-            Haptics.parameterSwitch()
-        }
-        .onChange(of: observedValue) { previous, current in
-            guard previous.id == current.id, isEnabled, let parameter,
-                  let old = previous.value, let new = current.value,
+        .onChange(of: parameter?.value.wrappedValue) { old, new in
+            guard !showsTrack, let parameter, let old, let new,
                   parameter.id == .temperature || parameter.id == .exposureTime,
                   let threshold = parameter.detent else { return }
-            let crossed: Bool
-            if parameter.id == .exposureTime {
-                crossed = (old > threshold) != (new > threshold)
-            } else {
-                func side(_ value: Double) -> Int { value == threshold ? 0 : value < threshold ? -1 : 1 }
-                crossed = side(old) != side(new)
-            }
-            if crossed { Haptics.thresholdCrossing() }
-        }
-    }
-
-    private struct ObservedValue: Equatable {
-        let id: Parameter.Identity?
-        let value: Double?
-    }
-
-    private var observedValue: ObservedValue {
-        ObservedValue(id: parameter?.id, value: parameter?.value.wrappedValue)
-    }
-
-    private var header: some View {
-        HStack(spacing: Tokens.Metrics.space5) {
-            Text(parameter?.name ?? "").typeStyle(.controlName)
-                .foregroundStyle(Tokens.Palette.textPrimary)
-                .lineLimit(1)
-            Spacer(minLength: 0)
-            if isEnabled, parameter?.tag == .off {
-                Text("OFF").typeStyle(.tag)
-                    .foregroundStyle(Tokens.Palette.accent)
+            if (old < threshold && new >= threshold) || (old > threshold && new <= threshold) {
+                Haptics.thresholdCrossing()
             }
         }
     }
@@ -70,93 +28,54 @@ struct ActiveControl: View {
     @ViewBuilder private var readout: some View {
         if let parameter {
             let parts = parameter.readoutParts
-            HStack(alignment: .firstTextBaseline, spacing: Tokens.Metrics.space6) {
-                Text(isEnabled ? parts.number : "—")
-                    .typeStyle(dynamicTypeSize.isAccessibilitySize ? .accessibleReadout : .readout)
-                    .contentTransition(reduceMotion ? .identity : .numericText(value: parameter.value.wrappedValue))
-                    .foregroundStyle(parameter.tag == .off ? Tokens.Deck.quietInk : Tokens.Palette.textPrimary)
-                    .lineLimit(1).minimumScaleFactor(0.5)
-                    .frame(width: parts.unit.isEmpty || parameter.id == .contrastFilter ? nil : Tokens.Deck.readoutNumberWidth,
-                           alignment: .leading)
-                if isEnabled && !parts.unit.isEmpty {
-                    Text(parts.unit).typeStyle(.unit).foregroundStyle(Tokens.Deck.quietInk)
-                        .lineLimit(1).minimumScaleFactor(0.5)
+            let numeric = Double(parts.number) != nil
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if numeric {
+                    Text(isEnabled ? parts.number : "—")
+                        .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 28 : 32, weight: .medium, design: .monospaced))
+                        .monospacedDigit()
+                        .frame(width: Tokens.Deck.readoutNumberWidth)
+                        .contentTransition(reduceMotion ? .identity : .numericText(value: parameter.value.wrappedValue))
+                        .animation(reduceMotion ? nil : .snappy(duration: 0.12), value: parameter.value.wrappedValue)
+                } else {
+                    Text(isEnabled ? parameter.readout : "—")
+                        .font(.system(size: 22, weight: .medium, design: .monospaced))
                 }
-                Spacer(minLength: 0)
+                if numeric && isEnabled && !parts.unit.isEmpty {
+                    Text(parts.unit).font(.system(size: 14, design: .monospaced))
+                        .foregroundStyle(parameter.tag != nil ? Tokens.Palette.accent : Tokens.Deck.quietInk)
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .foregroundStyle(parameter.tag == .off ? Tokens.Deck.quietInk : Tokens.Palette.textPrimary)
+            .lineLimit(1).minimumScaleFactor(0.6)
+            .frame(maxWidth: .infinity)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(isEnabled ? parameter.readout : "Unavailable")
-            // An overlay rather than the last item in the row: the row collapses
-            // its children into one element for VoiceOver, and a control inside it
-            // would collapse with them and stop being reachable. It also keeps the
-            // row's baseline alignment, which an image in it would not.
+            .accessibilityLabel(parameter.name)
+            .accessibilityValue(isEnabled ? parameter.readout : "Unavailable")
             .overlay(alignment: .trailing) {
-                if isEnabled, model.canBypass(parameter) { bypass(parameter) }
+                if isEnabled, model.canBypass(parameter) {
+                    Button { model.toggleBypass(parameter.id); Haptics.buttonPress() } label: {
+                        Image(systemName: model.isBypassed(parameter.id) ? "circle" : "checkmark.circle.fill")
+                            .foregroundStyle(Tokens.Palette.textPrimary)
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Apply \(parameter.name)")
+                    .accessibilityValue(model.isBypassed(parameter.id) ? "Off" : "On")
+                }
             }
-        } else { Color.clear }
-    }
-
-    /// Switching an Adjustment off and on again, which is the question a photo
-    /// editor asks most of one: *is this doing anything for the picture*. It sits
-    /// on the readout line rather than the header because the header is 16 pt tall
-    /// and a control has to be reachable; the row's own 34 pt is the tallest the
-    /// deck can give it without moving the track, so the width carries the rest of
-    /// the target.
-    private func bypass(_ parameter: Parameter) -> some View {
-        let off = model.isBypassed(parameter.id)
-        return Button {
-            Haptics.buttonPress()
-            withAnimation(Tokens.Motion.ease(Tokens.Motion.reset, reduceMotion: reduceMotion)) {
-                model.toggleBypass(parameter.id)
-            }
-        } label: {
-            Image(systemName: off ? "circle" : "checkmark.circle.fill")
-                .font(Tokens.TypeStyle.controlName.font)
-                .foregroundStyle(off ? Tokens.Deck.quietInk : Tokens.Palette.accent)
-                .frame(width: Tokens.Metrics.minimumHitTarget, height: Tokens.Deck.readoutHeight)
-                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Apply \(parameter.name)")
-        .accessibilityValue(off ? "Off" : "On")
-        .accessibilityHint(off ? "Restores \(parameter.readout)" : "Renders without it and keeps the value")
-        .accessibilityAddTraits(off ? [] : .isSelected)
     }
 
     @ViewBuilder private var track: some View {
         if let parameter {
             switch parameter.control {
-            case .dial:
-                ParameterDial(parameter: parameter, isEnabled: isEnabled)
-                    .padding(.horizontal, -Tokens.Metrics.space16)
-            case .shutterDial:
-                ShutterDial(parameter: parameter, isEnabled: isEnabled)
-                    .padding(.horizontal, -Tokens.Metrics.space16)
+            case .dial, .shutterDial:
+                ParameterDial(parameter: parameter, isEnabled: isEnabled, onDragging: onDragging)
             case .contrastFilterDiscs:
                 ContrastFilterDiscs(parameter: parameter, filters: model.contrastFilters, isEnabled: isEnabled)
-            case .outputStageCards: EmptyView()
+            case .filmstrip, .outputStageCards: Color.clear
             }
-        } else { Color.clear }
-    }
-
-
-}
-
-private struct ActiveControlPreview: View {
-    @State private var model = EditorModel()
-    var body: some View {
-        VStack(spacing: Tokens.Metrics.space20) {
-            ActiveControl(parameter: model.parameters(for: .light).first, model: model)
-            ActiveControl(parameter: model.parameters(for: .light).first { $0.id == .temperature }, model: model)
-            ActiveControl(parameter: model.parameters(for: .lab).first { $0.id == .vignette }, model: model)
-            ActiveControl(parameter: model.parameters(for: .adjust).first { $0.id == .highlights }, model: model)
-            ActiveControl(parameter: model.parameters(for: .light).first, model: model)
         }
-        .padding(.horizontal, Tokens.Metrics.space16).background(Tokens.Palette.deck)
     }
-}
-
-#Preview("112 pt · bipolar, live caption, empty caption, adjustment, error") {
-    ActiveControlPreview().preferredColorScheme(.dark)
 }

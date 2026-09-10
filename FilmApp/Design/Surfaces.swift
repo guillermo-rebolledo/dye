@@ -449,7 +449,7 @@ extension View {
     /// The detent, the surface and the corner radius §9 gives every sheet. The
     /// system's own drag indicator is hidden because the sheet draws its own.
     func filmSheet() -> some View {
-        presentationDetents([.height(Tokens.Sheet.detentHeight)])
+        presentationDetents([.height(Tokens.Sheet.detentHeight), .large])
             .presentationDragIndicator(.hidden)
             .presentationBackground(Tokens.Palette.sheet)
             .presentationCornerRadius(Tokens.Metrics.sheetRadius)
@@ -522,5 +522,25 @@ struct DevelopingFrame: View {
             }
         }
         .accessibilityHidden(true)
+    }
+}
+
+/// Real Liquid Glass on iOS 26; the supported iOS 17–18 releases retain a
+/// material fallback. Accessibility substitutes an opaque surface at any OS.
+struct EditorGlass: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if reduceTransparency {
+            content.background(Color(red: 0.11, green: 0.11, blue: 0.125), in: Capsule())
+                .overlay(Capsule().strokeBorder(.white.opacity(0.25), lineWidth: contrast == .increased ? 1 : 0.5))
+        } else if #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: .capsule)
+                .overlay(Capsule().strokeBorder(.white.opacity(contrast == .increased ? 0.5 : 0), lineWidth: 1))
+        } else {
+            content.background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().strokeBorder(.white.opacity(0.14), lineWidth: contrast == .increased ? 1 : 0.5))
+        }
     }
 }

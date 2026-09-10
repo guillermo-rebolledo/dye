@@ -76,8 +76,17 @@ jobs:
     needs: changes
     if: needs.changes.outputs.app == 'true'
     runs-on: macos-15
+    env:
+      # Liquid Glass requires the iOS 26 SDK even with runtime availability guards.
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
       - uses: actions/checkout@v7
+      - name: Verify app toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphonesimulator --show-sdk-version
+      - name: Dial mapping and rail selection
+        run: python3 Scripts/check-dial-mapping.py
       - name: Build the iOS app (Baker is not linked)
         run: >-
           xcodebuild -project FilmApp.xcodeproj -scheme FilmApp

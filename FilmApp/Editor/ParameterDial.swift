@@ -7,6 +7,7 @@ import FilmEngine
 struct ParameterDial: View {
     let parameter: Parameter
     var isEnabled: Bool = true
+    var onDragging: (Bool) -> Void = { _ in }
 
     @State private var drag: Drag?
 
@@ -28,6 +29,7 @@ struct ParameterDial: View {
         .accessibilityValue(isEnabled ? parameter.readout : "Unavailable")
         .accessibilityAdjustableAction(adjust)
         .disabled(!isEnabled)
+        .onDisappear { onDragging(false) }
     }
 
     // MARK: Dragging
@@ -46,13 +48,14 @@ struct ParameterDial: View {
         // resting on the deck counts rather than being spent reaching a threshold.
         DragGesture(minimumDistance: 0)
             .onChanged { change in
+                if drag == nil { onDragging(true) }
                 var state = drag ?? begin(track)
                 guard change.translation.width != 0 else { return }
                 let outcome = track.resolve(state.origin - change.translation.width)
                 commit(outcome, from: &state)
                 drag = state
             }
-            .onEnded { _ in drag = nil }
+            .onEnded { _ in drag = nil; onDragging(false) }
     }
 
     private func begin(_ track: TrackMap) -> Drag {
@@ -294,8 +297,8 @@ struct ParameterDialTrack: View, Animatable {
                     Rectangle()
                         .fill(isAtLimit ? Tokens.Palette.trackWall
                               : parameter.isAtDetent(value) ? Tokens.Palette.accent : Tokens.Palette.textPrimary)
-                        .frame(width: Tokens.Discrete.hairline, height: Tokens.Track.height)
-                        .shadow(color: isDragging ? Tokens.Palette.indicatorGlow : .clear,
+                        .frame(width: parameter.isAtDetent(value) ? 3 : 2, height: parameter.isAtDetent(value) ? 24 : 20)
+                        .shadow(color: parameter.isAtDetent(value) ? Tokens.Palette.indicatorGlow : .clear,
                                 radius: Tokens.Track.indicatorGlowRadius)
                 }
             }
@@ -310,7 +313,7 @@ struct ParameterDialTrack: View, Animatable {
         let current = min(max(value, parameter.range.lowerBound), parameter.range.upperBound)
         let pointsPerUnit = map.travel / CGFloat(map.span)
         func x(_ mark: Double) -> CGFloat { size.width / 2 + CGFloat(mark - current) * pointsPerUnit }
-        let major = parameter.control == .shutterDial ? 1 : map.majorInterval
+        let major = parameter.control == .shutterDial ? 1 : parameter.step * 6
         let labelOrigin = parameter.control == .shutterDial ? parameter.range.lowerBound : 0
 
         for mark in map.marks(every: map.minorInterval, from: parameter.range.lowerBound) {
@@ -318,17 +321,15 @@ struct ParameterDialTrack: View, Animatable {
             guard position >= 0, position <= size.width else { continue }
             let tick = CGRect(x: position - Tokens.Track.tickWidth / 2, y: 0,
                               width: Tokens.Track.tickWidth, height: Tokens.Track.tickInsetMinor)
-            context.fill(Path(tick), with: .color(Tokens.Palette.tickMinor))
+            context.fill(Path(tick), with: .color(.white.opacity(isDragging ? 0.34 : 0.24)))
         }
         for mark in map.marks(every: major, from: labelOrigin) {
             let position = x(mark)
             guard position >= 0, position <= size.width else { continue }
             let tick = CGRect(x: position - Tokens.Track.tickWidth / 2, y: 0,
                               width: Tokens.Track.tickWidth, height: Tokens.Track.dialMajorTickHeight)
-            context.fill(Path(tick), with: .color(Tokens.Palette.tickMajor))
-            context.draw(Text(parameter.format(mark)).font(Tokens.TypeStyle.tag.font)
-                .foregroundStyle(Tokens.Palette.textSecondary),
-                at: CGPoint(x: position, y: Tokens.Discrete.tickerLabelY))
+            context.fill(Path(tick), with: .color(.white.opacity(isDragging ? 0.60 : 0.45)))
+
         }
         if isEnabled, let detent = parameter.detent, parameter.range.contains(detent) {
             let tick = CGRect(x: x(detent) - Tokens.Track.anchorWidth / 2, y: 0,

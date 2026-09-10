@@ -86,9 +86,9 @@ struct ContactSheetPaper: View {
     let images: [String: RenderedPixels]
     let selectedStock: String
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     private var columns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: Tokens.ContactSheet.columnGap),
-              count: Tokens.ContactSheet.columns)
+        [GridItem(.adaptive(minimum: dynamicTypeSize.isAccessibilitySize ? 150 : 96), spacing: Tokens.ContactSheet.columnGap)]
     }
 
     var body: some View {
