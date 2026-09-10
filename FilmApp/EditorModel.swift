@@ -461,6 +461,17 @@ import FilmEngine
     /// the same way `stockChanged()` clamps them, because a Contrast Filter or a Print
     /// does not survive a change of Stock and a Profile refuses the render outright
     /// rather than ignoring the setting.
+    /// The output chooser renders both treatments from the same small source.
+    /// It never changes the editor's selected output or publishes canvas pixels.
+    func outputThumbnail(for stage: OutputStage) async throws -> RenderedPixels? {
+        guard let source = thumbnailInput else { return nil }
+        let profile = profile
+        var settings = settings
+        settings.outputStage = stage
+        let renderer = try Renderer()
+        return try await renderer.render(image: .linear(source), profile: profile, settings: settings)
+    }
+
     private func scheduleThumbnails<Item, Key>(
         _ items: [Item],
         plan: @escaping (Item) -> (key: Key, profile: Profile, settings: RenderSettings)?,

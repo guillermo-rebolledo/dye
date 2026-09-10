@@ -29,6 +29,7 @@ struct CanvasView: View {
     var parameter: Parameter?
     var onCompare: (Bool) -> Void = { _ in }
     var previewReadout: Bool = false
+    var isAdjusting = false
     @State private var drag: FineDrag?
     @State private var transientLoupe: FilmCanvas.Loupe?
     @State private var savedLoupe = FilmCanvas.Loupe()
@@ -61,7 +62,7 @@ struct CanvasView: View {
                             .accessibilityHidden(true)
                         }
                         .overlay(alignment: .topLeading) {
-                            if drag == nil && !previewReadout {
+                            if isComparing {
                                 comparePill.padding(Tokens.Metrics.space10)
                             }
                         }
@@ -81,6 +82,17 @@ struct CanvasView: View {
             .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .background(Tokens.Palette.canvas)
+        .overlay(alignment: .bottomTrailing) {
+            if case let .photo(_, _, milliseconds) = content, let milliseconds {
+                Text("\(milliseconds, specifier: "%.0f") ms").typeStyle(.renderTime)
+                    .foregroundStyle(Tokens.Palette.textPrimary)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .modifier(EditorGlass()).padding(12)
+                    .opacity(isAdjusting || drag != nil || previewReadout ? 1 : 0)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: isAdjusting || drag != nil)
+                    .allowsHitTesting(false).accessibilityHidden(true)
+            }
+        }
         .onChange(of: isLoupeEnabled) { savedLoupe = FilmCanvas.Loupe(); transientLoupe = nil }
         .onChange(of: parameter?.id) { drag = nil }
         .onDisappear { onCompare(false); drag = nil; transientLoupe = nil }
@@ -129,28 +141,11 @@ struct CanvasView: View {
     }
 
     private var comparePill: some View {
-        Text("Original")
-            .opacity(isComparing ? 1 : 0)
-            .typeStyle(.comparePill)
-            .foregroundStyle(isComparing ? Tokens.Canvas.originalText : Tokens.Canvas.compareText)
-            .padding(.horizontal, Tokens.Metrics.space10)
-            .frame(height: Tokens.Canvas.compareHeight)
-            .background {
-                RoundedRectangle(cornerRadius: Tokens.Canvas.compareRadius)
-                    .fill(.ultraThinMaterial)
-                    .environment(\.colorScheme, .dark)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: Tokens.Canvas.compareRadius)
-                            .fill(isComparing ? Tokens.Palette.inkOnCanvas : Tokens.Canvas.pillFill)
-                    }
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: Tokens.Canvas.compareRadius)
-                    .strokeBorder(Tokens.Canvas.pillBorder, lineWidth: Tokens.Elevation.hairlineWidth)
-            }
-            .animation(Tokens.Motion.ease(Tokens.Motion.tick, reduceMotion: reduceMotion), value: isComparing)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        Text("ORIGINAL").typeStyle(.comparePill)
+            .foregroundStyle(Tokens.Palette.textPrimary)
+            .padding(.horizontal, 12).frame(height: 28)
+            .modifier(EditorGlass())
+            .allowsHitTesting(false).accessibilityHidden(true)
     }
 
     private var emptyGate: some View {

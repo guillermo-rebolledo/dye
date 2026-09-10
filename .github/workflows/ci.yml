@@ -34,6 +34,8 @@ jobs:
         with:
           name: step-wedges
           path: .build/step-wedges
+      - name: Dial mapping and rail selection
+        run: python3 Scripts/check-dial-mapping.py
       - name: Build the iOS app (Baker is not linked)
         run: >-
           xcodebuild -project FilmApp.xcodeproj -scheme FilmApp

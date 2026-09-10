@@ -15,6 +15,9 @@ struct SettingsView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Tokens.Palette.deck)
+            .foregroundStyle(Tokens.Palette.textPrimary)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -61,6 +64,8 @@ struct GlossaryView: View {
                                         .padding()
                                         .textSelection(.enabled)
                                 }
+                                .background(Tokens.Palette.deck)
+                                .foregroundStyle(Tokens.Palette.textPrimary)
                                 .navigationTitle(entry.title)
                                 .navigationBarTitleDisplayMode(.inline)
                             } label: {
@@ -71,6 +76,9 @@ struct GlossaryView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Tokens.Palette.deck)
+        .foregroundStyle(Tokens.Palette.textPrimary)
         .navigationTitle("Glossary")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, prompt: "Find a control or term")
@@ -87,6 +95,7 @@ private struct GlossaryEntry: Identifiable {
     var id: String { title }
 
     static let all: [Self] = [
+        .init(section: "Controls", title: "Parameter rail", explanation: "Swipe the row of round controls to move through Light, Film, Lab and Adjust in pipeline order. Tap a control to select it, or tap the stage name above the value to jump to a group. VoiceOver users can swipe up or down on the rail to move between controls. Stock opens the filmstrip; Controls returns to the next parameter."),
         .init(section: "Controls", title: "Dials", explanation: "Drag the scale beneath a value to adjust it. The fixed centre marker shows your setting. A detent is a gentle snap at a reference value, such as neutral exposure or the stock’s natural grain intensity. Touch and hold a parameter name, or double-tap it, to reset that control. VoiceOver users can swipe up or down to adjust a dial."),
         .init(section: "Controls", title: "Compare & fine adjustment", explanation: "Hold the photo to compare it with the original. Drag horizontally on the photo for finer adjustment of the active control. VoiceOver offers comparison and loupe actions on the photo."),
         .init(section: "Controls", title: "Loupe", explanation: "The loupe shows a 1:1 view for inspecting detail. Touch and hold the Contact Sheet button to turn it on or off."),

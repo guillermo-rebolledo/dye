@@ -8,6 +8,9 @@ struct Filmstrip: View {
     let thumbnails: [String: RenderedPixels]
     @Binding var selectedStock: String
     let close: () -> Void
+    @State private var atEnd = false
+    @State private var startedAtEnd: Bool?
+    @State private var viewportWidth: CGFloat = 0
     @Namespace private var selectionRing
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -16,6 +19,12 @@ struct Filmstrip: View {
         VStack(spacing: Tokens.Filmstrip.footerGap) {
             strip
             HStack(spacing: Tokens.Metrics.space10) {
+                HStack(spacing: 8) {
+                    processLabel("C-41", .c41)
+                    processLabel("ECN-2", .ecn2)
+                    processLabel("E-6", .e6)
+                    processLabel("B&W", .bwSilver)
+                }
                 Spacer(minLength: 0)
                 Button { Haptics.buttonPress(); close() } label: {
                     Text("Controls").typeStyle(.filmControls)
@@ -35,12 +44,25 @@ struct Filmstrip: View {
         .frame(height: Tokens.Filmstrip.height)
     }
 
+    private func processLabel(_ name: String, _ process: FilmProcess) -> some View {
+        Text(name).font(.system(size: 9, design: .monospaced))
+            .foregroundStyle(Tokens.Palette.process(process))
+    }
+
     private var strip: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: Tokens.Metrics.space10) {
                     ForEach(Array(profiles.enumerated()), id: \.element.id) { index, profile in
                         cell(profile, index: index).id(profile.id)
+                            .background {
+                                if index == profiles.count - 1 {
+                                    GeometryReader { proxy in
+                                        Color.clear.preference(key: FilmstripEnd.self,
+                                            value: proxy.frame(in: .named("filmstrip")).maxX)
+                                    }
+                                }
+                            }
                     }
                 }
                 .accessibilityElement(children: .contain)
@@ -49,6 +71,21 @@ struct Filmstrip: View {
                 .padding(.top, Tokens.Metrics.space14)
                 .padding(.bottom, Tokens.Metrics.space14)
             }
+            .coordinateSpace(name: "filmstrip")
+            .background(GeometryReader { geometry in
+                Color.clear.onAppear { viewportWidth = geometry.size.width }
+                    .onChange(of: geometry.size.width) { _, width in viewportWidth = width }
+            })
+            .onPreferenceChange(FilmstripEnd.self) { atEnd = $0 <= viewportWidth + 16 }
+            .simultaneousGesture(DragGesture(minimumDistance: 12)
+                .onChanged { change in
+                    if startedAtEnd == nil { startedAtEnd = atEnd }
+                    if atEnd && change.translation.width < -76 { close() }
+                }
+                .onEnded { change in
+                    if startedAtEnd == true && change.translation.width < -32 { close() }
+                    startedAtEnd = nil
+                })
             .scrollIndicators(.hidden)
             .mask(LinearGradient(stops: [.init(color: .black, location: 0),
                                         .init(color: .black, location: Tokens.Filmstrip.fadeStart),
@@ -180,4 +217,9 @@ private struct FilmstripPreview: View {
 
 #Preview("Stock filmstrip · fixed deck · open and close") {
     DeckPreview(filmstripOpen: true).preferredColorScheme(.dark)
+}
+
+private struct FilmstripEnd: PreferenceKey {
+    static let defaultValue: CGFloat = .greatestFiniteMagnitude
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

@@ -36,7 +36,9 @@ def main():
     with tempfile.TemporaryDirectory(prefix="dye-dial-checks-") as directory:
         folder = Path(directory)
         swift = folder / "DialChecks.swift"
-        swift.write_text(parameter + "\n" + dependencies + mapping + CHECKS)
+        selection = (ROOT / "FilmApp/Editor/EditorSelection.swift").read_text()
+        haptics = "enum Haptics { static func step() {} ; static func thresholdCrossing() {} }\n"
+        swift.write_text(parameter + "\n" + dependencies + mapping + haptics + selection + CHECKS)
         binary = folder / "dial-checks"
         subprocess.run(["xcrun", "swiftc", "-swift-version", "6", "-parse-as-library",
                         "-I", str(build / "Modules"), str(swift),
@@ -47,7 +49,8 @@ def main():
 
 CHECKS = r"""
 @main struct DialChecks {
-static func main() {
+@MainActor static func main() {
+    checkSelection()
     let cases: [(Parameter.Identity, ClosedRange<Double>, Double, Double?)] = [
         (.exposure, EditorRange.exposure, 1 / 6, 0),
         (.brilliance, EditorRange.adjustment, 1, 0),
@@ -98,6 +101,40 @@ static func main() {
         print("PASS", id.rawValue)
     }
     print("All dial mapping checks passed")
+}
+@MainActor static func checkSelection() {
+    func parameter(_ id: Parameter.Identity, _ stage: EditorStage) -> Parameter {
+        Parameter(id: id, name: id.rawValue, stage: stage, value: .constant(0),
+                  range: 0...1, step: 1, format: { String($0) })
+    }
+    let full = [parameter(.exposure, .light), parameter(.stock, .film),
+                parameter(.grain, .film), parameter(.outputStage, .lab),
+                parameter(.contrast, .adjust)]
+    let selection = EditorSelection()
+    selection.reconcile(with: full)
+    precondition(selection.railIndex == 0 && selection.stage == .light)
+    selection.move(1)
+    precondition(selection.isFilmstripOpen && selection.stage == .film)
+    selection.isFilmstripOpen = false
+    precondition(selection.activeParameter == .grain)
+    selection.select(EditorStage.lab)
+    precondition(selection.activeParameter == .outputStage && selection.railIndex == 3)
+    selection.reconcile(with: full.filter { $0.stage != .lab })
+    precondition(selection.activeParameter == .contrast && selection.stage == .adjust)
+    selection.move(100)
+    precondition(selection.activeParameter == .contrast)
+    selection.select(EditorStage.lab)
+    precondition(selection.activeParameter == .contrast)
+    selection.move(-100)
+    precondition(selection.activeParameter == .exposure)
+    selection.reconcile(with: [])
+    selection.move(1)
+    precondition(selection.activeParameter == nil && selection.railIndex == 0)
+    selection.reconcile(with: full)
+    selection.select(Parameter.Identity.grain)
+    selection.reconcile(with: Array(full.dropFirst()))
+    precondition(selection.activeParameter == .grain && selection.railIndex == 1)
+    print("All rail selection checks passed")
 }}
 """
 

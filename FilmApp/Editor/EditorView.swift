@@ -17,8 +17,10 @@ struct EditorView: View {
             .overlay(alignment: .topTrailing) {
                 Button { showsSettings = true } label: {
                     Image(systemName: "gearshape")
+                        .font(.system(size: 16))
+                        .frame(width: 34, height: 34)
+                        .modifier(EditorGlass())
                         .frame(width: 44, height: 44)
-                        .background(.ultraThinMaterial, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Tokens.Palette.textPrimary)
@@ -62,36 +64,65 @@ private struct EditorScreen: View {
     @State private var selection = EditorSelection()
     @State var isLoupeEnabled = false
     @State private var holdingBefore = false
+    @State private var adjusting = false
     @State var accessibleBefore = false
     var previewReadout = false
 
     private var isComparing: Bool { canvas.hasPhoto && (holdingBefore || accessibleBefore) }
 
     var body: some View {
-        VStack(spacing: 0) {
-            CanvasView(content: canvas, isComparing: isComparing,
-                       isLoupeEnabled: isLoupeEnabled,
-                       parameter: selection.isFilmstripOpen ? nil : selection.activeParameter(in: model.parameters(for: selection.stage)),
-                       onCompare: { holdingBefore = $0 }, previewReadout: previewReadout)
-                .id(model.selectedStock)
-                .accessibilityElement(children: canvas.hasPhoto ? .ignore : .combine)
-                .accessibilityLabel(canvas.accessibilityLabel)
-                .accessibilityValue(isComparing ? "Original" : "")
-                .modifier(CanvasAccessibility(isEnabled: canvas.hasPhoto, showsOriginal: $accessibleBefore,
-                                              isLoupeEnabled: $isLoupeEnabled))
-            DeckView(model: model, selection: selection, hasPhoto: canvas.hasPhoto, photo: $photo,
-                     isLoupeEnabled: $isLoupeEnabled, showPresets: showPresets,
-                     showContactSheet: showContactSheet, showExport: showExport, error: error)
-                .opacity(isComparing ? Tokens.Canvas.comparingDeckOpacity : 1)
+        GeometryReader { geometry in
+            if geometry.size.width > geometry.size.height {
+                HStack(spacing: 0) {
+                    photoCanvas
+                    controls.frame(width: min(393, geometry.size.width * 0.46))
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+                        .background(Tokens.Palette.deck)
+                }
+            } else {
+                VStack(spacing: 0) {
+                    photoCanvas
+                    controls.frame(maxWidth: 560)
+                        .frame(maxWidth: .infinity).background(Tokens.Palette.deck)
+                }
+            }
         }
-        // The deck's bottom gutter includes the home indicator, as in 1j. The
-        // canvas surround extends behind the status area; the photo stays safe.
-        .ignoresSafeArea(.container, edges: .bottom)
         .background(Tokens.Palette.canvas.ignoresSafeArea())
         .onChange(of: isComparing) { Haptics.compare() }
         .onChange(of: photo) { accessibleBefore = false; isLoupeEnabled = false; holdingBefore = false }
         .onChange(of: canvas.hasPhoto) { if !canvas.hasPhoto { accessibleBefore = false; isLoupeEnabled = false; holdingBefore = false } }
     }
+
+    private var photoCanvas: some View {
+        CanvasView(content: canvas, isComparing: isComparing,
+                   isLoupeEnabled: isLoupeEnabled,
+                   parameter: selection.isFilmstripOpen ? nil : selection.activeParameter(in: model.allParameters),
+                   onCompare: { holdingBefore = $0 }, previewReadout: previewReadout, isAdjusting: adjusting)
+            .id(model.selectedStock)
+            .accessibilityElement(children: canvas.hasPhoto ? .ignore : .combine)
+            .accessibilityLabel(canvas.accessibilityLabel)
+            .accessibilityValue(isComparing ? "Original" : "")
+            .modifier(CanvasAccessibility(isEnabled: canvas.hasPhoto, showsOriginal: $accessibleBefore,
+                                          isLoupeEnabled: $isLoupeEnabled))
+    }
+
+    private var controls: some View {
+        VStack(spacing: 0) {
+            if let error {
+                ScrollView {
+                    Text(error).typeStyle(.caption).foregroundStyle(Tokens.Palette.destructive)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                        .accessibilityLabel("Error: \(error)")
+                }.frame(maxHeight: 64)
+            }
+            DeckView(model: model, selection: selection, hasPhoto: canvas.hasPhoto, photo: $photo,
+                     isLoupeEnabled: $isLoupeEnabled, showPresets: showPresets,
+                     showContactSheet: showContactSheet, showExport: showExport,
+                     onDragging: { adjusting = $0 })
+                .opacity(isComparing ? Tokens.Canvas.comparingDeckOpacity : 1)
+        }
+    }
+
 }
 
 private struct CanvasAccessibility: ViewModifier {
