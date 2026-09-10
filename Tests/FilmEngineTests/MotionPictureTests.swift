@@ -272,12 +272,22 @@ private func average(_ pixels: RenderedPixels, _ index: Int) -> Double {
     // Two slots force eviction between film and observation payloads. The same
     // input must remain identical after stock/output switches and repeated loads.
     let shared = try Renderer(textureCacheCapacity: 2)
-    for _ in 0..<4 {
+    for iteration in 0..<20 {
         for profile in profiles.reversed() {
             let stages: [OutputStage] = profile.metadata.colour.printVariants == nil ? [.none] : [.print, .scan]
             for stage in stages {
                 let result = try await shared.render(image: .linear(image), profile: profile, settings: referenced(stage, profile))
                 let expected = try #require(reference[profile.id + stage.rawValue])
+                if result.rgba != expected {
+                    let repeated = try await shared.render(image: .linear(image), profile: profile, settings: referenced(stage, profile))
+                    let fresh = try Renderer()
+                    let freshOutput = try await fresh.render(image: .linear(image), profile: profile, settings: referenced(stage, profile))
+                    let sharedDensity = try await shared.render(image: .linear(image), profile: profile,
+                        settings: referenced(OutputStage.none, profile))
+                    let freshDensity = try await fresh.render(image: .linear(image), profile: profile,
+                        settings: referenced(OutputStage.none, profile))
+                    print("[DEBUG-density-switch] iteration \(iteration) \(profile.id) \(stage): repeat \(repeated.rgba), fresh \(freshOutput.rgba), shared density \(sharedDensity.rgba), fresh density \(freshDensity.rgba)")
+                }
                 #expect(result.rgba == expected, "\(profile.id), \(stage): stock/output switch changed the response")
             }
         }

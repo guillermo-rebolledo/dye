@@ -49,6 +49,13 @@ jobs:
         run: |
           swift build -c release --product ProfileBaker
           echo "PROFILE_BAKER_EXECUTABLE=$(swift build -c release --show-bin-path)/ProfileBaker" >> "$GITHUB_ENV"
+      - name: Diagnose stock and output switching with Metal validation
+        env:
+          MTL_DEBUG_LAYER: "1"
+          MTL_SHADER_VALIDATION: "1"
+          MTL_SHADER_VALIDATION_REPORT_TO_STDERR: "1"
+          MTL_SHADER_VALIDATION_ABORT_ON_FAULT: "1"
+        run: swift test --filter stockAndOutputSwitchesPreserveTheSameRenderedResponse
       # Swift Testing runs tests concurrently. Keep timing assertions away from
       # the other GPU renders and Baker processes without relaxing their budgets.
       - name: Renderer, codec, and Baker CLI tests
