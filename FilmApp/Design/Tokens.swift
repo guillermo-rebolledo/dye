@@ -580,10 +580,10 @@ private struct TokenCatalogue: View {
 
 extension Tokens {
     enum Deck {
-        static let height: CGFloat = 262
+        static let height: CGFloat = 318
         /// Give large readouts extra breathing room at accessibility sizes.
         static func extraHeight(for size: DynamicTypeSize) -> CGFloat {
-            size.isAccessibilitySize ? 14 : 0
+            size.isAccessibilitySize ? 70 : 0
         }
         static let readoutHeight: CGFloat = 34
         static let actionHeight: CGFloat = 58

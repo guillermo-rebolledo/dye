@@ -1,5 +1,23 @@
 # One-rail editor implementation
 
+## Persistent Stock header (September 2026)
+
+Stock identity now stays above the adjustment rail. Stock and Output open explicit
+browsing sheets and never replace the rail. Dismissal preserves the active dial;
+stock changes reconcile the available dial list. Contrast filters use the stepped
+adjustment tape with named readouts. Stage jumps sit beside the parameter name,
+with a separate 44 pt target. The default deck is 318 pt (388 pt at accessibility
+text sizes), including a 56 pt Stock header that grows to 112 pt.
+
+This supersedes the takeover behavior and 262 pt dimensions below and in the
+original handoff. The renderer pipeline and stock-dependent setting rules remain
+unchanged. The updated dial/selection checks and simulator build pass. Live simulator
+inspection confirmed the Identity/Stock header, stock switching returning to
+Exposure, and Scan/Print switching returning to Grain. Automated swipe attempts
+did not move the simulator rail; physical touch scrolling and the expanded
+accessibility layout still need device review.
+
+
 The current editor follows `design_handoff_dye_editor/one-rail-redesign.md` and
 screens 3a–3d in its bundled HTML. `editor-redesign.md` remains the history of the
 previous deck and the source for the unchanged sheet treatments.

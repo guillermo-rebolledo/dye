@@ -1,7 +1,7 @@
 import SwiftUI
 import FilmEngine
 
-/// Two real output previews occupy the rail takeover without moving the bar.
+/// Real output previews for the explicit Output browser.
 struct OutputStageCards: View {
     let model: EditorModel
     var isEnabled = true

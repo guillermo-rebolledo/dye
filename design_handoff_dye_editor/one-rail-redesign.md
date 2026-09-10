@@ -1,5 +1,12 @@
 # Dye — "one rail" redesign spec
 
+> September 2026 revision: Stock and Output are persistent-header actions opening
+> sheets, excluded from dial navigation. The rail never becomes a browser.
+> Contrast filters use a stepped dial. See `../docs/one-rail-implementation.md`
+> and `../docs/identity-rail-proposal.md`. The takeover instructions and original
+> deck dimensions in this historical handoff are superseded.
+
+
 A delta spec against the shipped editor at `guillermo-rebolledo/dye@main` (read 2026-09-10). It describes only what changes. Anything not mentioned here — the engine, the twelve passes, parameter ranges, captions, `EditorModel`, the sheets — is unchanged.
 
 Design reference: [`Dye Editor - one rail.html`](Dye%20Editor%20-%20one%20rail.html), the standalone offline bundle in this folder (screens `3a`–`3d`; `3a` is interactive). It is the only design file in the repo. The earlier explorations this document refers to as "the archive" — the fixed-deck editor and the simplification passes, ids `1a`–`2f` — are not checked in; [`../docs/editor-redesign.md`](../docs/editor-redesign.md) is the record of what was built from them.

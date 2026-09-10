@@ -232,7 +232,7 @@ extension Parameter {
     var readoutWidthReference: String {
         var values = [range.lowerBound, range.upperBound, defaultValue]
         if let detent { values.append(detent) }
-        if control == .contrastFilterDiscs || control == .outputStageCards {
+        if id == .contrastFilter || control == .outputStageCards {
             values += stride(from: range.lowerBound, through: range.upperBound, by: step).map { $0 }
         }
         return values.map(format).max { $0.count < $1.count } ?? readout
@@ -260,6 +260,8 @@ extension EditorModel {
 
     /// Every parameter on offer, across all four stages.
     var allParameters: [Parameter] { EditorStage.allCases.flatMap(parameters(for:)) }
+    /// Presentation omits foundational choices; the rendering pipeline is unchanged.
+    var dialParameters: [Parameter] { allParameters.filter { $0.id != .stock && $0.id != .outputStage } }
 
     private var lightParameters: [Parameter] {
         var parameters = [
@@ -308,7 +310,7 @@ extension EditorModel {
                 Parameter(id: .contrastFilter, name: "Contrast filter", stage: .film,
                           value: contrastFilterBinding,
                           range: 0...Double(filters.count - 1), step: 1,
-                          control: .contrastFilterDiscs,
+                          control: .dial,
                           format: { [weak self] index in
                               let filter = filters[Self.index(index, in: filters)]
                               // The published factor for *that* glass, not for the

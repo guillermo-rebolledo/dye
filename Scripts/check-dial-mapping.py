@@ -59,6 +59,7 @@ CHECKS = r"""
         (.temperature, EditorRange.temperature, 50, 5500),
         (.temperature, EditorRange.temperature, 50, 3225),
         (.tint, RenderSettings.tintRange, 1, 0),
+        (.contrastFilter, 0...5, 1, nil),
         (.exposureTime, EditorRange.exposureTimeStops, 1 / 3, 0),
         (.development, RenderSettings.developmentRange, 0.1, 0),
         (.bloom, RenderSettings.bloomRange, 0.05, 1),
@@ -114,11 +115,17 @@ CHECKS = r"""
     selection.reconcile(with: full)
     precondition(selection.railIndex == 0 && selection.stage == .light)
     selection.move(1)
-    precondition(selection.isFilmstripOpen && selection.stage == .film)
+    precondition(selection.activeParameter == .grain && selection.stage == .film)
+    precondition(!selection.isFilmstripOpen && selection.railIndex == 1)
+    selection.isFilmstripOpen = true
     selection.isFilmstripOpen = false
-    precondition(selection.activeParameter == .grain)
+    selection.isOutputBrowserOpen = true
+    selection.isOutputBrowserOpen = false
+    precondition(selection.activeParameter == .grain && selection.railIndex == 1)
     selection.select(EditorStage.lab)
-    precondition(selection.activeParameter == .outputStage && selection.railIndex == 3)
+    precondition(selection.activeParameter == .grain)
+    selection.move(1)
+    precondition(selection.activeParameter == .contrast && selection.railIndex == 2)
     selection.reconcile(with: full.filter { $0.stage != .lab })
     precondition(selection.activeParameter == .contrast && selection.stage == .adjust)
     selection.move(100)
@@ -133,7 +140,9 @@ CHECKS = r"""
     selection.reconcile(with: full)
     selection.select(Parameter.Identity.grain)
     selection.reconcile(with: Array(full.dropFirst()))
-    precondition(selection.activeParameter == .grain && selection.railIndex == 1)
+    precondition(selection.activeParameter == .grain && selection.railIndex == 0)
+    selection.reconcile(with: full.filter { $0.id != .grain })
+    precondition(selection.activeParameter == .exposure)
     print("All rail selection checks passed")
 }}
 """
