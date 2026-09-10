@@ -706,7 +706,7 @@ extension EditorModel {
     var outputDescription: String { outputDescription(for: outputStage) }
 
     func outputDescription(for stage: OutputStage) -> String {
-        if isIdentity { return "Nothing happens after the identity response; the image is converted for the display." }
+        if isIdentity { return "No film response is applied; the image is converted for the display." }
         switch stage {
         case .scan: return "The negative is scanned: densities are inverted and auto-balanced so mid-grey comes back neutral, the way most people picture this stock."
             + (outputStages.isEmpty ? "" : " A print of the same negative is a different picture, not a filter over this one.")

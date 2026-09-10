@@ -1,5 +1,9 @@
 # One-rail editor implementation
 
+Current picker wording: **Film Stock** before a stock is selected, then the stock
+name. The neutral browser option is **No Film Stock** (internal ID `identity`).
+The pickers share the top row with Settings; the editor has no app-title row.
+
 ## Persistent Stock header (September 2026)
 
 Stock identity now stays above the adjustment rail. Stock and Output open explicit

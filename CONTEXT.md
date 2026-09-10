@@ -37,6 +37,10 @@ Stage**. A **Preset** saves a Stock plus those settings.
 
 **Stock**:
 A real-world film product the app emulates, such as Portra 400.
+User-facing controls use **Film Stock**. The top picker shows “Film Stock” until a
+stock is selected, then shows its name. The neutral browser option is **No Film
+Stock**: it applies no film response. Its internal profile ID remains `identity`;
+identity transforms and engine identifiers retain their technical meaning.
 _Avoid_: film, filmstock, emulsion (means something narrower)
 
 **Process**:

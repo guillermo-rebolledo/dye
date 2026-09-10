@@ -14,7 +14,7 @@
     ],
     "outputStage": "none"
   },
-  "displayName": "Identity",
+  "displayName": "No Film Stock",
   "format": "135",
   "grain": {
     "channelCorrelation": 0.15,

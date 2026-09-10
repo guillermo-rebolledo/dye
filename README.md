@@ -7,6 +7,10 @@ Open `FilmApp.xcodeproj`, choose the FilmApp scheme and an iOS simulator or devi
 then run. Choose a photo using the system photo picker (no full-library permission
 is required). For a device, select your signing team in Xcode.
 
+Tap **Film Stock** at the top of the editor to choose a stock. The picker then
+shows the selected stock’s name. Choose **No Film Stock** in the browser to remove
+the film response; this neutral profile uses the internal ID `identity`.
+
 ```sh
 swift build
 swift test
