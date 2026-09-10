@@ -132,7 +132,7 @@ struct DeckPreview: View {
 #Preview("274 pt · Portra · Film") { DeckPreview().preferredColorScheme(.dark) }
 #Preview("274 pt · Tri-X · Film") { DeckPreview(stock: "tri-x-400").preferredColorScheme(.dark) }
 #Preview("274 pt · Velvia · Lab") { DeckPreview(stock: "velvia-50", stage: .lab).preferredColorScheme(.dark) }
-#Preview("274 pt · Identity · Lab") { DeckPreview(stock: "identity", stage: .lab).preferredColorScheme(.dark) }
+#Preview("274 pt · No Film Stock · Lab") { DeckPreview(stock: "identity", stage: .lab).preferredColorScheme(.dark) }
 #Preview("274 pt · Portra · Adjust") { DeckPreview(stage: .adjust).preferredColorScheme(.dark) }
 #Preview("274 pt · Velvia · Adjust") { DeckPreview(stock: "velvia-50", stage: .adjust).preferredColorScheme(.dark) }
 

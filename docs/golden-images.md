@@ -43,12 +43,12 @@ tolerance. The initial snapshots were recorded on Apple Silicon with Xcode 26.6.
   Verify the Stock and all controls, including Geometry, return. Delete and relaunch
   to verify deletion. Presets use an on-disk SwiftData container; failed saves and
   unavailable Stocks report errors.
-- Hold the canvas to show the Identity render with default settings. Release or
+- Hold the canvas to show the neutral (No Film Stock) render with default settings. Release or
   cancel the gesture to return to the edit. VoiceOver offers a toggle action.
 - Choose two different photos and change controls quickly. The thumbnail strip
   must show the latest photo/settings through each Stock; cancellation prevents
   an older thumbnail task from overwriting newer results.
-- On an EDR-capable device, view HDR input using Identity. The float16 extended
+- On an EDR-capable device, view HDR input using No Film Stock. The float16 extended
   Display P3 canvas opts into EDR when its window's screen reports
   `potentialEDRHeadroom > 1`. Compare bright areas with SDR white. Repeat on an SDR
   display; no EDR is requested. Actual brightness depends on current headroom and

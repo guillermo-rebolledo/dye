@@ -25,7 +25,7 @@ struct EditorPickers: View {
         .frame(maxWidth: .infinity)
         .sheet(isPresented: Binding(get: { selection.isFilmstripOpen }, set: { selection.isFilmstripOpen = $0 })) {
             VStack(alignment: .leading, spacing: 20) {
-                Text("Stock").font(.title2.bold())
+                Text("Film Stock").font(.title2.bold())
                 Text(model.profile.metadata.displayName).font(.headline)
                 Filmstrip(catalogue: model.catalogue, thumbnails: model.thumbnails,
                           selectedStock: Binding(get: { model.selectedStock }, set: { model.selectedStock = $0 }),
@@ -53,11 +53,11 @@ struct EditorPickers: View {
 
     private var stockPicker: some View {
         Button { selection.isFilmstripOpen = true } label: {
-            pickerLabel(model.profile.metadata.displayName)
+            pickerLabel(model.isIdentity ? "Film Stock" : model.profile.metadata.displayName)
         }
-        .accessibilityLabel("Stock")
+        .accessibilityLabel("Film Stock")
         .accessibilityValue(model.profile.metadata.displayName)
-        .accessibilityHint("Browse stocks")
+        .accessibilityHint("Choose a film stock")
     }
 
     @ViewBuilder private var outputPicker: some View {
