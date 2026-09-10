@@ -20,7 +20,7 @@ struct DeckView: View {
         let active = selection.activeParameter(in: parameters)
         VStack(spacing: 0) {
             stockHeader
-                .frame(height: dynamicTypeSize.isAccessibilitySize ? 112 : 56)
+                .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 112 : 56)
             ActiveControl(parameter: active, model: model, isEnabled: hasPhoto)
                 .padding(.horizontal, 16).frame(height: 34)
             ParameterRail(model: model, selection: selection, parameters: parameters)
@@ -38,10 +38,11 @@ struct DeckView: View {
                       showPresets: showPresets, showContactSheet: showContactSheet, showExport: showExport,
                       isLoupeEnabled: $isLoupeEnabled)
                 .padding(.horizontal, 16)
-            Spacer(minLength: 0)
+                .padding(.top, 8)
+                .padding(.bottom, 8)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: Tokens.Deck.height + Tokens.Deck.extraHeight(for: dynamicTypeSize), alignment: .top)
+        .frame(minHeight: Tokens.Deck.height + Tokens.Deck.extraHeight(for: dynamicTypeSize), alignment: .top)
         .background(Tokens.Palette.deck.ignoresSafeArea(edges: .bottom))
         .onChange(of: parameters.map(\.id), initial: true) { selection.reconcile(with: model.dialParameters) }
         .sheet(isPresented: Binding(get: { selection.isFilmstripOpen }, set: { selection.isFilmstripOpen = $0 })) {
@@ -86,10 +87,10 @@ struct DeckView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 5))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(model.profile.metadata.displayName)
-                            .font(.headline).lineLimit(2)
+                            .font(.headline).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                         Text(model.selectedStock == "identity" ? "No stock response" : model.profile.metadata.process.displayName)
                             .font(.caption).foregroundStyle(Tokens.Deck.captionInk)
-                            .lineLimit(2)
+                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     }
                     Image(systemName: "chevron.down").font(.caption)
                     Spacer(minLength: 0)
@@ -126,11 +127,14 @@ struct DeckView: View {
                     .disabled(!model.dialParameters.contains { $0.stage == stage })
             }
         } label: {
-            Text(selection.stage.displayName.uppercased())
+            HStack(spacing: 4) {
+                Text(selection.stage.displayName)
+                Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
+            }
                 .contentTransition(.opacity)
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.09), value: selection.stage)
-                .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 12 : 10, design: .monospaced))
-                .tracking(1.4).lineLimit(1).minimumScaleFactor(0.7).foregroundStyle(Tokens.Palette.textPrimary.opacity(0.42))
+                .font(.subheadline)
+                .foregroundStyle(Tokens.Palette.textSecondary)
                 .frame(minWidth: 44, minHeight: 44)
                 .contentShape(Rectangle())
         }
@@ -141,7 +145,7 @@ struct DeckView: View {
 
     private func parameterName(_ parameter: Parameter?) -> some View {
         Text(parameter?.name ?? "Choose a photo")
-            .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 14 : 11))
+            .font(.subheadline.weight(.medium))
             .foregroundStyle(Tokens.Palette.textPrimary)
             .frame(maxWidth: .infinity).contentShape(Rectangle())
             .gesture(LongPressGesture().onEnded { _ in reset(parameter) }
@@ -158,8 +162,8 @@ struct DeckView: View {
     }
 }
 
-/// Interactive acceptance fixture. The measured height is independent of Stock,
-/// photo availability, stage and browser presentation.
+/// Interactive acceptance fixture. The deck grows with its toolbar labels and
+/// Dynamic Type instead of clipping controls to a fixed height.
 struct DeckPreview: View {
     @State private var model = EditorModel()
     @State private var selection = EditorSelection()
