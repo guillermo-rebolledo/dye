@@ -7,10 +7,9 @@ import SwiftUI
     private(set) var activeParameter: Parameter.Identity?
     private var parameters: [Parameter] = []
     var stage: EditorStage { parameters.first { $0.id == activeParameter }?.stage ?? .light }
-    var isFilmstripOpen: Bool {
-        get { activeParameter == .stock }
-        set { if newValue { select(.stock) } else if isFilmstripOpen { move(1) } }
-    }
+    // Browsing never changes the dial selection or its scroll position.
+    var isFilmstripOpen = false
+    var isOutputBrowserOpen = false
 
     func select(_ stage: EditorStage) {
         guard let parameter = parameters.first(where: { $0.stage == stage }) else { return }
@@ -36,6 +35,7 @@ import SwiftUI
     }
 
     func reconcile(with parameters: [Parameter]) {
+        let parameters = parameters.filter { $0.id != .stock && $0.id != .outputStage }
         self.parameters = parameters
         if let index = parameters.firstIndex(where: { $0.id == activeParameter }) {
             railIndex = index
@@ -46,6 +46,6 @@ import SwiftUI
     }
 
     func activeParameter(in parameters: [Parameter]) -> Parameter? {
-        parameters.first { $0.id == activeParameter } ?? parameters.first
+        parameters.first { $0.id == activeParameter } ?? parameters.first { $0.id != .stock && $0.id != .outputStage }
     }
 }

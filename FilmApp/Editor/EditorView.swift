@@ -112,7 +112,7 @@ private struct EditorScreen: View {
     private var photoCanvas: some View {
         CanvasView(content: canvas, isComparing: isComparing,
                    isLoupeEnabled: isLoupeEnabled,
-                   parameter: selection.isFilmstripOpen ? nil : selection.activeParameter(in: model.allParameters),
+                   parameter: (selection.isFilmstripOpen || selection.isOutputBrowserOpen) ? nil : selection.activeParameter(in: model.dialParameters),
                    onCompare: { holdingBefore = $0 }, previewReadout: previewReadout, isAdjusting: adjusting)
             .id(model.selectedStock)
             .accessibilityElement(children: canvas.hasPhoto ? .ignore : .combine)
