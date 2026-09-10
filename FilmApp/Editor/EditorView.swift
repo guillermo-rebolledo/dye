@@ -32,7 +32,7 @@ struct EditorView: View {
             .sheet(isPresented: $showsPresets) { PresetSheet(model: model).filmSheet() }
             .fullScreenCover(isPresented: $showsContactSheet) { ContactSheetView(selectedStock: model.selectedStock) }
             .sheet(isPresented: $isExporting) { ExportSheet(model: model).filmSheet() }
-            .task { model.loadCatalogue() }
+            .task { await model.loadCatalogue() }
             .task { await model.watchThermalState() }
             .task(id: photo) {
                 guard let photo else { return }
@@ -243,7 +243,7 @@ private struct EditorPreview: View {
                     previewError = "The photo could not be loaded."
                 case .graded, .original, .loupe, .dragging:
                     do {
-                        model.loadCatalogue()
+                        await model.loadCatalogue()
                         model.selectedStock = "portra-400"
                         let renderer = try Renderer()
                         let input = try ContactSheetReference.image()

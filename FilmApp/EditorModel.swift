@@ -11,14 +11,17 @@ import FilmEngine
 /// values rather than every intermediate one.
 @MainActor @Observable final class EditorModel {
     var catalogue: [Profile] = []
-    var selectedStock = "identity" { didSet { stockChanged() } }
-    var settings = RenderSettings() { didSet { scheduleRender() } }
+    var selectedStock = "identity" { didSet { if selectedStock != oldValue { stockChanged() } } }
+    var settings = RenderSettings() { didSet { if settings != oldValue { scheduleRender() } } }
     private(set) var pixels: RenderedPixels?
     private(set) var beforePixels: RenderedPixels?
     private(set) var thumbnails: [String: RenderedPixels] = [:]
     private var thumbnailInput: LinearImage?
     private var thumbnailTask: Task<Void, Never>?
     private var imageGeneration = UUID()
+    private(set) var thumbnailGeneration = UUID()
+    private var openGeneration = UUID()
+    private var thumbnailRendererTask: Task<Renderer, Error>?
     private(set) var error: String?
     private(set) var isLoading = false
     private(set) var lastRenderMilliseconds: Double?
@@ -133,44 +136,61 @@ import FilmEngine
         return low...high
     }
 
-    func loadCatalogue() {
-        do { catalogue = try ProfileCatalogue.bundled().profiles }
+    func loadCatalogue() async {
+        guard catalogue.isEmpty else { return }
+        do { catalogue = try await Task.detached { try ProfileCatalogue.bundled().profiles }.value }
         catch { self.error = error.localizedDescription }
     }
 
     func open(_ item: PhotosPickerItem) async {
+        let request = UUID()
+        openGeneration = request
         isLoading = true
-        defer { isLoading = false }
+        defer { if openGeneration == request { isLoading = false } }
         do {
             error = nil
-            if renderer == nil { renderer = try Renderer() }
+            if renderer == nil { renderer = try await Renderer.make() }
             guard let data = try await item.loadTransferable(type: Data.self), let renderer else {
                 throw FilmError.invalid("The photo could not be loaded")
             }
+            try Task.checkCancellation()
+            guard openGeneration == request else { return }
             let decoded = try await renderer.decode(data, maximumDimension: Self.previewMaximumDimension)
             try Task.checkCancellation()
             let before = try await renderer.render(image: .linear(decoded), profile: .identity, settings: RenderSettings())
-            let small = try await renderer.decode(data, maximumDimension: 192)
             try Task.checkCancellation()
+            guard openGeneration == request else { return }
+            thumbnailTask?.cancel()
+            presetThumbnailTask?.cancel()
             imageGeneration = UUID()
-            pixels = nil
+            pixels = before
             beforePixels = before
             thumbnails = [:]
             presetThumbnails = [:]
-            thumbnailInput = small
+            thumbnailInput = nil
             preview = decoded
             original = data
             originalDate = ExportDate.originalDate(in: data)
             if exportTask == nil { export = nil }
             scheduleRender()
+            isLoading = false
+            // Filmstrip decoding is secondary to showing the photo and accepting edits.
+            let small = try await renderer.decode(data, maximumDimension: 192)
+            try Task.checkCancellation()
+            guard openGeneration == request else { return }
+            thumbnailInput = small
+            thumbnailGeneration = UUID()
+            scheduleThumbnails()
         } catch is CancellationError { }
-        catch { self.error = error.localizedDescription }
+        catch { if openGeneration == request { self.error = error.localizedDescription } }
     }
 
     private func stockChanged() {
-        settings.developmentOffset = Self.developmentOffset(settings.developmentOffset, for: profile)
-        settings.contrastFilter = Self.contrastFilter(settings.contrastFilter, for: profile)
-        settings.outputStage = Self.outputStage(settings.outputStage, for: profile)
+        var adjusted = settings
+        adjusted.developmentOffset = Self.developmentOffset(settings.developmentOffset, for: profile)
+        adjusted.contrastFilter = Self.contrastFilter(settings.contrastFilter, for: profile)
+        adjusted.outputStage = Self.outputStage(settings.outputStage, for: profile)
+        settings = adjusted
         scheduleRender()
     }
 
@@ -307,7 +327,7 @@ import FilmEngine
                 let data = try await renderer.export(image: .encoded(original), profile: profile, settings: settings,
                                                      format: format, options: ExportOptions(creationDate: creationDate), progress: report)
                 try Task.checkCancellation()
-                let url = try Self.write(data, named: "\(profile.id).\(format.fileExtension)")
+                let url = try await Self.write(data, named: "\(profile.id).\(format.fileExtension)")
                 self?.export = .saving
                 do {
                     // Photos invokes this block on its own queue. Prevent it from
@@ -346,10 +366,12 @@ import FilmEngine
             do {
                 let text = try await renderer.exportedLUT(profile: profile, settings: settings)
                 let data = Data(text.utf8)
-                let url = try Self.write(data, named: "\(profile.id).cube")
+                let url = try await Self.write(data, named: "\(profile.id).cube")
                 // No pixel dimensions and no gamut: a LUT is a mapping, not a frame.
                 self?.export = .finished(ExportRecord(url: url, byteCount: data.count, tileCount: 1,
                                                       elapsedSeconds: Self.seconds(since: started)))
+            } catch is CancellationError {
+                self?.export = nil
             } catch {
                 self?.export = .failed(error.localizedDescription)
             }
@@ -391,11 +413,21 @@ import FilmEngine
         return Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
     }
 
-    private static func write(_ data: Data, named name: String) throws -> URL {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let url = directory.appendingPathComponent(name)
-        try data.write(to: url, options: .atomic)
+    nonisolated private static func write(_ data: Data, named name: String) async throws -> URL {
+        try Task.checkCancellation()
+        let url = try await Task.detached(priority: .utility) {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let url = directory.appendingPathComponent(name)
+            try data.write(to: url, options: .atomic)
+            return url
+        }.value
+        if Task.isCancelled {
+            try? await Task.detached(priority: .utility) {
+                try FileManager.default.removeItem(at: url.deletingLastPathComponent())
+            }.value
+            throw CancellationError()
+        }
         return url
     }
 
@@ -468,9 +500,20 @@ import FilmEngine
         let profile = profile
         var settings = settings
         settings.outputStage = stage
-        let renderer = try Renderer()
+        let renderer = try await thumbnailRenderer()
+        try Task.checkCancellation()
         return try await renderer.render(image: .linear(source), profile: profile, settings: settings)
     }
+
+    private func thumbnailRenderer() async throws -> Renderer {
+        if thumbnailRendererTask == nil {
+            thumbnailRendererTask = Task { try await Renderer.make() }
+        }
+        do { return try await thumbnailRendererTask!.value }
+        catch { thumbnailRendererTask = nil; throw error }
+    }
+
+    func cancelPresetThumbnails() { presetThumbnailTask?.cancel() }
 
     private func scheduleThumbnails<Item, Key>(
         _ items: [Item],
@@ -481,8 +524,10 @@ import FilmEngine
         return Task {
             do {
                 try await Task.sleep(for: .milliseconds(200))
-                let source = try input ?? ContactSheetReference.image()
-                let renderer = try Renderer()
+                let source: LinearImage
+                if let input { source = input }
+                else { source = try await Task.detached { try ContactSheetReference.image() }.value }
+                let renderer = try await thumbnailRenderer()
                 for item in items {
                     try Task.checkCancellation()
                     guard let (key, profile, settings) = plan(item) else { continue }
@@ -518,7 +563,7 @@ import FilmEngine
                     guard generation == imageGeneration else { continue }
                     pixels = result
                     error = nil
-                    lastRenderMilliseconds = Double((ContinuousClock.now - started).components.attoseconds) / 1e15
+                    lastRenderMilliseconds = Self.seconds(since: started) * 1000
                 } catch {
                     self.error = error.localizedDescription
                 }

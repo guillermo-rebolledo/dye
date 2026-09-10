@@ -275,7 +275,7 @@ private struct ExportSheetPreview: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Tokens.Palette.canvas)
         .task {
-            model.loadCatalogue()
+            await model.loadCatalogue()
             model.selectedStock = "portra-400"
             pixels = try? await Renderer().render(image: .linear(try ContactSheetReference.image()),
                                                   profile: model.profile, settings: ContactSheetReference.settings)

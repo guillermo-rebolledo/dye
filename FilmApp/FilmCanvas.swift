@@ -7,7 +7,7 @@ struct FilmCanvas: UIViewRepresentable {
     var loupe: Loupe?
 
     /// Normalized image focus and finger travel, independent of view size.
-    struct Loupe {
+    struct Loupe: Equatable {
         var focus = CGPoint(x: 0.5, y: 0.5)
         var translation = CGSize.zero
 
@@ -35,21 +35,28 @@ struct FilmCanvas: UIViewRepresentable {
         return view
     }
     func updateUIView(_ view: MTKView, context: Context) {
-        context.coordinator.image = image
-        context.coordinator.loupe = loupe
+        let coordinator = context.coordinator
+        guard coordinator.image?.id != image.id || coordinator.loupe != loupe else { return }
+        coordinator.image = image
+        coordinator.loupe = loupe
         view.setNeedsDisplay()
     }
 
     @MainActor final class Coordinator: NSObject, MTKViewDelegate {
         var image: RenderedPixels?
         var loupe: Loupe?
+        // All canvases use the system default device and the same pixel format.
+        private static var sharedPipeline: (any MTLRenderPipelineState)?
+        private var texture: (any MTLTexture)?
+        private var uploadedImageID: UUID?
         private var pipeline: (any MTLRenderPipelineState)?
         private var queue: (any MTLCommandQueue)?
-        func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) { }
+        func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) { view.setNeedsDisplay() }
         func draw(in view: MTKView) {
             guard let device = view.device, let image,
                   let drawable = view.currentDrawable, let descriptor = view.currentRenderPassDescriptor else { return }
             do {
+                if pipeline == nil { pipeline = Self.sharedPipeline }
                 if pipeline == nil {
                     let source = """
                     #include <metal_stdlib>
@@ -74,18 +81,24 @@ struct FilmCanvas: UIViewRepresentable {
                     state.fragmentFunction = library.makeFunction(name: "canvasFragment")
                     state.colorAttachments[0].pixelFormat = .rgba16Float
                     pipeline = try device.makeRenderPipelineState(descriptor: state)
-                    queue = device.makeCommandQueue()
+                    Self.sharedPipeline = pipeline
                 }
-                let textureDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float,
-                    width: image.width, height: image.height, mipmapped: false)
-                textureDescriptor.usage = .shaderRead
-                guard let texture = device.makeTexture(descriptor: textureDescriptor),
-                      let command = queue?.makeCommandBuffer(), let encoder = command.makeRenderCommandEncoder(descriptor: descriptor),
+                if queue == nil { queue = device.makeCommandQueue() }
+                if uploadedImageID != image.id {
+                    let textureDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float,
+                        width: image.width, height: image.height, mipmapped: false)
+                    textureDescriptor.usage = .shaderRead
+                    guard let texture = device.makeTexture(descriptor: textureDescriptor) else { return }
+                    image.rgba.withUnsafeBytes {
+                        texture.replace(region: MTLRegionMake2D(0, 0, image.width, image.height), mipmapLevel: 0,
+                                        withBytes: $0.baseAddress!, bytesPerRow: image.width * 8)
+                    }
+                    self.texture = texture
+                    uploadedImageID = image.id
+                }
+                guard let texture, let command = queue?.makeCommandBuffer(),
+                      let encoder = command.makeRenderCommandEncoder(descriptor: descriptor),
                       let pipeline else { return }
-                image.rgba.withUnsafeBytes {
-                    texture.replace(region: MTLRegionMake2D(0, 0, image.width, image.height), mipmapLevel: 0,
-                                    withBytes: $0.baseAddress!, bytesPerRow: image.width * 8)
-                }
                 encoder.setRenderPipelineState(pipeline)
                 encoder.setFragmentTexture(texture, index: 0)
                 var crop = loupe?.samplingRect(image: CGSize(width: image.width, height: image.height),

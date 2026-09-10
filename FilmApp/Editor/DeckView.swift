@@ -141,7 +141,7 @@ struct DeckPreview: View {
         .sheet(isPresented: Binding(get: { sheet != nil }, set: { if !$0 { sheet = nil } })) {
             Text(sheet ?? "")
         }
-        .task { model.loadCatalogue(); model.selectedStock = stock; selection.reconcile(with: model.allParameters); selection.select(stage); hasPhoto = photoLoaded; selection.isFilmstripOpen = filmstripOpen }
+        .task { await model.loadCatalogue(); model.selectedStock = stock; selection.reconcile(with: model.allParameters); selection.select(stage); hasPhoto = photoLoaded; selection.isFilmstripOpen = filmstripOpen }
     }
 }
 

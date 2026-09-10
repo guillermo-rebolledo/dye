@@ -16,6 +16,7 @@ public actor Renderer {
     /// One per Scattering Pass: Bloom and Halation ask for different radii, so they
     /// resolve to pyramids of different depths and cannot share one allocation.
     private var pyramids: [Scattering: Pyramid] = [:]
+    private var previewTextures: (input: any MTLTexture, scratch: any MTLTexture)?
     private var mtfTextures: [any MTLTexture]?
 
     private struct ResponseEntry {
@@ -56,6 +57,12 @@ public actor Renderer {
         self.pipelines = pipelines
     }
 
+    /// Pipeline compilation is synchronous; UI callers use this factory to keep it
+    /// off their actor even on the first launch without a driver shader cache.
+    public nonisolated static func make() async throws -> Renderer {
+        try await Task.detached(priority: .userInitiated) { try Renderer() }.value
+    }
+
     /// Colour-managed decode into the Working Space, optionally downsampled for the
     /// Preview Render Path so slider changes re-render a screen-sized image.
     public func decode(_ data: Data, maximumDimension: Int? = nil) throws -> LinearImage {
@@ -70,8 +77,29 @@ public actor Renderer {
     /// runs the same graph over many Tiles of one frame.
     public func render(image: RenderImage, profile: Profile, settings: RenderSettings = .init()) throws -> RenderedPixels {
         try settings.validate()
-        let input = try texture(for: image)
-        let scratch = try decoder.makeTexture(width: input.width, height: input.height)
+        try Task.checkCancellation()
+        let input: any MTLTexture
+        let scratch: any MTLTexture
+        switch image {
+        case .linear(let image):
+            if previewTextures?.input.width != image.width || previewTextures?.input.height != image.height {
+                previewTextures = nil
+                previewTextures = (try decoder.makeTexture(width: image.width, height: image.height),
+                                   try decoder.makeTexture(width: image.width, height: image.height))
+            }
+            let textures = previewTextures!
+            input = textures.input
+            scratch = textures.scratch
+            // The graph can write both textures, so refill the input on every render.
+            image.rgba.withUnsafeBytes {
+                input.replace(region: MTLRegionMake2D(0, 0, image.width, image.height), mipmapLevel: 0,
+                              withBytes: $0.baseAddress!, bytesPerRow: image.width * 8)
+            }
+        case .encoded:
+            previewTextures = nil
+            input = try texture(for: image)
+            scratch = try decoder.makeTexture(width: input.width, height: input.height)
+        }
         let result = try renderTile(input, into: scratch, frame: Frame(width: input.width, height: input.height),
                                     profile: profile, settings: settings, queue: queue)
         let pixels = try readback(result)
@@ -148,6 +176,8 @@ public actor Renderer {
                 continue
             }
             let name = pipelineName(for: pass, plan: plan, profile: profile)
+            // A copy-only pass cannot change pixels; retain the current ping-pong source.
+            guard name != "passthrough" else { continue }
             guard let encoder = command.makeComputeCommandEncoder(), let pipeline = pipelines[name] else {
                 throw FilmError.invalid("Cannot encode \(pass)")
             }

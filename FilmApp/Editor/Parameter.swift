@@ -744,7 +744,7 @@ private struct ParameterCatalogue: View {
             }
             .navigationTitle("Parameters")
         }
-        .task { model.loadCatalogue() }
+        .task { await model.loadCatalogue() }
     }
 
     private func row(_ parameter: Parameter) -> some View {
