@@ -90,19 +90,23 @@ public actor Renderer {
             let textures = previewTextures!
             input = textures.input
             scratch = textures.scratch
-            // The graph can write both textures, so refill the input on every render.
-            image.rgba.withUnsafeBytes {
-                input.replace(region: MTLRegionMake2D(0, 0, image.width, image.height), mipmapLevel: 0,
-                              withBytes: $0.baseAddress!, bytesPerRow: image.width * 8)
-            }
         case .encoded:
             previewTextures = nil
             input = try texture(for: image)
             scratch = try decoder.makeTexture(width: input.width, height: input.height)
         }
-        let result = try renderTile(input, into: scratch, frame: Frame(width: input.width, height: input.height),
-                                    profile: profile, settings: settings, queue: queue,
-                                    grainModel: Self.grainModel(profile, path: .preview, thermalState: .nominal))
+        let frame = Frame(width: input.width, height: input.height)
+        let plan = try plan(profile: profile, settings: settings, frame: frame, tile: input, spatial: true,
+                            grainModel: Self.grainModel(profile, path: .preview, thermalState: .nominal))
+        // Prepare profile resources before refreshing the reused ping-pong source.
+        if case .linear(let image) = image {
+            image.rgba.withUnsafeBytes {
+                input.replace(region: MTLRegionMake2D(0, 0, image.width, image.height), mipmapLevel: 0,
+                              withBytes: $0.baseAddress!, bytesPerRow: image.width * 8)
+            }
+        }
+        let result = try execute(plan, input: input, scratch: scratch, frame: frame,
+                                 profile: profile, settings: settings, queue: queue)
         let pixels = try readback(result)
         return RenderedPixels(width: pixels.width, height: pixels.height, rgba: pixels.rgba, output: settings.output)
     }
@@ -139,6 +143,12 @@ public actor Renderer {
                     spatial: Bool = true, grainModel: GrainModel = .procedural) throws -> any MTLTexture {
         let plan = try plan(profile: profile, settings: settings, frame: frame, tile: input,
                             spatial: spatial, grainModel: grainModel)
+        return try execute(plan, input: input, scratch: scratch, frame: frame,
+                           profile: profile, settings: settings, queue: queue)
+    }
+
+    private func execute(_ plan: Plan, input: any MTLTexture, scratch: any MTLTexture, frame: Frame,
+                         profile: Profile, settings: RenderSettings, queue: any MTLCommandQueue) throws -> any MTLTexture {
         guard let command = queue.makeCommandBuffer() else { throw FilmError.invalid("Cannot create render command") }
         var frameUniform = frame.packed
         var source = input
