@@ -6,6 +6,15 @@ stack of three Stage Cards in `FilmApp/FilmApp.swift`. This document is the
 implementation spec for that handoff — what gets built, against which parts of
 the engine, in what order, and what has to be decided before it can be finished.
 
+> **The design reference has moved on.** The fixed-deck mockups this document was
+> written against are no longer in the repo. The handoff folder now holds the
+> rail that supersedes the deck:
+> [`one-rail-redesign.md`](../design_handoff_dye_editor/one-rail-redesign.md) is
+> the spec and
+> [`Dye Editor - one rail.html`](../design_handoff_dye_editor/Dye%20Editor%20-%20one%20rail.html)
+> is the reference. This document stays the record of what shipped, of where the
+> fixed-deck handoff and the engine disagreed, and of how each was resolved.
+
 The handoff is the source of truth for *appearance*. The engine is the source of
 truth for *behaviour*, which is the handoff's own rule and is applied literally
 below. Where the two disagree, §2 records the resolution rather than leaving the
@@ -29,7 +38,11 @@ selection controls. No stock `Slider` remains in the app.
 
 Drag left to increase and right to decrease. Touching the control does not jump
 the value. Continuous parameters use 9 pt per step; shutter speed retains 54 pt
-per stop with thirds-of-a-stop steps. Canvas adjustment uses the same direction
+per stop with thirds-of-a-stop steps; the Adjustments use 1.8 pt per step, which
+is what keeps two hundred steps to about the same finger travel as everything
+else on the deck (see the Adjust addendum). Where that pitch would draw the minor
+ticks closer together than 4 pt, the row thins them to a fraction of the major
+interval instead, so a tick row never reads as a solid band. Canvas adjustment uses the same direction
 at half gain. Existing ranges, step sizes, 6 pt detent stick, limit haptics,
 VoiceOver adjustment, reset animation and Reduce Motion behavior are retained.
 The tape stops at its bounds and the end cap lights at the center hairline.
@@ -315,8 +328,11 @@ Behaviour, ranges and caption copy: `FilmApp/EditorModel.swift`,
 `FilmApp/ContactSheetView.swift`, `Sources/FilmEngine/RenderTypes.swift`,
 `Sources/FilmEngine/Profiles/FilmProfile.swift`, `Curves/*/stock.json`.
 
-Appearance: `design_handoff_dye_editor/README.md` and
-`design_handoff_dye_editor/Dye Editor.dc.html`, screens `1a`–`1q`.
+Appearance: `design_handoff_dye_editor/README.md`, and the rail that supersedes
+this deck in `design_handoff_dye_editor/one-rail-redesign.md` and
+`design_handoff_dye_editor/Dye Editor - one rail.html`, screens `3a`–`3d`. The
+fixed-deck mockups this document was written against, screens `1a`–`1q`, are no
+longer in the repo; §2 below is the surviving record of what they specified.
 
 
 ## Minimal UI — September 2026
@@ -349,6 +365,19 @@ for both; what follows is only what changed here.
   every Stock offers every one of them, because the Pass acts on whatever the
   Output Stage returned. Zero reads `0`, not `+0` and not `OFF`: it is bipolar
   and the detent is the neutral setting.
+- They are the one family with a pitch of their own: **1.8 pt per step**, not the
+  deck's 9. The step stays at the 1 a photo editor's ±100 readout expects, so at
+  the ordinary pitch the range is 1800 pt of finger, five screen widths, and a
+  comfortable swipe reaches ±15 of a ±100 control. At 1.8 pt the range is 360 pt,
+  which is what Grain's 0…200 % already costs.
+- Each carries a **bypass**, on the right of the readout line: a control can be
+  switched off and back on without losing its value, which is the question a
+  photo editor asks most of an adjustment. It appears only when there is
+  something to switch. Off writes zero to the settings and stashes the value in
+  the editor, so the render, the Export and a saved Preset all see a control that
+  is genuinely not applied; moving the dial gives it back at the new value, and
+  applying a Preset clears every stash. It is not a reset — reset is still the
+  chip's long press, and it throws the value away.
 - Exposure, Temperature and Tint stay on the Light stage and are not repeated.
   They change the light the film received; the Adjust stage changes the scan.
 - The Preset summary line gains one word, `adjusted`, when any of the eight is

@@ -14,7 +14,9 @@ ticket under MEM-254 assumes this file has been read and does not repeat it.
 2. `docs/editor-redesign.md` — the implementation spec. §2 lists six places where
    the design handoff and the engine disagree, all already resolved.
 3. `design_handoff_dye_editor/README.md` — appearance, and the numbers behind it.
-   Open `Dye Editor.dc.html` in a browser for the screens it references by id.
+   `one-rail-redesign.md` beside it is the current spec, and
+   `Dye Editor - one rail.html` is the reference to open in a browser for the
+   screens both documents cite by id.
 4. Your ticket.
 
 ## The rule that decides every disagreement

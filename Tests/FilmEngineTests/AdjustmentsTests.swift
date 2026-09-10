@@ -39,10 +39,13 @@ import FilmEngine
         let plain = try await grey(renderer, wedge, Adjustments())
 
         // Shadows open the darks, leave black and white where they are and barely
-        // reach a highlight.
+        // reach a highlight. The mask peaks a quarter of the way up the encoding,
+        // so a deep tone moves several times over while a half-light hardly moves
+        // at all: a control that opened the whole picture would be Brightness.
         let shadows = try await grey(renderer, wedge, Adjustments(shadows: 1))
         #expect(shadows[0] == 0 && shadows[5] == 1)
-        #expect(shadows[2] > plain[2] * 1.5)
+        #expect(shadows[2] > plain[2] * 3)
+        #expect(shadows[4] < plain[4] * 1.15)
         #expect(shadows[4] / plain[4] < shadows[2] / plain[2])
         let closed = try await grey(renderer, wedge, Adjustments(shadows: -1))
         #expect(closed[2] < plain[2] && closed[0] == 0)
@@ -51,7 +54,9 @@ import FilmEngine
         // touch mid-grey; pushing lifts the brights and leaves white alone.
         let recovered = try await grey(renderer, wedge, Adjustments(highlights: -1))
         #expect(recovered[6] < 1 && recovered[6] > recovered[5])
-        #expect(recovered[5] < 1 && recovered[5] > 0.5)
+        // A real recovery: white comes well down, and stays above mid-grey, which
+        // is where the knee is hinged and so is the tone it may not reach.
+        #expect(recovered[5] < 0.6 && recovered[5] > plain[3])
         #expect(recovered[3] == plain[3])
         let pushed = try await grey(renderer, wedge, Adjustments(highlights: 1))
         #expect(pushed[4] > plain[4] && pushed[5] == 1)
@@ -94,12 +99,27 @@ import FilmEngine
     @Test func theToneCurveStaysMonotoneAtEveryExtreme() async throws {
         let renderer = try Renderer()
         let ramp = (0...255).map { Double($0) / 255 * 2 }
-        let extremes = [
-            Adjustments(brilliance: 1, highlights: 1, shadows: 1, contrast: 1, brightness: 1, blackPoint: 1),
-            Adjustments(brilliance: -1, highlights: -1, shadows: -1, contrast: -1, brightness: -1, blackPoint: -1),
-            Adjustments(brilliance: 1, highlights: -1, shadows: 1, contrast: -1, brightness: 1, blackPoint: -1),
-            Adjustments(brilliance: -1, highlights: 1, shadows: -1, contrast: 1, brightness: -1, blackPoint: 1),
-        ]
+        // Every corner of the six tone controls, not a chosen handful. Each term's
+        // gain is set against the slope the term below it has already spent, and a
+        // pair that only meets in one corner is exactly where that arithmetic goes
+        // wrong, so the corners are enumerated rather than sampled.
+        let sides: [Double] = [-1, 0, 1]
+        var extremes: [Adjustments] = []
+        for brilliance in sides {
+            for highlights in sides {
+                for shadows in sides {
+                    for contrast in sides {
+                        for brightness in sides {
+                            for blackPoint in sides {
+                                extremes.append(Adjustments(brilliance: brilliance, highlights: highlights,
+                                                            shadows: shadows, contrast: contrast,
+                                                            brightness: brightness, blackPoint: blackPoint))
+                            }
+                        }
+                    }
+                }
+            }
+        }
         for adjustments in extremes {
             let out = try await grey(renderer, ramp, adjustments)
             for i in 1..<out.count { #expect(out[i] >= out[i - 1], "\(adjustments) at \(i)") }

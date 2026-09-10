@@ -354,6 +354,12 @@ extension Tokens {
     enum Track {
         /// A fixed pitch gives the dial travel beyond the visible row.
         static let dialPointsPerStep: CGFloat = 9
+        /// The Adjustments run two hundred steps rather than the two or three
+        /// dozen the rest of the deck runs, and at the ordinary pitch that is
+        /// five screen widths of finger to cross one control. They keep the step
+        /// a photo editor's readout expects and buy the range back with a pitch,
+        /// so ±100 costs about the same travel as Grain's 0…200 %.
+        static let adjustmentPointsPerStep: CGFloat = 1.8
         static let dialMajorTickHeight: CGFloat = 10
         static let height: CGFloat = 28
         /// A tick, an anchor and an end wall, in the widths the handoff gives.

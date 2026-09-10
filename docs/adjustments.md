@@ -44,25 +44,45 @@ rather than extrapolating it. In the order applied, with `c = clamp(x, 0, 1)`:
 | -- | -- | -- |
 | Black point `b` | `x = max((x − 0.15b) / (1 − 0.15b), min(x, 0))` | +1 crushes encoded 0.15 and below into black itself, never past it; −1 lifts black to encoded 0.13 |
 | Brightness `k` | `x += 0.5k · c(1 − c)` | peaks at mid-grey |
-| Shadows `s` | `x += 0.5s · c(1 − c)²` | peaks a third of the way up |
-| Highlights `h ≥ 0` | `x += 0.5h · c²(1 − c)` | peaks two thirds of the way up |
-| Highlights `h < 0` | `x = 0.5 + d / (1 + |h|d)` for `d = x − 0.5 > 0` | a C¹ knee: light past white comes back under it |
+| Shadows `s ≥ 0` | `x += 2.0s · c(1 − c)³` | peaks a quarter of the way up |
+| Shadows `s < 0` | `x += 0.9s · c(1 − c)³` | the same mask, geared for the slope black leaves |
+| Highlights `h ≥ 0` | `x += 0.9h · c³(1 − c)` | peaks three quarters of the way up |
+| Highlights `h < 0` | `x = 0.5 + d / (1 + 3|h|d)` for `d = x − 0.5 > 0` | a C¹ knee: light past white comes back under it |
 | Contrast `k` | `x += 2k · (c − 0.5) · c(1 − c)` | slope 1.5 at mid-grey at +1, 0.5 at −1, a toe and a shoulder at the ends |
 
 Highlight recovery is the one term that is not a polynomial, because its purpose is
 to bring light from above white back below it and a term that vanished at white
 could not. The knee's slope is exactly one at mid-grey, so nothing below it moves.
 
+The shadow and highlight masks are mirror images that peak a quarter and three
+quarters of the way up, which is where the tones those two controls are named for
+actually sit. Each gain is the largest its term admits with a tenth of the slope
+still to spare — the bound is not the same in the two directions, because a term
+that opens the shadows spends slope in the upper midtones where there is room and
+a term that closes them spends it at black where there is none, so Shadows is
+geared 2.0 opening and 0.9 closing. That asymmetry is the curve's, not a
+preference: −100 is already as far as a monotone curve can close the darks.
+
+| At encoded | 0.10 | 0.25 | 0.50 | 0.75 | 0.90 |
+| -- | -- | -- | -- | -- | -- |
+| Shadows +100 | 0.246 | 0.461 | 0.625 | 0.773 | 0.902 |
+| Highlights +100 | 0.101 | 0.262 | 0.562 | 0.855 | 0.973 |
+| Highlights −100 | 0.100 | 0.250 | 0.500 | 0.643 | 0.682 |
+| Brilliance +100 | 0.159 | 0.359 | 0.577 | 0.713 | 0.779 |
+
 **Brilliance is not a term.** It is the three moves an editor makes to bring detail
 forward — open the shadows, pull the highlights back, add a little contrast in the
 middle — made together, so the renderer resolves `brilliance = v` to
 `shadows += 0.6v`, `highlights −= 0.5v`, `contrast += 0.3v` and the shader never
-sees it. The sums are clamped to where each term stays monotone: shadows and
-highlights to ±1.5, which their curves tolerate, and contrast to ±1, which is where
-its curve's slope reaches zero at the ends.
+sees it. All three sums are clamped to ±1, which is the range each term's gain is
+chosen to stay monotone over. A sum past it would be a fourth control's worth of
+curve rather than a stronger one.
 
 `AdjustmentsTests.theToneCurveStaysMonotoneAtEveryExtreme` renders a 0…2 ramp
-through every corner of the control space and asserts it never decreases.
+through every one of the 729 corners of the six tone controls and asserts it never
+decreases. The corners are enumerated rather than sampled because each gain is set
+against the slope the term below it has already spent, and a pair that only meets
+in one corner is exactly where that arithmetic goes wrong.
 
 ## Colour
 

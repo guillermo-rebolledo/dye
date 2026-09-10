@@ -27,7 +27,8 @@ def main():
     def token(name):
         return re.search(r"static let " + name + r": (?:CGFloat|Double) = ([0-9.]+)", tokens)[1]
     dependencies = "enum ParameterDial {}\nenum Tokens { enum Track {\n"
-    for name in ["dialPointsPerStep", "indicatorEndInset", "indicatorWidth"]:
+    for name in ["dialPointsPerStep", "adjustmentPointsPerStep", "indicatorEndInset",
+                 "indicatorWidth", "minimumTickSpacing"]:
         dependencies += f"static let {name}: CGFloat = {token(name)}\n"
     dependencies += f"static let majorTickTarget: Double = {token('majorTickTarget')} }}\n"
     dependencies += f"enum Discrete {{ static let pointsPerStop: CGFloat = {token('pointsPerStop')} }}\n"
@@ -49,6 +50,9 @@ CHECKS = r"""
 static func main() {
     let cases: [(Parameter.Identity, ClosedRange<Double>, Double, Double?)] = [
         (.exposure, EditorRange.exposure, 1 / 6, 0),
+        (.brilliance, EditorRange.adjustment, 1, 0),
+        (.shadows, EditorRange.adjustment, 1, 0),
+        (.vibrance, EditorRange.adjustment, 1, 0),
         (.temperature, EditorRange.temperature, 50, 5500),
         (.temperature, EditorRange.temperature, 50, 3225),
         (.tint, RenderSettings.tintRange, 1, 0),
@@ -62,10 +66,19 @@ static func main() {
         (.frameBorder, RenderSettings.frameBorderRange, 0.05, 0)
     ]
     for (id, range, step, detent) in cases {
-        let p = Parameter(id: id, name: id.rawValue, stage: .light, value: .constant(detent ?? 0),
+        // The Adjustments are the one family whose pitch depends on the stage, so
+        // they are checked on the stage that gives them their own.
+        let stage: EditorStage = range == EditorRange.adjustment ? .adjust : .light
+        let p = Parameter(id: id, name: id.rawValue, stage: stage, value: .constant(detent ?? 0),
                           range: range, step: step, detent: detent,
                           control: id == .exposureTime ? .shutterDial : .dial, format: { String($0) })
         let map = ParameterDial.TrackMap.dial(for: p)
+        // Every minor tick the row draws is on the step grid and far enough from
+        // its neighbour to read as a tick rather than as fill.
+        let pitch = map.travel / CGFloat(map.span)
+        precondition(map.minorInterval >= step - 1e-9)
+        precondition(CGFloat(map.minorInterval) * pitch >= Tokens.Track.minimumTickSpacing - 1e-9)
+        precondition(abs((map.minorInterval / step).rounded() * step - map.minorInterval) < 1e-9)
         var previous = range.lowerBound
         for i in 0...1000 {
             let value = map.resolve(map.lead + map.travel * CGFloat(i) / 1000).value
