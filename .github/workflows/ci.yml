@@ -49,14 +49,12 @@ jobs:
         run: |
           swift build -c release --product ProfileBaker
           echo "PROFILE_BAKER_EXECUTABLE=$(swift build -c release --show-bin-path)/ProfileBaker" >> "$GITHUB_ENV"
-      - name: Diagnose cold preview cost
-        run: swift test --filter previewRenderAndStockSwitchStayWithinInteractiveBudgets
       # Swift Testing runs tests concurrently. Keep timing assertions away from
       # the other GPU renders and Baker processes without relaxing their budgets.
-      - name: Renderer, codec, and Baker CLI tests
-        run: swift test --skip previewRenderAndStockSwitchStayWithinInteractiveBudgets
       - name: Preview performance budgets (isolated)
-        run: swift test --skip-build --filter previewRenderAndStockSwitchStayWithinInteractiveBudgets
+        run: swift test --filter previewRenderAndStockSwitchStayWithinInteractiveBudgets
+      - name: Renderer, codec, and Baker CLI tests
+        run: swift test --skip-build --skip previewRenderAndStockSwitchStayWithinInteractiveBudgets
       - name: Bake and verify the committed Catalogue
         run: |
           Scripts/bake-catalogue.sh

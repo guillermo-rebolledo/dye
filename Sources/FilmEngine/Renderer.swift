@@ -949,10 +949,7 @@ public actor Renderer {
             responseCache.append(entry)
             return entry
         }
-        let clock = ContinuousClock()
-        let begin = clock.now
         let payload = try profile.readPayload(name)
-        let readEnd = clock.now
         let entry: ResponseEntry
         if profile.metadata.monochrome != nil {
             let values = try decodeHalfValues(payload)
@@ -982,13 +979,11 @@ public actor Renderer {
             let outputNames = (output?.lutVariants ?? []) + (output?.printVariants ?? [])
             let size = outputNames.contains { $0.lut == name } ? output!.lutSize : profile.metadata.colour.lutSize
             let cube = try ColourCube(size: size, payload: payload)
-            print("[DEBUG-profile-load] \(profile.id) \(name): decode \(clock.now - readEnd)")
             let coordinate = Self.responseCoordinate(0.18, shaper: profile.metadata.colour.inputShaper)
             let baseCoordinate = profile.metadata.process == .e6 && output != nil ? 1.0 : 0.0
             entry = ResponseEntry(id: profile.cacheID, name: name, texture: try makeColourCube(cube),
                                   grayDensity: cube.sample(SIMD3(repeating: coordinate)), baseDensity: cube.sample(SIMD3(repeating: baseCoordinate)))
         }
-        print("[DEBUG-profile-load] \(profile.id) \(name): read \(readEnd - begin), total \(clock.now - begin)")
         responseCache.append(entry)
         if responseCache.count > textureCacheCapacity { responseCache.removeFirst() }
         return entry

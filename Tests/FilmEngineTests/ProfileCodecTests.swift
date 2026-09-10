@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-import FilmEngine
+@testable import FilmEngine
 
 @Test(arguments: FilmProcess.allCases)
 func profileCodecRoundTripsEveryProcess(_ process: FilmProcess) throws {
@@ -138,4 +138,25 @@ func profileCodecRoundTripsEveryProcess(_ process: FilmProcess) throws {
         bad[1] = UInt8(invalid >> 8)
         #expect(throws: FilmError.self) { try ColourCube(size: 2, payload: bad) }
     }
+}
+
+@Test func packedHalfValidationCoversEveryEncodingAndTailLane() throws {
+    let finite = (0...UInt16.max).filter { $0 & 0x7c00 != 0x7c00 }
+    let bytes = Data(finite.flatMap { [UInt8(truncatingIfNeeded: $0), UInt8($0 >> 8)] })
+    #expect(try decodeHalfValues(bytes).map(\.bitPattern) == finite)
+    // Four packed lanes followed by three scalar tail lanes. Exercise every
+    // infinity/NaN encoding in every position, including negative encodings.
+    for value in (0...UInt16.max).filter({ $0 & 0x7c00 == 0x7c00 }) {
+        for lane in 0..<7 {
+            var bad = Data(repeating: 0, count: 14)
+            bad[2 * lane] = UInt8(truncatingIfNeeded: value)
+            bad[2 * lane + 1] = UInt8(value >> 8)
+            #expect(throws: FilmError.self) { try decodeHalfValues(bad) }
+        }
+    }
+    for count in 0..<8 {
+        let finiteTail = Data(repeating: 0, count: count * 2)
+        #expect(try decodeHalfValues(finiteTail).count == count)
+    }
+    #expect(throws: FilmError.self) { try decodeHalfValues(Data([0])) }
 }

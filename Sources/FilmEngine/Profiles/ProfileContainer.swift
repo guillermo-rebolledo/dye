@@ -139,12 +139,32 @@ func decodeHalfValues(_ bytes: Data) throws -> [Float16] {
     var values = [Float16](repeating: 0, count: bytes.count / 2)
     try values.withUnsafeMutableBytes { raw in
         bytes.copyBytes(to: raw)
+        #if _endian(little)
+        // Check four independent 5-bit exponents per word. Adding one exponent
+        // unit sets each lane's sign bit only when its exponent was all ones.
+        // The masked lanes cannot carry into one another. Leave finite bits intact.
+        var offset = 0
+        while offset + 8 <= raw.count {
+            let bits = raw.loadUnaligned(fromByteOffset: offset, as: UInt64.self)
+            let exponents = bits & 0x7c00_7c00_7c00_7c00
+            guard (exponents + 0x0400_0400_0400_0400) & 0x8000_8000_8000_8000 == 0 else {
+                throw FilmError.invalid("Non-finite profile payload")
+            }
+            offset += 8
+        }
+        while offset < raw.count {
+            let word = raw.loadUnaligned(fromByteOffset: offset, as: UInt16.self)
+            guard word & 0x7c00 != 0x7c00 else { throw FilmError.invalid("Non-finite profile payload") }
+            offset += 2
+        }
+        #else
         let words = raw.bindMemory(to: UInt16.self)
         for i in words.indices {
             let word = UInt16(littleEndian: words[i])
             guard word & 0x7c00 != 0x7c00 else { throw FilmError.invalid("Non-finite profile payload") }
             words[i] = word
         }
+        #endif
     }
     return values
 }
