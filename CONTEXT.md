@@ -16,9 +16,9 @@ and a qualified term is given instead.
 
 A **Stock** is a real film product. Each Stock has exactly one **Profile**, the data
 file that models it, and each Profile is baked from that Stock's **Curve Set** by the
-**Baker**. A Profile may be derived from another Profile rather than from its own
-Curve Set — Cinestill 800T derives from Vision3 500T, because it is the same
-**Emulsion** without the **Remjet** backing.
+**Baker**. A Profile may share Emulsion data with another Profile while retaining its own
+Process response. CineStill 800T uses Vision3 500T as its Emulsion prior, but its
+C-41 Characteristic Curves differ from the parent’s ECN-2 curves.
 
 A Stock's **Process** decides which branch of the pipeline its image takes: colour
 stocks resolve to a **Colour Cube**, black & white stocks to a **Monochrome Collapse**
@@ -45,8 +45,8 @@ The chemical development process a Stock belongs to — `c41`, `e6`, `bw-silver`
 _Avoid_: film type, category, family, chemistry
 
 **Emulsion**:
-The light-sensitive layer of a Stock. Use only when two Stocks share one, as
-Cinestill 800T and Vision3 500T do.
+The light-sensitive layer of a Stock. Shared Emulsion lineage does not imply the same developed response under different
+Processes, as the CineStill 800T and Vision3 500T profiles illustrate.
 _Avoid_: using it as a general synonym for Stock
 
 **Stock Balance**:
@@ -117,8 +117,8 @@ The D-logE curve — density against log exposure — per channel for colour sto
 _Avoid_: curve (unqualified), H&D curve, tone curve, response curve
 
 **Colour Cube**:
-A baked float16 three-dimensional lookup in the Working Space, 33³ or, for a Stock
-whose Characteristic Curve turns too fast for that, 65³. One per Development Offset.
+A three-dimensional lookup describing either the Film Response in Density Space
+or an observation of that density through a Scan, Print or Viewing Light.
 _Avoid_: LUT (unqualified — collides with Exported LUT and Density Curve), 3D LUT, cube
 
 **Density Curve**:
@@ -204,8 +204,8 @@ followed by the Density Curve.
 _Avoid_: tone mapping, grading, the LUT pass, colour transform
 
 **Monochrome Collapse**:
-The dot product of linear RGB with a Stock's Spectral Weight, producing a single
-grey channel.
+The integration of reconstructed scene light against a Stock’s sensitivity and
+optional Contrast Filter, producing a single grey exposure.
 _Avoid_: desaturation, greyscale conversion, luminance
 
 **Spectral Weight**:

@@ -11,7 +11,7 @@
       "middleGrayLogExposure": -1.24,
       "minimumLogExposure": -3.75
     },
-    "lutSize": 33,
+    "lutSize": 65,
     "lutVariants": [
       {
         "lut": "pull1.lut3d",
@@ -169,7 +169,7 @@
     "spectral.characteristicCurves": "measured",
     "spectral.development": "artistic",
     "spectral.dirCouplers": "artistic",
-    "spectral.dyeDensity": "artistic",
+    "spectral.dyeDensity": "approximation",
     "spectral.dyePeakNM": "artistic",
     "spectral.dyeSeparation": "artistic",
     "spectral.dyeWidthNM": "artistic",
@@ -179,7 +179,7 @@
     "spectral.reconstruction": "artistic",
     "spectral.scan": "artistic",
     "spectral.scanGamma": "artistic",
-    "spectral.sensitivity": "artistic",
+    "spectral.sensitivity": "approximation",
     "trueISO": "measured"
   },
   "reciprocity": {

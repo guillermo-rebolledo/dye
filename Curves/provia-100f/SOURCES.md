@@ -19,7 +19,7 @@ the plate's own frame and grid lines, least-squares fitted after snapping each
 detected rule to the nearest printed label, so a grid line the curves or a
 caption interrupt is simply absent rather than mis-numbered.
 
-- Page 5, Characteristic Curves: `neutral.red/green/blue.csv`, resampled on a
+- Page 6, Characteristic Curves: `neutral.red/green/blue.csv`, resampled on a
   uniform 0.05 grid over the drawn span, log H = −3.40…0.80. Coordinates are
   physical log10 lux-seconds and **Fuji FAD-30S Status A** density including
   base density; the spectral model reads them as if they were Status M, which is
@@ -36,20 +36,20 @@ caption interrupt is simply absent rather than mis-numbered.
   0.02-density stroke width but is a corner the Colour Cube would then have to
   follow. Six decimal places preserve extraction reproducibility; they do **not**
   imply six-decimal measurement accuracy.
-- Page 5, Spectral Sensitivity Curves: `sensitivity.csv`, 400…700 nm in 10 nm
+- Page 6, Spectral Sensitivity Curves: `sensitivity.csv`, 400…700 nm in 10 nm
   increments. This is the one chart the sheet draws as vector paths, sampled at
   101 points per Bezier segment. The chart's log sensitivity is converted to
   linear sensitivity; outside a layer's drawn path the model uses zero, an
   **assumption** rather than a measurement of the unplotted tail. The chart
   describes E-6/CR-56, Status A, 1.0 above D-min.
-- Page 5, Spectral Dye Density Curves: `dye-density.csv`. These are the
+- Page 6, Spectral Dye Density Curves: `dye-density.csv`. These are the
   **isolated** cyan, magenta and yellow image dyes, which is what Fujifilm
   publishes and Kodak does not — there is no aggregate minimum/midscale neutral
   pair here, and no separation step for the model to perform. The chart is drawn
   peak-normalised, so the extraction reproduces that normalisation exactly; the
   amplitudes the chart omits are solved from this Curve Set's own measured density
   above base at the reference neutral rather than authored.
-- Page 5, MTF Curve: `mtf.csv`, sampled on logarithmic frequency and response
+- Page 6, MTF Curve: `mtf.csv`, sampled on logarithmic frequency and response
   axes and stored as ratios rather than percent. Fujifilm publishes **one**
   curve, not one per layer; the red, green and blue columns therefore carry the
   same values. That is a documented reduction, not a claim of three measurements.

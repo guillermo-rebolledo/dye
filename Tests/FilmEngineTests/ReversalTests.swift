@@ -87,7 +87,7 @@ private func average(_ pixels: RenderedPixels, _ index: Int) -> Double {
     // Each Curve Set puts its own reference neutral on Working Space mid-grey. A
     // Stock metered at Box Speed would land there; metering at True Speed is what
     // moves it, so backing the rating out again returns it exactly.
-    for id in ["velvia-50", "cinestill-800t"] {
+    for id in ["velvia-50"] {
         let profile = try stock(id)
         let metadata = profile.metadata
         #expect(metadata.trueISO < metadata.nominalISO)
@@ -99,7 +99,7 @@ private func average(_ pixels: RenderedPixels, _ index: Int) -> Double {
     }
     // A Stock whose True Speed is its Box Speed is metered at the speed it is sold
     // as, and mid-grey lands on the reference neutral with no offset at all.
-    for id in ["provia-100f", "portra-400"] {
+    for id in ["provia-100f", "portra-400", "cinestill-800t"] {
         let profile = try stock(id)
         #expect(profile.metadata.trueISO == profile.metadata.nominalISO)
         #expect(abs(try await mid(profile) - 0.18) < 0.005)

@@ -23,6 +23,7 @@ struct MonochromeSpectralModel {
     /// two sums is a filter factor.
     let spectralWeight: SIMD3<Double>
     let filters: [(filter: ContrastFilter, weight: SIMD3<Double>)]
+    let spectralContributions: [FilmProfile.Monochrome.SpectralContributions]
 
     /// The Contrast Filters, in the order the picker offers them.
     static let contrastFilters: [ContrastFilter] = ContrastFilter.allCases.filter { $0 != .none }
@@ -38,7 +39,7 @@ struct MonochromeSpectralModel {
         guard requiredProvenance.allSatisfy({ curves.metadata.provenance[$0] != nil }) else {
             throw FilmError.invalid("Missing spectral per-parameter Provenance")
         }
-        guard monochrome.spectralWeight == nil, monochrome.contrastFilters == nil else {
+        guard monochrome.spectralWeight == nil, monochrome.contrastFilters == nil, monochrome.spectralContributions == nil else {
             throw FilmError.invalid("Spectral Weights are derived by the Baker, not authored in stock.json")
         }
         densityCurveName = monochrome.densityCurve
@@ -78,6 +79,14 @@ struct MonochromeSpectralModel {
         guard filters.allSatisfy({ $0.weight.sum() > 0 }) else {
             throw FilmError.invalid("A Contrast Filter left the Stock with no response at all")
         }
+        spectralContributions = ContrastFilter.allCases.map { filter in
+            let column = names.firstIndex(of: filter.rawValue).map { $0 + 1 }
+            let contributions = basis.grid.indices.map { i in
+                basis.rgbToBasis.transpose * basis.lobes[i] * sensitivity[i] * basis.quadrature(i) * (column.map { glass[i][$0] } ?? 1)
+            }
+            let sum = contributions.reduce(SIMD3<Double>(repeating: 0), +).sum()
+            return .init(filter: filter, coefficients: contributions.map { [$0.x / sum, $0.y / sum, $0.z / sum] })
+        }
     }
 
     /// The 1024-entry Density Curve, addressed by the input shaper's coordinate so a
@@ -102,12 +111,14 @@ struct MonochromeSpectralModel {
         func components(_ weight: SIMD3<Double>) -> [Double] {
             [weight.x * scale, weight.y * scale, weight.z * scale]
         }
-        return FilmProfile.Monochrome(
+        var result = FilmProfile.Monochrome(
             spectralWeight: components(spectralWeight),
             densityCurve: densityCurveName,
             contrastFilters: filters.map {
                 FilmProfile.Monochrome.FilterWeight(filter: $0.filter, spectralWeight: components($0.weight))
             })
+        result.spectralContributions = spectralContributions
+        return result
     }
 }
 

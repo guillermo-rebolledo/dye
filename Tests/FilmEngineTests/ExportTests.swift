@@ -362,17 +362,15 @@ private final class Reported: @unchecked Sendable {
 }
 
 @Test func grainDegradesToTheProceduralModelWhenTheDeviceIsThrottling() throws {
-    // Cinestill's Emulsion grains as dye clouds; the Preview never pays for that, an
-    // Export at rest does, and a device the system is already throttling gets the cheap
-    // model back rather than a slower export and a hotter phone.
+    // Preview and Export retain the same physical grain model even under thermal pressure.
     let cinestill = try stock("cinestill-800t")
     #expect(cinestill.metadata.grain.model == .dyeCloud)
-    #expect(Renderer.grainModel(cinestill, path: .preview, thermalState: .nominal) == .procedural)
-    #expect(Renderer.grainModel(cinestill, path: .preview, thermalState: .serious) == .procedural)
+    #expect(Renderer.grainModel(cinestill, path: .preview, thermalState: .nominal) == .dyeCloud)
+    #expect(Renderer.grainModel(cinestill, path: .preview, thermalState: .serious) == .dyeCloud)
     #expect(Renderer.grainModel(cinestill, path: .export, thermalState: .nominal) == .dyeCloud)
     #expect(Renderer.grainModel(cinestill, path: .export, thermalState: .fair) == .dyeCloud)
-    #expect(Renderer.grainModel(cinestill, path: .export, thermalState: .serious) == .procedural)
-    #expect(Renderer.grainModel(cinestill, path: .export, thermalState: .critical) == .procedural)
+    #expect(Renderer.grainModel(cinestill, path: .export, thermalState: .serious) == .dyeCloud)
+    #expect(Renderer.grainModel(cinestill, path: .export, thermalState: .critical) == .dyeCloud)
     // A Stock that already asks for the cheap model is unaffected by any of it.
     for state in [ProcessInfo.ThermalState.nominal, .fair, .serious, .critical] {
         #expect(Renderer.grainModel(.identity, path: .export, thermalState: state) == .procedural)

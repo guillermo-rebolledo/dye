@@ -112,23 +112,14 @@ extension Renderer {
         if let error = command.error { throw error }
     }
 
-    /// Which Grain Model a render actually uses.
-    ///
-    /// The Preview stays on `procedural` whatever the Stock asks for, because it
-    /// re-renders on every slider frame. An Export may run the Stock's own model. When
-    /// the device reaches `.serious` the system is already throttling the GPU, so
-    /// asking for the expensive model there makes the Export both slower and hotter:
-    /// the engine gives the model up instead and finishes.
-    ///
-    /// `dye-cloud` now has a kernel of its own, so a Stock that declares it renders
-    /// differently on the Export path: the clumping octave stays correlated across
-    /// pixels where the crystal model gives each its own sample. `stochastic` — silver
-    /// halide as a Poisson point process, integrated per pixel — is still MEM-239's
-    /// phase 7 and resolves to the procedural kernel. The degradation below is a
-    /// property of the path rather than of the model behind it.
+    /// Preview and Export keep the same physical Grain Model at every thermal
+    /// state. Scheduling or resolution can change, but the model does not.
+    /// Stochastic grain is not implemented and retains its procedural fallback.
     public static func grainModel(_ profile: Profile, path: RenderPath,
                                   thermalState: ProcessInfo.ThermalState) -> GrainModel {
-        guard path == .export, !thermalState.isThrottling else { return .procedural }
-        return profile.metadata.grain.model
+        // Temperature and Render Path may affect scheduling/resolution, not the
+        // physical grain model. Stochastic remains an explicitly unsupported
+        // authoring choice and retains the existing procedural fallback.
+        profile.metadata.grain.model == .stochastic ? .procedural : profile.metadata.grain.model
     }
 }

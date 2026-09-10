@@ -16,7 +16,7 @@ public struct LinearImage: Sendable {
 
     public init(width: Int, height: Int, rgba: [Float16]) throws {
         guard width > 0, height > 0, width <= 16_384, height <= 16_384,
-              rgba.count == width * height * 4, rgba.allSatisfy(\.isFinite) else {
+              rgba.count == width * height * 4, rgba.allSatisfy({ $0.isFinite }) else {
             throw FilmError.invalid("Invalid image dimensions or non-finite pixels")
         }
         self.width = width
@@ -276,8 +276,8 @@ public struct ColourCube: Sendable, Equatable {
     public let size: Int
     public let rgba: [Float16]
     public init(size: Int, rgba: [Float16]) throws {
-        guard (2...65).contains(size), rgba.count == size * size * size * 4,
-              rgba.allSatisfy(\.isFinite) else { throw FilmError.invalid("Invalid Colour Cube") }
+        guard (2...129).contains(size), rgba.count == size * size * size * 4,
+              rgba.allSatisfy({ $0.isFinite }) else { throw FilmError.invalid("Invalid Colour Cube") }
         self.size = size
         self.rgba = rgba
     }
@@ -292,7 +292,7 @@ public struct ColourCube: Sendable, Equatable {
 
     /// Tetrahedral interpolation of a coordinate already inside [0, 1]; the shader
     /// samples identically. The renderer uses this for the scan's auto-balance.
-    func sample(_ coordinate: SIMD3<Double>) -> SIMD3<Double> {
+    public func sample(_ coordinate: SIMD3<Double>) -> SIMD3<Double> {
         let q = simd_clamp(coordinate, SIMD3(repeating: 0), SIMD3(repeating: 1)) * Double(size - 1)
         var base = SIMD3<Int>(Int(q.x), Int(q.y), Int(q.z))
         base = simd_clamp(base, SIMD3(repeating: 0), SIMD3(repeating: size - 2))

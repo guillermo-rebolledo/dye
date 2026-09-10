@@ -162,9 +162,11 @@ private func average(_ pixels: RenderedPixels, _ index: Int) -> Double {
         #expect(profile.metadata.process == .c41 || profile.metadata.process == .ecn2)
         #expect(colour.outputStage == .scan)
         // Both Output Stages read the same negative, so both cover the same
-        // Development Offsets and neither borrows the other's payload.
+        // Development Offsets. Film-density payloads are shared; observations differ.
         #expect(colour.printVariants!.map(\.pushStops).sorted() == colour.lutVariants.map(\.pushStops).sorted())
-        #expect(Set(colour.printVariants!.map(\.lut)).isDisjoint(with: Set(colour.lutVariants.map(\.lut))))
+        let observation = try #require(colour.densityOutput)
+        #expect(colour.printVariants == colour.lutVariants)
+        #expect(Set(observation.printVariants!.map(\.lut)).isDisjoint(with: Set(observation.lutVariants.map(\.lut))))
     }
     // Scan is the default: a render that says nothing about the Output Stage is the
     // Profile's own, and the Profile's own is the scan.
@@ -204,12 +206,14 @@ private func average(_ pixels: RenderedPixels, _ index: Int) -> Double {
         let printedSlope = average(printed, midpoint + 1) / average(printed, midpoint)
         let scannedSlope = average(scanned, midpoint + 1) / average(scanned, midpoint)
         #expect(printedSlope > scannedSlope)
-        // And it pays for that with latitude at both ends: four stops under mid-grey
-        // the print has run out of paper where the scan still holds separation.
-        #expect(average(printed, 0) < average(scanned, 0))
+        // Paper has a nonzero maximum-density reflectance, unlike a scanner
+        // normalized to black. Compare shadow separation, not black offsets.
+        let printShadowStep = average(printed, 1) - average(printed, 0)
+        let scanShadowStep = average(scanned, 1) - average(scanned, 0)
+        #expect(printShadowStep < scanShadowStep, "\(id): scan \(stops.indices.map { average(scanned, $0) }), print \(stops.indices.map { average(printed, $0) })")
         // Paper white is brighter than Working Space mid-grey by about three stops,
         // which is the paper's whole scale, and is carried rather than clipped.
-        #expect(average(printed, stops.count - 1) > 1)
+        #expect(average(printed, stops.count - 1) > 1, "\(id): print \(stops.indices.map { average(printed, $0) })")
     }
 }
 
@@ -251,4 +255,31 @@ private func average(_ pixels: RenderedPixels, _ index: Int) -> Double {
     // push. What the push moves is the contrast around it.
     #expect(abs(average(pushed, 1) - average(neutral, 1)) < 0.03)
     #expect(average(pushed, 2) / average(pushed, 0) > average(neutral, 2) / average(neutral, 0))
+}
+
+@Test func stockAndOutputSwitchesPreserveTheSameRenderedResponse() async throws {
+    let profiles = try ProfileCatalogue.bundled().profiles.filter { $0.metadata.colour.densityOutput != nil }
+    let image = try ramp([-4, -3, -2, -1, 0, 1, 2, 3])
+    var reference: [String: [Float16]] = [:]
+    for profile in profiles {
+        let renderer = try Renderer()
+        let stages: [OutputStage] = profile.metadata.colour.printVariants == nil ? [.none] : [.scan, .print]
+        for stage in stages {
+            reference[profile.id + stage.rawValue] = try await renderer.render(image: .linear(image), profile: profile,
+                settings: referenced(stage, profile)).rgba
+        }
+    }
+    // Two slots force eviction between film and observation payloads. The same
+    // input must remain identical after stock/output switches and repeated loads.
+    let shared = try Renderer(textureCacheCapacity: 2)
+    for _ in 0..<4 {
+        for profile in profiles.reversed() {
+            let stages: [OutputStage] = profile.metadata.colour.printVariants == nil ? [.none] : [.print, .scan]
+            for stage in stages {
+                let result = try await shared.render(image: .linear(image), profile: profile, settings: referenced(stage, profile))
+                let expected = try #require(reference[profile.id + stage.rawValue])
+                #expect(result.rgba == expected, "\(profile.id), \(stage): stock/output switch changed the response")
+            }
+        }
+    }
 }

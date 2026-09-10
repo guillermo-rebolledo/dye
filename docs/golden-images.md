@@ -26,6 +26,11 @@ HDR and negative values; there is no tolerance or automatic update in CI.
 4. Unset that variable and rerun the filtered test, then `swift test`. Commit the
    changed `.rgba16` files with the implementation and review explanation.
 
+On a mismatch, the test also writes expected and actual raw pixels under
+`.build/golden-failures`; CI uploads them for diagnosis without changing the
+accepted fixture. The optional candidate workflow and its review boundary are
+described in [accuracy validation](accuracy-validation.md).
+
 Recording writes to `Tests/FilmEngineTests/Fixtures/GoldenImages` in the source
 checkout. Normal runs only read those files. New Catalogue entries require new
 snapshots; never silently skip a missing file. GPU/compiler changes may produce

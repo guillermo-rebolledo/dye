@@ -1,0 +1,553 @@
+{
+  "sourceRun": "https://github.com/guillermo-rebolledo/dye/actions/runs/34454007157",
+  "profileModelVersion": "dye-spectral-v3-density-base",
+  "note": "Numerical agreement only. This candidate run supplied the reviewed profiles and numerical reports; final runtime, performance and reproducibility checks are tracked separately by PR CI.",
+  "profiles": [
+    {
+      "stock": "cinestill-800t",
+      "rendererSamples": 16179,
+      "maximumDensityOrLinearError": 0.008574706452491143,
+      "composedModel": [
+        {
+          "developmentOffset": -1,
+          "maximumError": 0.0012539897316495852,
+          "rmsError": 0.0002697810615831214,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 0,
+          "maximumError": 0.0015710510609351636,
+          "rmsError": 0.000287335221806841,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 1,
+          "maximumError": 0.002544148863268453,
+          "rmsError": 0.0003000410642969887,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 2,
+          "maximumError": 0.003989299054506457,
+          "rmsError": 0.00031723227557638905,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": -1,
+          "maximumError": 0.005214197363747841,
+          "rmsError": 0.0009004612528063924,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 0,
+          "maximumError": 0.0051049987925906315,
+          "rmsError": 0.0008282843007392537,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 1,
+          "maximumError": 0.007825022389163716,
+          "rmsError": 0.0008530413597478315,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 2,
+          "maximumError": 0.009062987702491143,
+          "rmsError": 0.000778904290915981,
+          "samples": 1947,
+          "stage": "print-output"
+        }
+      ]
+    },
+    {
+      "stock": "fomapan-100",
+      "rendererSamples": 291,
+      "maximumDensityOrLinearError": 0.0016446249999999552
+    },
+    {
+      "stock": "portra-160",
+      "rendererSamples": 16773,
+      "maximumDensityOrLinearError": 0.009814721130759263,
+      "composedModel": [
+        {
+          "developmentOffset": -1,
+          "maximumError": 0.0019459028839807768,
+          "rmsError": 0.00030362173352100545,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 0,
+          "maximumError": 0.0024162458266275832,
+          "rmsError": 0.0003410638738819851,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 1,
+          "maximumError": 0.002976445232532765,
+          "rmsError": 0.0003604891061345422,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 2,
+          "maximumError": 0.003001898920246604,
+          "rmsError": 0.0003642099394046906,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": -1,
+          "maximumError": 0.007717796966846935,
+          "rmsError": 0.0011753418692247923,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 0,
+          "maximumError": 0.008964879660332048,
+          "rmsError": 0.001127312227004053,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 1,
+          "maximumError": 0.009814721130759263,
+          "rmsError": 0.0010651175015541565,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 2,
+          "maximumError": 0.009570253182289878,
+          "rmsError": 0.0010524886596489443,
+          "samples": 1947,
+          "stage": "print-output"
+        }
+      ]
+    },
+    {
+      "stock": "portra-400",
+      "rendererSamples": 15807,
+      "maximumDensityOrLinearError": 0.017248215667586386,
+      "composedModel": [
+        {
+          "developmentOffset": -1,
+          "maximumError": 0.003895197902573755,
+          "rmsError": 0.000356270281898413,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 0,
+          "maximumError": 0.004539727860912279,
+          "rmsError": 0.00042842892702333707,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 1,
+          "maximumError": 0.005589042033366992,
+          "rmsError": 0.00045326364535072883,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 2,
+          "maximumError": 0.006325593373388727,
+          "rmsError": 0.0004549182415357859,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": -1,
+          "maximumError": 0.014019098189387597,
+          "rmsError": 0.0014005798314491813,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 0,
+          "maximumError": 0.01349599555249742,
+          "rmsError": 0.0013692384422451973,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 1,
+          "maximumError": 0.016759934417586386,
+          "rmsError": 0.0012659221230391286,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 2,
+          "maximumError": 0.016336838998246034,
+          "rmsError": 0.0013080910232616694,
+          "samples": 1947,
+          "stage": "print-output"
+        }
+      ]
+    },
+    {
+      "stock": "provia-100f",
+      "rendererSamples": 8295,
+      "maximumDensityOrLinearError": 0.02701189723773023,
+      "composedModel": [
+        {
+          "developmentOffset": -0.5,
+          "maximumError": 0.015979688931251512,
+          "rmsError": 0.0009187316149015042,
+          "samples": 1947,
+          "stage": "reversal-output"
+        },
+        {
+          "developmentOffset": 0,
+          "maximumError": 0.016459266255816063,
+          "rmsError": 0.0009079957735852026,
+          "samples": 1947,
+          "stage": "reversal-output"
+        },
+        {
+          "developmentOffset": 1,
+          "maximumError": 0.020758637728747753,
+          "rmsError": 0.0010072770570495936,
+          "samples": 1947,
+          "stage": "reversal-output"
+        },
+        {
+          "developmentOffset": 2,
+          "maximumError": 0.02701189723773023,
+          "rmsError": 0.0011067871955689848,
+          "samples": 1947,
+          "stage": "reversal-output"
+        }
+      ]
+    },
+    {
+      "stock": "study-bw-chromogenic",
+      "rendererSamples": 11,
+      "maximumDensityOrLinearError": 0.0003906250000000888
+    },
+    {
+      "stock": "study-bw-silver",
+      "rendererSamples": 11,
+      "maximumDensityOrLinearError": 0.0003906250000000888
+    },
+    {
+      "stock": "study-c41",
+      "rendererSamples": 66,
+      "maximumDensityOrLinearError": 0.010224999999999998
+    },
+    {
+      "stock": "study-e6",
+      "rendererSamples": 66,
+      "maximumDensityOrLinearError": 0.010224999999999998
+    },
+    {
+      "stock": "study-ecn2",
+      "rendererSamples": 66,
+      "maximumDensityOrLinearError": 0.010224999999999998
+    },
+    {
+      "stock": "t-max-100",
+      "rendererSamples": 278,
+      "maximumDensityOrLinearError": 0.0011366250000000022,
+      "maximumFilterFactorErrorStops": 0.5632622566246285
+    },
+    {
+      "stock": "tri-x-400",
+      "rendererSamples": 626,
+      "maximumDensityOrLinearError": 0.0020593749999999744,
+      "maximumFilterFactorErrorStops": 0.5984273185162596
+    },
+    {
+      "stock": "velvia-50",
+      "rendererSamples": 6318,
+      "maximumDensityOrLinearError": 0.016785254070560862,
+      "composedModel": [
+        {
+          "developmentOffset": -0.5,
+          "maximumError": 0.013310373234374534,
+          "rmsError": 0.0011623135559860212,
+          "samples": 1947,
+          "stage": "reversal-output"
+        },
+        {
+          "developmentOffset": 0,
+          "maximumError": 0.014409605320654273,
+          "rmsError": 0.0012941362562672463,
+          "samples": 1947,
+          "stage": "reversal-output"
+        },
+        {
+          "developmentOffset": 1,
+          "maximumError": 0.017273535320560862,
+          "rmsError": 0.0015074430782049484,
+          "samples": 1947,
+          "stage": "reversal-output"
+        }
+      ]
+    },
+    {
+      "stock": "vision3-200t",
+      "rendererSamples": 16179,
+      "maximumDensityOrLinearError": 0.00876379983500386,
+      "composedModel": [
+        {
+          "developmentOffset": -1,
+          "maximumError": 0.0028076967737541425,
+          "rmsError": 0.0002951641825741055,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 0,
+          "maximumError": 0.0025601948041189537,
+          "rmsError": 0.0003309084351967756,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 1,
+          "maximumError": 0.0031334577410910835,
+          "rmsError": 0.00033087766102246624,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 2,
+          "maximumError": 0.003817814837216549,
+          "rmsError": 0.00036555751433252814,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": -1,
+          "maximumError": 0.00822570316582616,
+          "rmsError": 0.0008803809831517998,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 0,
+          "maximumError": 0.007932543180635632,
+          "rmsError": 0.000876178230499789,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 1,
+          "maximumError": 0.00876379983500386,
+          "rmsError": 0.000835645814614754,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 2,
+          "maximumError": 0.008474682346387374,
+          "rmsError": 0.000873200441502446,
+          "samples": 1947,
+          "stage": "print-output"
+        }
+      ]
+    },
+    {
+      "stock": "vision3-250d",
+      "rendererSamples": 16179,
+      "maximumDensityOrLinearError": 0.009628195706726572,
+      "composedModel": [
+        {
+          "developmentOffset": -1,
+          "maximumError": 0.0029646606358141314,
+          "rmsError": 0.0003210760007941377,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 0,
+          "maximumError": 0.0029624611198845185,
+          "rmsError": 0.0003486879594420034,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 1,
+          "maximumError": 0.00341423035267574,
+          "rmsError": 0.00037695697181327684,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 2,
+          "maximumError": 0.00486281951141343,
+          "rmsError": 0.0004109457156072127,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": -1,
+          "maximumError": 0.009428116600673997,
+          "rmsError": 0.0009233921173311706,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 0,
+          "maximumError": 0.009628195706726572,
+          "rmsError": 0.0009881115525690652,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 1,
+          "maximumError": 0.008799630171930195,
+          "rmsError": 0.0009347508411347465,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 2,
+          "maximumError": 0.007911680687903377,
+          "rmsError": 0.0009961152195915848,
+          "samples": 1947,
+          "stage": "print-output"
+        }
+      ]
+    },
+    {
+      "stock": "vision3-500t",
+      "rendererSamples": 16179,
+      "maximumDensityOrLinearError": 0.018064940439211252,
+      "composedModel": [
+        {
+          "developmentOffset": -1,
+          "maximumError": 0.007518124122782299,
+          "rmsError": 0.0004009700747633863,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 0,
+          "maximumError": 0.006177033141259003,
+          "rmsError": 0.0004184852784250421,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 1,
+          "maximumError": 0.005018835205094302,
+          "rmsError": 0.00040350198890967573,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 2,
+          "maximumError": 0.005937425319590933,
+          "rmsError": 0.00043016153784332254,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": -1,
+          "maximumError": 0.01110684799040984,
+          "rmsError": 0.0010661749266593842,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 0,
+          "maximumError": 0.013084053050309574,
+          "rmsError": 0.0010542546065164253,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 1,
+          "maximumError": 0.01576515358861419,
+          "rmsError": 0.0010395787865265956,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 2,
+          "maximumError": 0.018064940439211252,
+          "rmsError": 0.0011209614917102079,
+          "samples": 1947,
+          "stage": "print-output"
+        }
+      ]
+    },
+    {
+      "stock": "vision3-50d",
+      "rendererSamples": 16179,
+      "maximumDensityOrLinearError": 0.023504548025024996,
+      "composedModel": [
+        {
+          "developmentOffset": -1,
+          "maximumError": 0.0043270197441106495,
+          "rmsError": 0.00036247470746869837,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 0,
+          "maximumError": 0.00456139654258686,
+          "rmsError": 0.00038068246072223334,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 1,
+          "maximumError": 0.005675461009239546,
+          "rmsError": 0.0004187937300136353,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": 2,
+          "maximumError": 0.007351366767920892,
+          "rmsError": 0.00047778857233864673,
+          "samples": 1947,
+          "stage": "scan-output"
+        },
+        {
+          "developmentOffset": -1,
+          "maximumError": 0.01624009877457344,
+          "rmsError": 0.0011073311545589549,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 0,
+          "maximumError": 0.015536988487127923,
+          "rmsError": 0.0011132829951413618,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 1,
+          "maximumError": 0.018561727595961308,
+          "rmsError": 0.001211487082318575,
+          "samples": 1947,
+          "stage": "print-output"
+        },
+        {
+          "developmentOffset": 2,
+          "maximumError": 0.023016266775024996,
+          "rmsError": 0.0013393445159899913,
+          "samples": 1947,
+          "stage": "print-output"
+        }
+      ]
+    }
+  ]
+}

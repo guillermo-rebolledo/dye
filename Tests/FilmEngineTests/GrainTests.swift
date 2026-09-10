@@ -41,6 +41,63 @@ private func deviation(_ values: [Double]) -> Double {
     return (values.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(values.count)).squareRoot()
 }
 
+@Test func measuredGranularityUsesAbsoluteDensityAndIndependentChannels() async throws {
+    let renderer = try Renderer()
+    var metadata = try graining(radiusMicrons: 1, rms: 0, response: Array(repeating: 0, count: 32)).metadata
+    metadata.grain.measuredDensityCurves = (1...3).map { channel in
+        [.init(density: 0.1, rms: Double(channel) * 0.01),
+         .init(density: 0.3, rms: Double(channel) * 0.03)]
+    }
+    metadata.provenance["grain.measuredDensityCurves"] = .artistic
+    metadata.provenance["grain.densityExtrapolation"] = .approximation
+    let profile = try Profile(metadata: metadata, payloads: ["identity.lut3d": ColourCube.identity.payload])
+    #expect(!metadata.grain.isSilent)
+    for density in [0.1, 0.2, 0.3, 0.4] {
+        let image = try flat(width: 512, height: 512, value: Float16(density))
+        for channel in 0..<3 {
+            let field = try await grainField(renderer, profile: profile, image: image, channel: channel)
+            // Published sigma is at 48 µm; a pixel covers 36 mm / 512. Outside
+            // the measured interval, hold the endpoint rather than invent a curve.
+            let expected = min(density, 0.3) * 0.1 * Double(channel + 1) * 48 / (36000 / 512)
+            #expect(abs(deviation(field) / expected - 1) < 0.05)
+        }
+    }
+}
+
+@Test func measuredColourGrainsAtPhysicalMiddleGrayInEveryOutputStage() async throws {
+    let renderer = try Renderer()
+    let profiles = try ProfileCatalogue.bundled().profiles.filter {
+        $0.metadata.colour.inputShaper != nil && !$0.metadata.process.isMonochrome
+    }
+    #expect(profiles.count == 9)
+    for profile in profiles {
+        let stages: [OutputStage] = profile.metadata.colour.printVariants == nil
+            ? [profile.metadata.colour.outputStage] : [.scan, .print]
+        let offsets = profile.metadata.colour.lutVariants.map(\.pushStops)
+        let fractional = zip(offsets.sorted(), offsets.sorted().dropFirst()).map { ($0 + $1) / 2 }
+        for stage in stages {
+            for offset in offsets + fractional {
+                // Cancel the UI's metering convention so the Film Response receives
+                // scene-linear .18, including the artistic EI of derived stocks.
+                let rating = log2(profile.metadata.nominalISO / profile.metadata.trueISO)
+                var settings = RenderSettings(output: .workingSpace)
+                settings.temperatureKelvin = profile.metadata.balance
+                settings.exposureStops = offset - rating
+                settings.developmentOffset = offset
+                settings.outputStage = stage
+                settings.halationIntensity = 0
+                settings.bloomIntensity = 0
+                let input = try flat(width: 256, height: 256, value: 0.18)
+                let field = try await grainField(renderer, profile: profile, image: input, settings: settings)
+                #expect(deviation(field) > 0.0001,
+                        "\(profile.id), \(stage), offset \(offset): mid-gray must carry grain")
+                let repeatField = try await grainField(renderer, profile: profile, image: input, settings: settings)
+                #expect(field == repeatField)
+            }
+        }
+    }
+}
+
 /// The lag, as a fraction of the frame's long edge, at which the field decorrelates
 /// to half. This is the number that must not move with output resolution.
 private func correlationLength(_ field: [Double], width: Int, height: Int) -> Double {

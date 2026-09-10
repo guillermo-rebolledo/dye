@@ -20,7 +20,12 @@ public struct Profile: Sendable, Identifiable {
         for (name, bytes) in payloads {
             if name == metadata.monochrome?.densityCurve {
                 guard try decodeHalfValues(bytes).count == 1024 else { throw FilmError.invalid("Density Curve must contain 1024 entries") }
-            } else { _ = try ColourCube(size: metadata.colour.lutSize, payload: bytes) }
+            } else {
+                let output = metadata.colour.densityOutput
+                let outputNames = (output?.lutVariants ?? []) + (output?.printVariants ?? [])
+                let size = outputNames.contains { $0.lut == name } ? output!.lutSize : metadata.colour.lutSize
+                _ = try ColourCube(size: size, payload: bytes)
+            }
         }
     }
 

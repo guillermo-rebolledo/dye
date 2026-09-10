@@ -5,25 +5,21 @@ a Colour Cube; a black & white Stock resolves to a **Monochrome Collapse** follo
 by a **Density Curve**, and **samples no 3D lookup at all**:
 
 ```
-gray    = dot(linearRGB, spectralWeight)   // per-Stock three-vector
+gray    = sum(max(0, dot(linearRGB, band))) // per-wavelength contributions
 density = densityCurve[shaped(gray)]       // per-Stock 1024-entry float16 lookup
 ```
 
-Two Stocks shipped here use it: Tri-X 400 and T-Max 100, both baked from digitised
-Kodak datasheets.
+Tri-X 400, T-Max 100 and Fomapan 100 use this branch, with digitised manufacturer data.
 
-## Why this is not a cheaper 3D lookup
+## Nonnegative spectral reconstruction
 
-It is a smaller model, but it is also a **more accurate** one. A monochrome
-emulsion has one spectral sensitivity curve and one characteristic curve. Baking
-that into 33³ texels would resample a rank-one function through a rank-three
-container, spending 287 kB and a trilinear fetch to reproduce a dot product with
-interpolation error the dot product does not have. The 2 kB Density Curve is exact
-on its own grid, and the collapse is exact everywhere.
-
-The `monochromeResponse` kernel is bound no cube, and a B&W Profile's
-`colour.lutVariants` is empty, so the branch is structural rather than a fast path
-that could silently fall back.
+For colours inside the reconstruction basis, spectral integration reduces exactly
+to a three-vector dot product. Outside it, the colour model clamps reconstructed
+spectral power at each wavelength. Newly baked B&W Profiles carry
+`monochrome.spectralContributions` so they apply the same projection before
+collapse, including with Contrast Filters. A dot product alone would integrate
+negative spectral power for those colours. Legacy Profiles retain their dot-product
+path. Neither path can recover a unique spectrum from RGB.
 
 ## The Spectral Weight
 
@@ -42,9 +38,10 @@ CIE functions. Because that reconstruction is linear in the basis coefficients,
 gray = ∫ S(λ) · Σ_c coeff_c · basis_c(λ) dλ  =  dot(rgb, rgbToBasisᵀ · raw)
 ```
 
-collapses exactly to a three-vector. Nothing is approximated by the collapse
-itself; the approximation is the metamer the reconstruction picks, and it is the
-same one the Colour Cubes are baked through.
+collapses to a three-vector only where reconstructed power is nonnegative. New
+Profiles retain per-wavelength contributions and clamp before summing, matching
+the colour model outside that region too. The reconstructed metamer remains an
+approximation.
 
 The Baker derives the weight and writes it into the Profile. Like
 `colour.sourceFingerprint` it is **absent from `stock.json`** and rejected if
@@ -62,13 +59,10 @@ nothing like Rec.2020 luma's 0.678 on green. Tri-X is the bluer of the two and
 T-Max the greener, and against a luminance-matched neutral that is worth about
 5 % of scan value each way on a blue or a green subject.
 
-**On MEM-248's red target.** The ticket expected a red subject to be the clearest
-evidence and expected Tri-X to render it darker. Through the digitised F-4017 and
-F-4016 curves it is neither: the two Stocks separate a red subject by well under
-one per cent, with Tri-X very slightly the *lighter*. Red is where these two films
-agree; blue and green are where they do not. `MonochromeTests` asserts the
-measured direction and says so at the assertion, and the Curve Sets' SOURCES.md
-carry the numbers.
+**Red-target agreement.** The two stocks separate the test's red subject by less
+than one per cent. The tiny direction changes with nonnegative spectral projection
+and is not evidence of a meaningful film distinction. Blue and green separate
+more strongly; both stocks darken red against the test's luminance-matched neutral.
 
 ## Contrast Filters
 
@@ -77,8 +71,7 @@ before the collapse**, and never a tint applied to the developed grey. A red
 filter has to darken blue sky, not wash the frame red, and only a model that
 reaches the spectrum can express the difference.
 
-Because the multiply happens inside the same integral, it resolves to a second
-three-vector rather than to a Pass:
+The multiply remains inside the spectral integral. Its linear-region summary is:
 
 ```
 weight_f = rgbToBasisᵀ · ∫ S(λ) · T_f(λ) · basis(λ) dλ
@@ -86,8 +79,8 @@ weight_f = rgbToBasisᵀ · ∫ S(λ) · T_f(λ) · basis(λ) dλ
 
 The Baker emits one per filter — yellow (Wratten 8), orange (Wratten 15), red
 (Wratten 25), green (Wratten 58) and blue (Wratten 47) — and the runtime selects
-between them. The Contrast Filter costs the renderer nothing at all: it changes
-which three numbers the dot product uses.
+between their normalized per-wavelength contributions. Legacy Profiles select
+the corresponding three-vector.
 
 A filter's weight may carry a small negative component. That is not a defect: it
 is the film's response to filtered light resolved back onto the Working Space
@@ -97,8 +90,7 @@ unfiltered collapse is required to be nonnegative.
 ### Filter factors, and why nothing gets darker
 
 Every weight is stored scaled so the unfiltered one sums to one, which makes each
-filter's sum the reciprocal of its **filter factor**. The renderer normalises the
-weight it uses, so a Contrast Filter changes tonal separation and leaves exposure
+filter's sum the reciprocal of its **filter factor**. The renderer uses neutral-normalized weights or per-band coefficients, so a Contrast Filter changes tonal separation and leaves exposure
 alone — exactly what a photographer does by metering without the glass and opening
 up by the published factor. Mid-grey stays at mid-grey through all six settings.
 The app's hint names the stops it has already paid.
@@ -107,7 +99,7 @@ The factors are also the branch's external check: Kodak publishes a daylight
 factor per filter *per film* and the two tables differ. See
 [the Contrast Filters' sources](../Curves/contrast-filters/SOURCES.md) for the
 derived-against-published table, the 0.7-stop bound, and an honest account of the
-two filters that miss.
+remaining source and reconstruction uncertainty.
 
 ### Black & white only
 
@@ -124,7 +116,7 @@ A measured B&W Curve Set carries `colour.inputShaper`, so the Density Curve is
 addressed in physical log10 lux-seconds exactly as a spectral Colour Cube is:
 
 ```
-gray  = dot(linearRGB, spectralWeight)
+gray  = sum(max(0, dot(linearRGB, band)))
 logH  = log10(gray / 0.18) + middleGrayLogExposure
 coord = clamp((logH - minimumLogExposure) / (maximumLogExposure - minimumLogExposure), 0, 1)
 ```
@@ -155,3 +147,7 @@ studies. The foundation study B&W Profiles have no shaper and keep their linear
 
 Both land in the same CSV and SVG report as every other Curve Set, and CI runs
 them for every Curve Set on every push.
+
+The shared transmission table now comes from official WRATTEN 2 charts, with
+clipped blocking regions recorded as bounds. See the updated filter SOURCES.md and
+[accuracy validation](accuracy-validation.md); the 0.7-stop factor gate remains.

@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-import FilmEngine
+@testable import FilmEngine
 
 @Test(arguments: FilmProcess.allCases)
 func profileCodecRoundTripsEveryProcess(_ process: FilmProcess) throws {
@@ -86,7 +86,7 @@ func profileCodecRoundTripsEveryProcess(_ process: FilmProcess) throws {
     invalid.colour.inputShaper = nil
     #expect(throws: (any Error).self) { try Profile(metadata: invalid, payloads: payloads) }
     invalid = original.metadata
-    invalid.colour.cubeOutput = .density
+    invalid.colour.cubeOutput = .displayLinearRec2020
     #expect(throws: (any Error).self) { try Profile(metadata: invalid, payloads: payloads) }
     invalid = original.metadata
     invalid.provenance.removeValue(forKey: "colour.inputShaper")
@@ -97,9 +97,13 @@ func profileCodecRoundTripsEveryProcess(_ process: FilmProcess) throws {
     let original = try #require(ProfileCatalogue.bundled().profiles.first { $0.id == "vision3-250d" })
     let decoded = try ProfileContainer.decode(ProfileContainer.encode(original))
     #expect(decoded.metadata.colour.printVariants == original.metadata.colour.printVariants)
-    let cube = ColourCube.identity.payload
     func payloads(_ metadata: FilmProfile) -> [String: Data] {
-        Dictionary(uniqueKeysWithValues: metadata.payloadNames.map { ($0, cube) })
+        let output = metadata.colour.densityOutput
+        let outputNames = Set(((output?.lutVariants ?? []) + (output?.printVariants ?? [])).map(\.lut))
+        return Dictionary(uniqueKeysWithValues: metadata.payloadNames.map { name in
+            let size = outputNames.contains(name) ? output!.lutSize : metadata.colour.lutSize
+            return (name, Data(repeating: 0, count: size * size * size * 8))
+        })
     }
     #expect(throws: Never.self) { try Profile(metadata: original.metadata, payloads: payloads(original.metadata)) }
     // A Print that covers different Development Offsets from the scan, one that
@@ -109,7 +113,7 @@ func profileCodecRoundTripsEveryProcess(_ process: FilmProcess) throws {
     invalid.colour.printVariants?.removeLast()
     #expect(throws: (any Error).self) { try Profile(metadata: invalid, payloads: payloads(invalid)) }
     invalid = original.metadata
-    invalid.colour.printVariants?[0].lut = try #require(invalid.colour.lutVariants.first).lut
+    invalid.colour.densityOutput?.printVariants?[0].lut = try #require(invalid.colour.lutVariants.first).lut
     #expect(throws: (any Error).self) { try Profile(metadata: invalid, payloads: payloads(invalid)) }
     invalid = original.metadata
     invalid.provenance.removeValue(forKey: "colour.printVariants")
@@ -119,4 +123,40 @@ func profileCodecRoundTripsEveryProcess(_ process: FilmProcess) throws {
     reversal.colour.printVariants = original.metadata.colour.printVariants
     reversal.provenance["colour.printVariants"] = .artistic
     #expect(throws: (any Error).self) { try Profile(metadata: reversal, payloads: payloads(reversal)) }
+}
+
+@Test func halfPayloadsPreserveBitsAndRejectEveryNonfiniteEncoding() throws {
+    let bits: [UInt16] = [0x0000, 0x8000, 0x0001, 0x0400, 0x3c00, 0xbc00, 0x7bff, 0xfbff]
+    let expected = Array(repeating: bits, count: 4).flatMap { $0 }
+    let bytes = Data(expected.flatMap { [UInt8(truncatingIfNeeded: $0), UInt8($0 >> 8)] })
+    let cube = try ColourCube(size: 2, payload: bytes)
+    #expect(cube.rgba.map(\.bitPattern) == expected)
+    #expect(cube.payload == bytes)
+    for invalid: UInt16 in [0x7c00, 0xfc00, 0x7c01, 0x7e00, 0xfe00] {
+        var bad = bytes
+        bad[0] = UInt8(truncatingIfNeeded: invalid)
+        bad[1] = UInt8(invalid >> 8)
+        #expect(throws: FilmError.self) { try ColourCube(size: 2, payload: bad) }
+    }
+}
+
+@Test func packedHalfValidationCoversEveryEncodingAndTailLane() throws {
+    let finite = (0...UInt16.max).filter { $0 & 0x7c00 != 0x7c00 }
+    let bytes = Data(finite.flatMap { [UInt8(truncatingIfNeeded: $0), UInt8($0 >> 8)] })
+    #expect(try decodeHalfValues(bytes).map(\.bitPattern) == finite)
+    // Four packed lanes followed by three scalar tail lanes. Exercise every
+    // infinity/NaN encoding in every position, including negative encodings.
+    for value in (0...UInt16.max).filter({ $0 & 0x7c00 == 0x7c00 }) {
+        for lane in 0..<7 {
+            var bad = Data(repeating: 0, count: 14)
+            bad[2 * lane] = UInt8(truncatingIfNeeded: value)
+            bad[2 * lane + 1] = UInt8(value >> 8)
+            #expect(throws: FilmError.self) { try decodeHalfValues(bad) }
+        }
+    }
+    for count in 0..<8 {
+        let finiteTail = Data(repeating: 0, count: count * 2)
+        #expect(try decodeHalfValues(finiteTail).count == count)
+    }
+    #expect(throws: FilmError.self) { try decodeHalfValues(Data([0])) }
 }

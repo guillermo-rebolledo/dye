@@ -137,7 +137,8 @@
     "spectral.observer": "measured",
     "spectral.reconstruction": "artistic",
     "spectral.sensitivity": "approximation",
-    "trueISO": "measured"
+    "trueISO": "measured",
+    "spectral.contrastFilterData": "measured"
   },
   "reciprocity": {
     "schwarzschildP": [

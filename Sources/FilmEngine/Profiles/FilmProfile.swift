@@ -109,8 +109,9 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         /// the Stock has one: the same negative read by an enlarger and RA-4 paper
         /// instead of by a scanner. Nil is a Stock with no Print, which the renderer
         /// refuses rather than approximating with the scan. Like the scan cubes of a
-        /// spectral negative these are `displayLinearRec2020`, because the print is
-        /// the final image the way a Transparency is.
+        /// legacy spectral negative these are `displayLinearRec2020`. With
+        /// `densityOutput`, both stages share film density payloads and the print
+        /// observation lives in `densityOutput.printVariants`.
         public var printVariants: [Variant]?
         public var lutSize: Int
         public var outputStage: OutputStage
@@ -119,6 +120,21 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         public var cubeOutput: CubeOutput?
         /// SHA-256 of the offline model version and its authoring inputs; nil in stock.json.
         public var sourceFingerprint: String?
+        /// Separate film density from its observation so Grain perturbs the film
+        /// before scanning, printing or viewing. Absent on legacy fused cubes.
+        public var densityOutput: DensityOutput?
+    }
+    public struct DensityOutput: Codable, Equatable, Sendable {
+        public var minimum: [Double]
+        public var maximum: [Double]
+        public var lutSize: Int
+        public var lutVariants: [Variant]
+        public var printVariants: [Variant]?
+        public init(minimum: [Double], maximum: [Double], lutSize: Int,
+                    lutVariants: [Variant], printVariants: [Variant]?) {
+            self.minimum = minimum; self.maximum = maximum; self.lutSize = lutSize
+            self.lutVariants = lutVariants; self.printVariants = printVariants
+        }
     }
     public enum CubeOutput: String, Codable, Sendable { case density, displayLinearRec2020 }
     /// Offline Colour Cube coordinates. Runtime application is the MEM-244 integration gate.
@@ -127,6 +143,10 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         public var maximumLogExposure: Double
         /// Physical log10 lux-seconds corresponding to scene-linear 0.18.
         public var middleGrayLogExposure: Double
+        public init(minimumLogExposure: Double, maximumLogExposure: Double, middleGrayLogExposure: Double) {
+            self.minimumLogExposure = minimumLogExposure; self.maximumLogExposure = maximumLogExposure
+            self.middleGrayLogExposure = middleGrayLogExposure
+        }
     }
     public struct Variant: Codable, Equatable, Sendable {
         public var pushStops: Double
@@ -144,6 +164,17 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         /// One Spectral Weight per Contrast Filter, in the Stock's own sensitivity
         /// units, so the ratio of their sums is the glass's filter factor.
         public var contrastFilters: [FilterWeight]?
+        /// Per-band RGB coefficients before the shared nonnegative spectral
+        /// projection. A dot product alone cannot reproduce clipping outside the
+        /// reconstruction basis. Rows are normalized to preserve a neutral.
+        public var spectralContributions: [SpectralContributions]?
+        public struct SpectralContributions: Codable, Equatable, Sendable {
+            public var filter: ContrastFilter
+            public var coefficients: [[Double]]
+            public init(filter: ContrastFilter, coefficients: [[Double]]) {
+                self.filter = filter; self.coefficients = coefficients
+            }
+        }
 
         public struct FilterWeight: Codable, Equatable, Sendable {
             public var filter: ContrastFilter
@@ -184,10 +215,22 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         public var densityResponse: [Double]
         public var channelCorrelation: Double
         public var channelRadiusScale: [Double]
+        /// Absolute optical density and RMS density fluctuations at the 48 µm
+        /// aperture, one curve per layer. Endpoint holding outside the measured
+        /// domain is an explicitly recorded approximation.
+        public var measuredDensityCurves: [[DensityGranularity]]?
+        public struct DensityGranularity: Codable, Equatable, Sendable {
+            public var density: Double
+            public var rms: Double
+            public init(density: Double, rms: Double) { self.density = density; self.rms = rms }
+        }
         /// Whether the Stock grains at all. A Profile with no granularity, or a
         /// Density Response that is zero everywhere, has nothing for the Pass to add
         /// and no control to offer.
-        public var isSilent: Bool { rmsGranularity <= 0 || !densityResponse.contains { $0 > 0 } }
+        public var isSilent: Bool {
+            if let measuredDensityCurves { return !measuredDensityCurves.joined().contains { $0.rms > 0 } }
+            return rmsGranularity <= 0 || !densityResponse.contains { $0 > 0 }
+        }
         public init(model: GrainModel, rmsGranularity: Double, grainRadiusMicrons: Double,
                     densityResponse: [Double], channelCorrelation: Double, channelRadiusScale: [Double]) {
             self.model = model; self.rmsGranularity = rmsGranularity; self.grainRadiusMicrons = grainRadiusMicrons
@@ -222,6 +265,9 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
     public struct MTF: Codable, Equatable, Sendable {
         public var cyclesPerMM: [Double]
         public var response: [Double]
+        /// Published red/green/blue responses on the same frequency grid. Legacy
+        /// profiles with a single measurement retain the shared response.
+        public var channelResponse: [[Double]]?
         public init(cyclesPerMM: [Double], response: [Double]) {
             self.cyclesPerMM = cyclesPerMM; self.response = response
         }
@@ -252,8 +298,12 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
     /// Development Offset for each Output Stage it can reach, or the one Density
     /// Curve of a black & white Stock.
     public var payloadNames: Set<String> {
-        Set(colour.lutVariants.map(\.lut) + (colour.printVariants ?? []).map(\.lut)
-            + (monochrome.map { [$0.densityCurve] } ?? []))
+        var names = Set(colour.lutVariants.map(\.lut))
+        names.formUnion((colour.printVariants ?? []).map(\.lut))
+        names.formUnion((colour.densityOutput?.lutVariants ?? []).map(\.lut))
+        names.formUnion((colour.densityOutput?.printVariants ?? []).map(\.lut))
+        if let monochrome { names.insert(monochrome.densityCurve) }
+        return names
     }
 
     public func validate() throws {
@@ -265,7 +315,7 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         }
         try require(!id.isEmpty && !displayName.isEmpty, "missing identity or Display Name")
         try require([nominalISO, trueISO, balance].allSatisfy { $0.isFinite && $0 > 0 }, "invalid Stock speed or Stock Balance")
-        try require((2...65).contains(colour.lutSize), "Colour Cube size must be 2...65")
+        try require((2...129).contains(colour.lutSize), "Colour Cube size must be 2...129")
         try require(process.isMonochrome == (monochrome != nil), "Monochrome section must occur only for B&W")
         try require(process.isMonochrome ? colour.lutVariants.isEmpty : !colour.lutVariants.isEmpty,
                     "B&W uses a Density Curve; colour uses Colour Cubes")
@@ -282,7 +332,7 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
                         printVariants.count == colour.lutVariants.count &&
                         printVariants.allSatisfy { !$0.lut.isEmpty },
                         "Print Colour Cubes must cover the same Development Offsets as the scan's")
-            try require(Set(printVariants.map(\.lut)).isDisjoint(with: Set(colour.lutVariants.map(\.lut))),
+            try require(colour.densityOutput != nil || Set(printVariants.map(\.lut)).isDisjoint(with: Set(colour.lutVariants.map(\.lut))),
                         "Print Colour Cubes need payloads of their own")
         }
         if let monochrome {
@@ -302,6 +352,14 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
                             }, "invalid Contrast Filter Spectral Weights")
                 try require(colour.inputShaper != nil, "Contrast Filters are derived from a spectral Curve Set")
             }
+            if let spectra = monochrome.spectralContributions {
+                try require(Set(spectra.map(\.filter)) == Set(ContrastFilter.allCases) && spectra.count == 6 &&
+                            spectra.allSatisfy { entry in
+                                (31...81).contains(entry.coefficients.count) && entry.coefficients.allSatisfy {
+                                    $0.count == 3 && $0.allSatisfy(\.isFinite)
+                                } && abs(entry.coefficients.flatMap { $0 }.reduce(0, +) - 1) < 1e-6
+                            }, "invalid nonnegative spectral reconstruction coefficients")
+            }
             // Derived by the Baker, exactly like the source fingerprint: absent while
             // authoring, and both present in anything that ships.
             try require(colour.sourceFingerprint == nil ||
@@ -313,6 +371,13 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         try require(nonnegative([grain.rmsGranularity, grain.grainRadiusMicrons], count: 2) &&
                     nonnegative(grain.densityResponse, count: 32) && nonnegative(grain.channelRadiusScale, count: 3) &&
                     (0...1).contains(grain.channelCorrelation), "invalid Grain parameters")
+        if let measured = grain.measuredDensityCurves {
+            try require(measured.count == 3 && measured.allSatisfy { curve in
+                curve.count >= 2 && curve.allSatisfy { $0.density.isFinite && $0.density >= 0 && $0.rms.isFinite && $0.rms >= 0 }
+                    && zip(curve, curve.dropFirst()).allSatisfy { $0.density < $1.density }
+            }, "invalid measured density/granularity curves")
+            try require(colour.cubeOutput != .displayLinearRec2020, "measured grain requires a Density Space response")
+        }
         try require(nonnegative([bloom.strength, bloom.radiusMicrons], count: 2) && bloom.strength <= 1 &&
                     bloom.radiusMicrons <= 5000, "invalid Bloom parameters")
         try require(nonnegative([halation.strength, halation.threshold], count: 2) && halation.strength <= 1 && halation.threshold > 0 &&
@@ -326,6 +391,10 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         try require(!mtf.cyclesPerMM.isEmpty && nonnegative(mtf.cyclesPerMM, count: mtf.response.count) &&
                     nonnegative(mtf.response, count: mtf.cyclesPerMM.count) &&
                     zip(mtf.cyclesPerMM, mtf.cyclesPerMM.dropFirst()).allSatisfy { $0 < $1 }, "invalid MTF")
+        if let channels = mtf.channelResponse {
+            try require(channels.count == 3 && channels.allSatisfy { nonnegative($0, count: mtf.cyclesPerMM.count) },
+                        "invalid channel MTF curves")
+        }
         try require(nonnegative(reciprocity.schwarzschildP, count: 3) &&
                     reciprocity.schwarzschildP.allSatisfy { $0 > 0 && $0 <= 1 } &&
                     reciprocity.thresholdSeconds.isFinite && reciprocity.thresholdSeconds >= 0, "invalid Reciprocity Failure")
@@ -343,18 +412,40 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
             // and its Density Curve is scanned by the runtime like any negative's.
             try require(colour.outputStage == (process == .e6 ? OutputStage.none : .scan),
                         "spectral Colour Cubes require the scan or the reversal output contract")
-            try require(process.isMonochrome ? colour.cubeOutput == nil : colour.cubeOutput == .displayLinearRec2020,
+            try require(process.isMonochrome ? colour.cubeOutput == nil :
+                            (colour.densityOutput == nil ? colour.cubeOutput == .displayLinearRec2020 : colour.cubeOutput == .density),
                         "spectral Colour Cubes require the scan output contract; a Density Curve has no cube output")
         } else {
             try require(colour.cubeOutput != .displayLinearRec2020, "display-linear Colour Cube requires an input shaper")
+        }
+        if let output = colour.densityOutput {
+            try require(colour.inputShaper != nil && !process.isMonochrome && colour.cubeOutput == .density,
+                        "density output requires a shaped colour density cube")
+            try require(output.minimum.count == 3 && output.maximum.count == 3 &&
+                        zip(output.minimum, output.maximum).allSatisfy { $0.isFinite && $1.isFinite && $0 < $1 } &&
+                        (2...65).contains(output.lutSize), "invalid output density domain")
+            func matches(_ outputs: [Variant], _ inputs: [Variant]) -> Bool {
+                outputs.count == inputs.count && Set(outputs.map(\.pushStops)) == Set(inputs.map(\.pushStops))
+                    && outputs.allSatisfy { !$0.lut.isEmpty }
+            }
+            try require(matches(output.lutVariants, colour.lutVariants) &&
+                        (output.printVariants == nil) == (colour.printVariants == nil) &&
+                        matches(output.printVariants ?? [], colour.printVariants ?? []), "density output variants must match film variants")
+            let filmNames = Set((colour.lutVariants + (colour.printVariants ?? [])).map(\.lut))
+            let outputNames = Set((output.lutVariants + (output.printVariants ?? [])).map(\.lut))
+            try require(filmNames.isDisjoint(with: outputNames), "density/output payload names must be distinct")
         }
         var parameters = Self.parameterPaths
         if colour.inputShaper != nil { parameters += ["colour.inputShaper"] }
         if colour.cubeOutput != nil { parameters += ["colour.cubeOutput"] }
         if colour.printVariants != nil { parameters += ["colour.printVariants"] }
+        if colour.densityOutput != nil { parameters += ["colour.densityOutput"] }
+        if grain.measuredDensityCurves != nil { parameters += ["grain.measuredDensityCurves", "grain.densityExtrapolation"] }
+        if mtf.channelResponse != nil { parameters += ["mtf.channelResponse"] }
         if monochrome != nil {
             parameters += ["monochrome.spectralWeight", "monochrome.densityCurve"]
             if colour.inputShaper != nil { parameters += ["monochrome.contrastFilters"] }
+            if monochrome?.spectralContributions != nil { parameters += ["monochrome.spectralContributions"] }
         }
         try require(parameters.allSatisfy { provenance[$0] != nil }, "missing per-parameter Provenance")
     }

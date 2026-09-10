@@ -137,11 +137,12 @@
     "reciprocity.schwarzschildP": "artistic",
     "reciprocity.thresholdSeconds": "measured",
     "spectral.characteristicCurve": "measured",
-    "spectral.contrastFilters": "artistic",
+    "spectral.contrastFilters": "approximation",
     "spectral.observer": "measured",
     "spectral.reconstruction": "artistic",
     "spectral.sensitivity": "measured",
-    "trueISO": "artistic"
+    "trueISO": "artistic",
+    "spectral.contrastFilterData": "measured"
   },
   "reciprocity": {
     "schwarzschildP": [

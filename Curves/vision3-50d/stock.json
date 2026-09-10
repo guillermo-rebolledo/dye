@@ -11,7 +11,7 @@
       "middleGrayLogExposure": -0.54,
       "minimumLogExposure": -3.08
     },
-    "lutSize": 33,
+    "lutSize": 65,
     "lutVariants": [
       {
         "lut": "pull1.lut3d",

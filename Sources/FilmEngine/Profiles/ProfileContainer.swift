@@ -86,6 +86,11 @@ public enum ProfileContainer {
         for variant in header.profile.colour.lutVariants + (header.profile.colour.printVariants ?? []) {
             expected[variant.lut] = size * size * size * 8
         }
+        if let output = header.profile.colour.densityOutput {
+            for variant in output.lutVariants + (output.printVariants ?? []) {
+                expected[variant.lut] = output.lutSize * output.lutSize * output.lutSize * 8
+            }
+        }
         if let mono = header.profile.monochrome { expected[mono.densityCurve] = 1024 * 2 }
         guard Set(header.payloads.map(\.name)).count == header.payloads.count,
               Set(expected.keys) == Set(header.payloads.map(\.name)) else { throw FilmError.invalid("Profile payload references do not match") }
@@ -109,7 +114,13 @@ public enum ProfileContainer {
 
 extension ColourCube {
     public var payload: Data { encodeHalfValues(rgba) }
-    public init(size: Int, payload: Data) throws { try self.init(size: size, rgba: decodeHalfValues(payload)) }
+    public init(size: Int, payload: Data) throws {
+        guard (2...129).contains(size), payload.count == size * size * size * 8 else {
+            throw FilmError.invalid("Invalid Colour Cube")
+        }
+        self.size = size
+        self.rgba = try decodeHalfValues(payload)
+    }
 }
 
 func encodeHalfValues(_ values: [Float16]) -> Data {
@@ -123,8 +134,37 @@ func encodeHalfValues(_ values: [Float16]) -> Data {
 
 func decodeHalfValues(_ bytes: Data) throws -> [Float16] {
     guard bytes.count % 2 == 0 else { throw FilmError.invalid("Truncated float16 payload") }
-    let data = [UInt8](bytes)
-    let values = stride(from: 0, to: data.count, by: 2).map { Float16(bitPattern: UInt16(data[$0]) | UInt16(data[$0 + 1]) << 8) }
-    guard values.allSatisfy(\.isFinite) else { throw FilmError.invalid("Non-finite profile payload") }
+    // Large density cubes should not allocate a second byte array or traverse
+    // millions of key paths. Copy once, then validate the IEEE-754 exponent bits.
+    var values = [Float16](repeating: 0, count: bytes.count / 2)
+    try values.withUnsafeMutableBytes { raw in
+        bytes.copyBytes(to: raw)
+        #if _endian(little)
+        // Check four independent 5-bit exponents per word. Adding one exponent
+        // unit sets each lane's sign bit only when its exponent was all ones.
+        // The masked lanes cannot carry into one another. Leave finite bits intact.
+        var offset = 0
+        while offset + 8 <= raw.count {
+            let bits = raw.loadUnaligned(fromByteOffset: offset, as: UInt64.self)
+            let exponents = bits & 0x7c00_7c00_7c00_7c00
+            guard (exponents + 0x0400_0400_0400_0400) & 0x8000_8000_8000_8000 == 0 else {
+                throw FilmError.invalid("Non-finite profile payload")
+            }
+            offset += 8
+        }
+        while offset < raw.count {
+            let word = raw.loadUnaligned(fromByteOffset: offset, as: UInt16.self)
+            guard word & 0x7c00 != 0x7c00 else { throw FilmError.invalid("Non-finite profile payload") }
+            offset += 2
+        }
+        #else
+        let words = raw.bindMemory(to: UInt16.self)
+        for i in words.indices {
+            let word = UInt16(littleEndian: words[i])
+            guard word & 0x7c00 != 0x7c00 else { throw FilmError.invalid("Non-finite profile payload") }
+            words[i] = word
+        }
+        #endif
+    }
     return values
 }

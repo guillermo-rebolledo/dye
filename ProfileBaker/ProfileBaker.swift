@@ -13,7 +13,7 @@ struct ProfileBaker {
     }
 
     private static func run(_ arguments: [String]) async throws {
-        let usage = "Usage: ProfileBaker bake <curve-directory> <output.filmprofile> | validate <curve-directory> <profile.filmprofile> <report-prefix> [tolerance]"
+        let usage = "Usage: ProfileBaker bake <curve-directory> <output.filmprofile> | validate <curve-directory> <profile.filmprofile> <report-prefix> [tolerance] | validate-model <curve-directory> <profile.filmprofile> <report.json>"
         if arguments == ["--help"] { print(usage); return }
         guard let command = arguments.first else { throw FilmError.invalid(usage) }
         switch command {
@@ -38,6 +38,18 @@ struct ProfileBaker {
                 throw FilmError.invalid("Step Wedge exceeds tolerance \(tolerance); inspect the CSV/SVG report")
             }
             print("Step Wedge passed: \(rows.count) samples, max absolute error \(maximumError), tolerance \(tolerance)")
+        case "validate-model":
+            guard arguments.count == 4 else { throw FilmError.invalid(usage) }
+            let curves = try CurveSet(directory: URL(fileURLWithPath: arguments[1]))
+            let profile = try ProfileContainer.load(from: URL(fileURLWithPath: arguments[2]))
+            let results = try validateNumericalModel(curves: curves, profile: profile)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(results).write(to: URL(fileURLWithPath: arguments[3]), options: .atomic)
+            guard results.allSatisfy({ $0.maximumError <= 0.03 }) else {
+                throw FilmError.invalid("Composed density/output model exceeds 0.03; inspect the numerical report")
+            }
+            print("Numerical model passed; independent photographic validation is separate")
         default: throw FilmError.invalid(usage)
         }
     }

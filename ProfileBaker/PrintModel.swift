@@ -146,7 +146,7 @@ struct PrintModel {
     private func layerExposure(_ amounts: SIMD3<Double>, negative: SpectralModel) -> SIMD3<Double> {
         var received = SIMD3<Double>(repeating: 0)
         for i in dyes.indices {
-            let negativeDensity = negative.minimumDensity[i] + simd_dot(negative.dyeContributions[i], amounts)
+            let negativeDensity = max(0, negative.minimumDensity[i] + simd_dot(negative.dyeContributions[i], amounts))
             let filterDensity = simd_dot(dyes[i], filtration)
             received += sensitivity[i] * lamp[i] * pow(10, -(negativeDensity + filterDensity))
         }

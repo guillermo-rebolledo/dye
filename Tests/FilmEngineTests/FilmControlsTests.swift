@@ -93,12 +93,12 @@ private extension Array {
     #expect(extremes[0] >= 0 && extremes[4] <= 1 && extremes[4] > extremes[0])
 }
 
-@Test func developmentBlendsLinearlyBetweenTheNearestBakedVariants() async throws {
+@Test func developmentBlendsFilmDensityBetweenTheNearestBakedVariants() async throws {
     let renderer = try Renderer()
     let portra = try portra()
     let input: [Float16] = [0.05, 0.05, 0.05, 0.18, 0.18, 0.18, 0.9, 0.9, 0.9, 0.5, 0.25, 0.1]
     func at(_ offset: Double) async throws -> [Float] {
-        try await render(renderer, input, profile: portra, settings: .init(output: .workingSpace, exposureStops: offset, developmentOffset: offset))
+        try await render(renderer, input, profile: portra, settings: .init(output: .workingSpace, exposureStops: offset, developmentOffset: offset, outputStage: OutputStage.none))
     }
     let zero = try await at(0), one = try await at(1), quarter = try await at(0.25), half = try await at(0.5)
     for i in zero.indices {
@@ -109,7 +109,7 @@ private extension Array {
     #expect(zip(zero, one).contains { abs($0 - $1) > 0.01 })
     #expect(half != zero && half != one)
     // Outside the baked range both the Colour Cube and the rating clamp.
-    let beyond = try await render(renderer, input, profile: portra, settings: .init(output: .workingSpace, exposureStops: 2, developmentOffset: 3))
+    let beyond = try await render(renderer, input, profile: portra, settings: .init(output: .workingSpace, exposureStops: 2, developmentOffset: 3, outputStage: OutputStage.none))
     let two = try await at(2)
     #expect(beyond == two)
 }
@@ -128,7 +128,8 @@ private extension Array {
     // Base density is the scan's black point.
     let black = try await render(renderer, [0, 0, 0], profile: study, settings: .init(output: .workingSpace))
     #expect(black[0] == 0 && black[1] == 0 && black[2] == 0)
-    // Reversal and the spectral cube, whose scan is baked, are not inverted again.
+    // Reversal has no negative inversion. New spectral negatives expose their
+    // physical density when the observation stage is disabled.
     let reversal = try #require(ProfileCatalogue.bundled().profiles.first { $0.id == "study-e6" })
     let e6 = try await render(renderer, input, profile: reversal, settings: .init(output: .workingSpace))
     let e6Density = try await render(renderer, input, profile: reversal, settings: .init(output: .workingSpace, outputStage: OutputStage.none))
@@ -136,7 +137,8 @@ private extension Array {
     let portra = try portra()
     let scan = try await render(renderer, input, profile: portra, settings: .init(output: .workingSpace))
     let noStage = try await render(renderer, input, profile: portra, settings: .init(output: .workingSpace, outputStage: OutputStage.none))
-    #expect(scan == noStage)
+    #expect(scan != noStage)
+    #expect(noStage[0] < noStage[4] && noStage[4] < noStage[8])
     // Monochrome Density Curves are scanned through the same auto-balance.
     let mono = try #require(ProfileCatalogue.bundled().profiles.first { $0.id == "study-bw-silver" })
     let bw = try await render(renderer, input, profile: mono, settings: .init(output: .workingSpace))
@@ -163,7 +165,8 @@ private extension Array {
     await #expect(throws: FilmError.self) { _ = try await renderer.decode(data, maximumDimension: 0) }
 }
 
-@Test func previewRenderAndStockSwitchStayWithinInteractiveBudgets() async throws {
+@Test(.serialized, arguments: ["portra-400", "cinestill-800t"])
+func previewRenderAndStockSwitchStayWithinInteractiveBudgets(stock: String) async throws {
     // A screen-sized Preview: 1290×2796 is the largest iPhone canvas the spec names.
     let width = 1290, height = 2796
     var rgba = [Float16](repeating: 1, count: width * height * 4)
@@ -172,20 +175,21 @@ private extension Array {
     }
     let image = try LinearImage(width: width, height: height, rgba: rgba)
     let renderer = try Renderer()
-    let portra = try portra()
+    // Include the largest density cube as well as the everyday Portra case.
+    let profile = try #require(ProfileCatalogue.bundled().profiles.first { $0.id == stock })
     let clock = ContinuousClock()
     // Cold: Colour Cubes are read from the bundle and uploaded on the first render.
     let coldStart = clock.now
-    _ = try await renderer.render(image: .linear(image), profile: portra, settings: .init(developmentOffset: 0.5))
+    _ = try await renderer.render(image: .linear(image), profile: profile, settings: .init(developmentOffset: 0.5))
     let cold = clock.now - coldStart
     var warm: [Duration] = []
     for step in 1...5 {
         let start = clock.now
-        _ = try await renderer.render(image: .linear(image), profile: portra, settings: .init(exposureStops: Double(step) / 3, developmentOffset: 0.5))
+        _ = try await renderer.render(image: .linear(image), profile: profile, settings: .init(exposureStops: Double(step) / 3, developmentOffset: 0.5))
         warm.append(clock.now - start)
     }
     let best = warm.min()!
-    print("Preview render: cold \(cold), warm best \(best), warm all \(warm)")
+    print("Preview render \(stock): cold \(cold), warm best \(best), warm all \(warm)")
     // Generous CI bounds; the 16 ms / 100 ms targets are checked on device.
     #expect(cold < .milliseconds(1500))
     #expect(best < .milliseconds(400))

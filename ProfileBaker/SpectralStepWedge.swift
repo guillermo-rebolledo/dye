@@ -27,14 +27,19 @@ func spectralStepWedge(curves: CurveSet, profile: Profile) async throws -> [Step
     // Off-grid neutral and chromatic probes check the shipped payload, interpolation,
     // float16 quantisation and each Development Offset. This is numerical bake QA,
     // not independent evidence of the tuned colour or push/pull model's accuracy.
-    var coordinates = (0...64).map { SIMD3<Double>(repeating: Double($0) / 64) }
-    coordinates += [SIMD3(0.31, 0.53, 0.72), SIMD3(0.8, 0.2, 0.4), SIMD3(0.45, 0.7, 0.2), SIMD3(0.72, 0.59, 0.46)]
+    let coordinates = spectralValidationCoordinates()
     // Coordinates are already shaped, so undo the runtime shaper by feeding
     // scene-linear light.
-    let scene = coordinates.flatMap { c in
+    var scene = coordinates.flatMap { c in
         (0..<3).map { Float16(model.exposure(at: c[$0]) / pow(10, model.shaper.middleGrayLogExposure) * 0.18) } + [1]
     }
-    let light = try LinearImage(width: coordinates.count, height: 1, rgba: scene)
+    // Keep the chart below the measured MTF's resolvable range. A 649-pixel
+    // strip resolves film detail and legitimately mixes adjacent colour probes;
+    // a compact grid tests point colour without altering the shipped Profile.
+    let width = Int(Double(coordinates.count).squareRoot().rounded(.up))
+    let height = (coordinates.count + width - 1) / width
+    for _ in coordinates.count..<(width * height) { scene += [0.18, 0.18, 0.18, 1] }
+    let light = try LinearImage(width: width, height: height, rgba: scene)
     for variant in curves.metadata.colour.lutVariants {
         let rendered = try await renderer.render(image: .linear(light), profile: profile,
             settings: wedgeSettings(balancedFor: profile, offset: variant.pushStops))
@@ -42,7 +47,7 @@ func spectralStepWedge(curves: CurveSet, profile: Profile) async throws -> [Step
             let h = SIMD3(model.exposure(at: coordinate.x), model.exposure(at: coordinate.y), model.exposure(at: coordinate.z))
             let reference = model.output(model.density(h, offset: variant.pushStops))
             for channel in 0..<3 {
-                rows.append(StepWedgeRow(stage: index < 65 ? (model.isReversal ? .reversalOutput : .scanOutput) : .chromaticOutput, developmentOffset: variant.pushStops, channel: channel,
+                rows.append(StepWedgeRow(stage: index < 129 ? (model.isReversal ? .reversalOutput : .scanOutput) : .chromaticOutput, developmentOffset: variant.pushStops, channel: channel,
                     logExposure: log10(h[channel]), reference: reference[channel], rendered: Double(rendered.rgba[index * 4 + channel])))
             }
         }
@@ -61,7 +66,7 @@ func spectralStepWedge(curves: CurveSet, profile: Profile) async throws -> [Step
             let h = SIMD3(model.exposure(at: coordinate.x), model.exposure(at: coordinate.y), model.exposure(at: coordinate.z))
             let reference = paper.print(model.density(h, offset: variant.pushStops), negative: model)
             for channel in 0..<3 {
-                rows.append(StepWedgeRow(stage: index < 65 ? .printOutput : .chromaticOutput, developmentOffset: variant.pushStops,
+                rows.append(StepWedgeRow(stage: index < 129 ? .printOutput : .chromaticOutput, developmentOffset: variant.pushStops,
                     channel: channel, logExposure: log10(h[channel]), reference: reference[channel],
                     rendered: Double(rendered.rgba[index * 4 + channel])))
             }

@@ -29,11 +29,15 @@ what that changes and why their cubes are 65³.
 3. Interpolate the measured Characteristic Curves in physical log exposure.
    Development changes slope and shadow separation around the Curve Set's own
    reference gray — log H = −1.44 for Portra, −1.54 for Vision3 — not brightness.
-   Portra's curves are Status M; Vision3's are Kodak's ECN-2 densitometry, read
-   here as if they were Status M. A two-evaluation DIR model uses developed density in other layers
+   Portra's curves are Status M; Kodak's Vision3 chart labels the measurement
+   ECN-2, a process name. Its exact density conditions remain unresolved; no
+   invented density-status conversion is applied. A two-evaluation DIR model uses developed density in other layers
    to inhibit local exposure. Subtract the neutral-development contribution
    already present in the published curves, avoiding double-counting DIR.
-4. Separate the measured aggregate midscale-minus-minimum absorption into three
+4. Where isolated dye/mask difference spectra are available (Vision3 500T),
+   fit positive amplitudes to the aggregate neutral absorption and bound residuals
+   to 0.03 density. Preserve signed difference lobes but clamp total absolute density
+   nonnegative. Otherwise separate the measured aggregate midscale-minus-minimum absorption into three
    nonnegative dye lobes using artistic Gaussian weights. Scale their amplitudes
    with layer density above base, relative to midscale. This reproduces the
    aggregate measured absorption at the reference neutral. Status M layer density
@@ -53,14 +57,18 @@ what that changes and why their cubes are 65³.
 
 ## Colour Cube contract
 
-Each spectral Stock's RGBA float16 payloads are one per baked Development Offset,
-33³, or 65³ for a Stock whose curve turns too fast for that, with
-red changing fastest. RGB payload values are **display-linear Rec.2020**; alpha
-is 1. `colour.cubeOutput = displayLinearRec2020` distinguishes them from the
-foundation studies' Density Space cubes. Do not invert a scan cube again. A
-Profile's `colour.printVariants` payloads carry the same contract and the same
-size: the print is the final image, so it is display-linear and nothing inverts
-it either.
+New baked spectral Profiles use `colour.cubeOutput = density`. Film Response returns
+physical layer density, Grain perturbs it, and `colour.densityOutput` describes the
+separate scan/print/viewing cubes. The output cube domain starts exactly at base
+density and extends above the characteristic endpoints to accommodate grain.
+Below-base density forms no dye in the forward model. An E-6 Profile still has no
+scan/print choice, but its density is observed through its Viewing Light after Grain.
+
+Scan variants share one observation payload when their scanner is identical.
+Print and Scan share film-density payloads. Print observation is balanced for each
+Development Offset. Both output transforms return display-linear Rec.2020. Legacy
+fused `displayLinearRec2020` profiles remain decodable, but their grain path is an
+approximation and newly baked profiles use the separated contract.
 
 `colour.inputShaper` defines the normalized input coordinate:
 
@@ -74,7 +82,7 @@ roughly 13.6 stops; Vision3 500T's are −4.05…1.05 with reference gray at −
 and above that domain the renderer clamps to the endpoints. The renderer applies
 this shaper itself whenever `colour.inputShaper` is present, after White Balance
 and Exposure, so callers always supply scene-linear Working Space light. The
-Development Offset blends the two nearest variants linearly and rates the Stock
+Development Offset blends the two nearest film-density variants linearly and rates the Stock
 faster by the same number of stops; the validation harness passes an equal
 `exposureStops` so each variant is probed at the CSV's physical exposure.
 
@@ -107,3 +115,6 @@ shape changes, malformed spectral tables, and source mismatch. Measured source
 limitations and all tuning assumptions are documented in the Curve Set's
 [SOURCES.md](../Curves/portra-400/SOURCES.md). Passing the numerical gate permits
 MEM-244 work; it does not constitute a photographic colour match or measured RMS.
+
+See [accuracy validation](accuracy-validation.md) for the expanded numerical
+coverage, measured inputs, independent-reference scorer and remaining limits.

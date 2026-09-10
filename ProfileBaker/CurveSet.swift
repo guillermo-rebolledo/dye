@@ -10,7 +10,8 @@ struct CharacteristicCurve {
     /// channel; the RA-4 paper's three layers are measured together and arrive as
     /// `logExposure,red,green,blue`, which `columns` names and `column` selects.
     init(url: URL, columns: [String] = ["density"], column: Int = 1,
-         exposureRange: ClosedRange<Double> = log10(Double(Float16.leastNonzeroMagnitude))...0) throws {
+         exposureRange: ClosedRange<Double> = log10(Double(Float16.leastNonzeroMagnitude))...0,
+         monotonicTolerance: Double? = nil) throws {
         let header = (["logExposure"] + columns).joined(separator: ",")
         let text = try String(contentsOf: url, encoding: .utf8)
         let lines = text.components(separatedBy: .newlines).enumerated().filter {
@@ -29,7 +30,14 @@ struct CharacteristicCurve {
                   points.last.map({ x > $0.logExposure }) ?? true else {
                 throw FilmError.invalid("\(url.lastPathComponent):\(line + 1): expected increasing finite log exposure and nonnegative finite density")
             }
-            points.append(Point(logExposure: x, density: y))
+            var density = y
+            if let tolerance = monotonicTolerance, let previous = points.last {
+                guard previous.density - density <= tolerance else {
+                    throw FilmError.invalid("\(url.lastPathComponent): density reversal exceeds digitization uncertainty")
+                }
+                density = max(density, previous.density)
+            }
+            points.append(Point(logExposure: x, density: density))
         }
         guard points.count >= 2 else { throw FilmError.invalid("\(url.lastPathComponent): at least two samples required") }
         self.points = points
@@ -49,10 +57,13 @@ struct CharacteristicCurve {
 struct CurveSet {
     let metadata: FilmProfile
     /// Where the CSVs live. A derived Stock reads its parent's, because it models the
-    /// same Emulsion; nothing else about a derivation may reach the spectral model.
+    /// same Emulsion. Explicit process characteristic curves may override sensitometry.
     let directory: URL
     /// The authored override document, for a Stock derived from another Profile.
     private let derivation: Data?
+    let characteristicOverride: URL?
+    /// Cross-process derivatives cannot claim their parent's grain measurements.
+    let granularityDirectory: URL
 
     /// The Contrast Filters' shared transmittance table. The glass is a property of
     /// the lens rather than of any Stock, so every monochrome Curve Set reads one
@@ -96,14 +107,21 @@ struct CurveSet {
         return result
     }
 
-    /// Remjet removal changes what light does inside the film and what the box says.
-    /// Everything the Colour Cubes are baked from stays with the parent Curve Set.
+    /// A derivation shares spectral sources while recording process-specific
+    /// sensitometry, supported rendering resolution and explicit source provenance.
     static let derivableKeys: Set<String> = ["derivedFrom", "id", "displayName", "process",
-                                             "nominalISO", "trueISO", "bloom", "halation", "provenance"]
+                                             "nominalISO", "trueISO", "bloom", "halation", "provenance", "characteristicSource", "colour"]
 
     init(directory: URL) throws {
         let document = try Data(contentsOf: directory.appendingPathComponent("stock.json"))
         let authored = try JSONSerialization.jsonObject(with: document) as? [String: Any] ?? [:]
+        if let source = authored["characteristicSource"] as? String {
+            guard !source.isEmpty, URL(fileURLWithPath: source).lastPathComponent == source,
+                  !source.contains("\\"), source.hasSuffix(".csv") else {
+                throw FilmError.invalid("Characteristic source must be a local CSV filename")
+            }
+            characteristicOverride = directory.appendingPathComponent(source)
+        } else { characteristicOverride = nil }
         if let parent = authored["derivedFrom"] as? String {
             guard Self.derivableKeys.isSuperset(of: authored.keys) else {
                 throw FilmError.invalid("A derived Stock may only override \(Self.derivableKeys.sorted().joined(separator: ", "))")
@@ -111,16 +129,28 @@ struct CurveSet {
             self.directory = directory.deletingLastPathComponent().appendingPathComponent(parent)
             derivation = document
             var merged = try JSONSerialization.jsonObject(with: Data(contentsOf: self.directory.appendingPathComponent("stock.json"))) as? [String: Any] ?? [:]
+            if let overrides = authored["colour"] {
+                guard let colour = overrides as? [String: Any], Set(colour.keys) == ["lutSize"],
+                      let size = colour["lutSize"] as? Int else {
+                    throw FilmError.invalid("A derived colour override may only choose its LUT resolution")
+                }
+                var inherited = merged["colour"] as? [String: Any] ?? [:]
+                inherited["lutSize"] = size
+                merged["colour"] = inherited
+            }
+            granularityDirectory = (authored["process"] as? String).map { $0 != merged["process"] as? String } == true
+                ? directory : self.directory
             // Provenance merges key by key, so a derivation records only what it changed.
             if let overrides = authored["provenance"] as? [String: String] {
                 var provenance = merged["provenance"] as? [String: String] ?? [:]
                 provenance.merge(overrides) { _, new in new }
                 merged["provenance"] = provenance
             }
-            for (key, value) in authored where key != "provenance" { merged[key] = value }
+            for (key, value) in authored where key != "provenance" && key != "colour" { merged[key] = value }
             metadata = try JSONDecoder().decode(FilmProfile.self, from: JSONSerialization.data(withJSONObject: merged))
         } else {
             self.directory = directory
+            granularityDirectory = directory
             derivation = nil
             metadata = try JSONDecoder().decode(FilmProfile.self, from: document)
         }
@@ -131,10 +161,10 @@ struct CurveSet {
         guard metadata.colour.sourceFingerprint == nil else {
             throw FilmError.invalid("Source fingerprints are derived by the Baker, not authored in stock.json")
         }
-        // 65³ is for a Stock whose curve turns faster than 33 nodes can follow;
-        // it costs eight times the payload, so it is the Curve Set's choice, not a default.
-        guard metadata.colour.lutSize == 33 || metadata.colour.lutSize == 65 else {
-            throw FilmError.invalid("The Baker emits 33³ or 65³ Colour Cubes")
+        // Resolution is chosen against the numerical gate. Each doubling costs
+        // roughly eight times the payload, so it remains an explicit source choice.
+        guard [33, 65, 129].contains(metadata.colour.lutSize) else {
+            throw FilmError.invalid("The Baker emits 33³, 65³ or 129³ Colour Cubes")
         }
     }
 
@@ -144,7 +174,7 @@ struct CurveSet {
         get throws {
             guard metadata.colour.inputShaper != nil else { return metadata }
             var hash = SHA256()
-            hash.update(data: Data("dye-spectral-v1\0".utf8))
+            hash.update(data: Data("dye-spectral-v3-density-base\0".utf8))
             // The two spectral branches consume different sources, so each hashes its
             // own list. A Stock cannot change branch without changing its fingerprint.
             var sources = metadata.process.isMonochrome
@@ -155,6 +185,10 @@ struct CurveSet {
                     .map(directory.appendingPathComponent)
             sources += ["stock.json", "sensitivity.csv", "observer.csv", "mtf.csv", "rms-granularity.csv"]
                 .map(directory.appendingPathComponent)
+            sources += ["isolated-dye-density.csv", "granularity.csv", "process.json"]
+                .map(directory.appendingPathComponent)
+                .filter { FileManager.default.fileExists(atPath: $0.path) }
+            if let characteristicOverride { sources.append(characteristicOverride) }
             // The paper is an authoring input like any other: a Profile baked
             // against one RA-4 paper must not validate against another.
             if metadata.colour.printVariants != nil {
@@ -174,7 +208,26 @@ struct CurveSet {
             // A B&W Profile's Spectral Weight and Contrast Filters are integrated from
             // the Curve Set rather than authored, so they belong to the baked metadata
             // in the same way the fingerprint does.
-            if metadata.process.isMonochrome { result.monochrome = try MonochromeSpectralModel(curves: self).monochrome }
+            if metadata.process.isMonochrome {
+                result.monochrome = try MonochromeSpectralModel(curves: self).monochrome
+                result.provenance["monochrome.spectralContributions"] = .artistic
+            } else {
+                let model = try SpectralModel(curves: self)
+                result.colour.cubeOutput = .density
+                result.colour.densityOutput = model.densityOutputMetadata(metadata.colour)
+                // Scan and Print see the same developed film; only the observation
+                // differs. Share its density payload instead of storing it twice.
+                if metadata.colour.printVariants != nil { result.colour.printVariants = result.colour.lutVariants }
+                result.provenance["colour.densityOutput"] = .artistic
+                let mtf = try SpectralTable(directory, "mtf.csv", header: "cyclesPerMM,red,green,blue").rows
+                result.mtf.channelResponse = (1...3).map { channel in mtf.map { $0[channel] } }
+                result.provenance["mtf.channelResponse"] = metadata.provenance["mtf.response"]
+                result.grain.measuredDensityCurves = try measuredGranularity(in: granularityDirectory)
+                if result.grain.measuredDensityCurves != nil {
+                    result.provenance["grain.measuredDensityCurves"] = .measured
+                    result.provenance["grain.densityExtrapolation"] = .approximation
+                }
+            }
             return result
         }
     }
@@ -183,6 +236,15 @@ struct CurveSet {
         // Payload references are container names, never paths outside the Curve Set.
         guard !payload.isEmpty, !payload.contains("/"), !payload.contains("\\"), payload != ".", payload != ".." else {
             throw FilmError.invalid("Payload names must be plain filenames")
+        }
+        if let characteristicOverride {
+            guard !metadata.process.isMonochrome && metadata.process != .e6 else {
+                throw FilmError.invalid("Process characteristic overrides currently require a colour negative")
+            }
+            return try (1...3).map {
+                try CharacteristicCurve(url: characteristicOverride, columns: ["red", "green", "blue"],
+                                        column: $0, exposureRange: -10...10, monotonicTolerance: 0.01)
+            }
         }
         // A B&W Curve Set names its one CSV after its payload; a colour one always
         // measures its Colour Cubes from the same neutral development.

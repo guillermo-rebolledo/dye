@@ -105,7 +105,7 @@ func everyCurveSetBakesDeterministicallyAndMatchesReference(stock: String) throw
     let (status, message) = try baker(["bake", curves.path, output.path])
     try #require(status == 0, Comment(rawValue: message))
     let profile = try ProfileContainer.decode(Data(contentsOf: output))
-    #expect(profile.metadata.colour.lutSize == 33)
+    #expect(profile.metadata.colour.lutSize == 65)
     #expect(profile.metadata.colour.lutVariants.map(\.pushStops) == [-1, 0, 1, 2])
     #expect(profile.metadata.provenance["grain.rmsGranularity"] == .artistic)
     let (validationStatus, report) = try baker(["validate", curves.path, output.path,
@@ -154,7 +154,7 @@ private func printingCurveSet(_ stock: String, in directory: URL) throws -> URL 
 @Test func portraDevelopmentChangesShapeAroundReferenceGray() async throws {
     let profile = try ProfileContainer.load(from: repository.appendingPathComponent("Sources/FilmEngine/Catalogue/portra-400.filmprofile"))
     let shaper = try #require(profile.metadata.colour.inputShaper)
-    #expect(profile.metadata.colour.cubeOutput == .displayLinearRec2020)
+    #expect(profile.metadata.colour.cubeOutput == .density)
     #expect(profile.metadata.colour.sourceFingerprint?.count == 64)
     // Scene-linear light for shaped coordinates 0.3 and 0.7 either side of mid-grey.
     func scene(_ coordinate: Double) -> Float16 {
@@ -318,8 +318,10 @@ func aMonochromeCurveSetDerivesItsCollapseAndRefusesAnAuthoredOne(stock: String)
     #expect(profile.metadata.colour.lutVariants.isEmpty)
     #expect(profile.metadata.monochrome?.contrastFilters?.count == 5)
     // The Density Curve is the entire payload: 1024 float16 entries and no cube.
-    let bytes = try Data(contentsOf: output).count
-    #expect(bytes < 16 + 2048 + 8192)
+    let bytes = try Data(contentsOf: output)
+    let headerLength = Int(bytes[12]) | Int(bytes[13]) << 8 | Int(bytes[14]) << 16 | Int(bytes[15]) << 24
+    #expect(bytes.count == 16 + headerLength + 2048)
+    #expect(profile.metadata.monochrome?.spectralContributions?.count == 6)
     // Neither derived field may be authored, exactly as with the source fingerprint.
     for key in ["spectralWeight", "contrastFilters"] {
         var changed = authored
@@ -374,7 +376,7 @@ func aMonochromeCurveSetDerivesItsCollapseAndRefusesAnAuthoredOne(stock: String)
     // The transmittance table is shared authoring input, so changing it invalidates
     // every monochrome Profile baked against the old one.
     let glass = root.appendingPathComponent("contrast-filters/transmittance.csv")
-    let opaque = try String(contentsOf: glass, encoding: .utf8).replacingOccurrences(of: "0.900000", with: "0.100000")
+    let opaque = try String(contentsOf: glass, encoding: .utf8).replacingOccurrences(of: "0.001000", with: "0.000100")
     try opaque.write(to: glass, atomically: true, encoding: .utf8)
     #expect(try baker(["validate", curves.path, output.path,
                        directory.appendingPathComponent("stale").path, "0.03"]).0 != 0)
@@ -401,7 +403,7 @@ func aMonochromeCurveSetDerivesItsCollapseAndRefusesAnAuthoredOne(stock: String)
     // Transmittance outside 0...1 is not glass, and a missing filter is not a filter.
     let glass = root.appendingPathComponent("contrast-filters/transmittance.csv")
     let table = try String(contentsOf: glass, encoding: .utf8)
-    for malformed in [table.replacingOccurrences(of: "0.900000", with: "1.900000"),
+    for malformed in [table.replacingOccurrences(of: "0.001000", with: "1.900000"),
                       table.replacingOccurrences(of: ",red", with: ",crimson")] {
         try malformed.write(to: glass, atomically: true, encoding: .utf8)
         #expect(try baker(["bake", curves.path, destination.path]).0 != 0)

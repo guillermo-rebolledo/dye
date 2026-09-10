@@ -142,7 +142,7 @@
     "spectral.characteristicCurves": "measured",
     "spectral.development": "artistic",
     "spectral.dirCouplers": "artistic",
-    "spectral.dyeDensity": "artistic",
+    "spectral.dyeDensity": "approximation",
     "spectral.observer": "measured",
     "spectral.reconstruction": "artistic",
     "spectral.sensitivity": "measured",

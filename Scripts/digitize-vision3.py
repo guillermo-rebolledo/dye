@@ -70,6 +70,18 @@ STOCKS = {
                         'x': (353.30, 553.80, 250, 750), 'zero': 669.78, 'decade': 37.855},
         'dye': {'page': 5, 'curves': {'minimum': 32, 'midscale': 31},
                 'x': (81.57, 265.89, 400, 800), 'zero': 321.52, 'unit': 92.26},
+        # Peak-normalized dye+mask density differences. Preserve the small
+        # negative lobes on the printed chart; these are not absolute absorption.
+        'isolatedDye': {'page': 5, 'curves': {'cyan': 30, 'magenta': 29, 'yellow': 28}},
+        'granularity': {'page': 4, 'densityCurves': {'red': 47, 'green': 46, 'blue': 45},
+                        # Green and red share one drawing, as separate subpaths.
+                        'grainCurves': {'red': (49, 116, 232), 'green': (49, 0, 116),
+                                        'blue': (48, 0, 84)},
+                        'densityY': (345.05, 161.199, 0.0, 3.0),
+                        'sigmaTicks': list(range(50, 65)),
+                        'sigmaValues': [.001, .002, .003, .004, .005, .006, .007,
+                                        .008, .009, .01, .02, .03, .04, .05, .10],
+                        'densityGrid': [0.95 + k * 0.01 for k in range(106)]},
         'mtf': {'page': 3, 'curves': {'red': 44, 'green': 45, 'blue': 46},
                 'origin': 362.59, 'decade': 72.90, 'zero': 489.82, 'response': 66.49},
     },
@@ -191,14 +203,73 @@ def vector_sensitivity(document, spec):
 
 
 def vector_dye(document, spec):
-    """Aggregate minimum and midscale neutral spectral density. Kodak publishes
-    these rather than the isolated dyes the negative model would otherwise need,
-    which is why the model separates them into artistic Gaussian lobes."""
+    """Aggregate minimum and midscale neutral spectral density. Kept separate
+    from any individual dye curves the same datasheet also publishes."""
     chart = spec['dye']
     page = document[chart['page'] - 1].get_drawings()
     curves = {name: bezier(page[index]['items']) for name, index in chart['curves'].items()}
     return [[nm] + [(chart['zero'] - at(curves[name], pixel(nm, chart['x']))) / chart['unit']
                     for name in ('minimum', 'midscale')] for nm in WAVELENGTHS]
+
+
+def vector_isolated_dye(document, spec):
+    """Individual peak-normalized dye curves on the aggregate chart's axes.
+    Do not clamp or renormalize: signed lobes and printed normalization error
+    belong to the source, not to an invented nonnegative isolated absorber."""
+    chart, axis = spec['isolatedDye'], spec['dye']
+    page = document[chart['page'] - 1].get_drawings()
+    curves = {name: bezier(page[index]['items']) for name, index in chart['curves'].items()}
+    rows = []
+    for nm in WAVELENGTHS:
+        values = [at(curves[name], pixel(nm, axis['x']), absent=True)
+                  for name in ('cyan', 'magenta', 'yellow')]
+        if any(value is None for value in values):
+            raise SystemExit('An isolated dye curve does not cover the requested wavelength grid')
+        rows.append([nm] + [(axis['zero'] - value) / axis['unit'] for value in values])
+    return rows
+
+
+def vector_granularity(document, spec):
+    """Read Kodak's nomograph at equal absolute density, independently per RGB.
+
+    The x-axis is relative exposure, not the physical exposure of the separate
+    sensitometry chart. Follow density to the solid channel curve, then vertically
+    to that channel's dashed grain curve, then read sigma-D on the right log axis.
+    Only emit densities inside all three drawn ranges; no endpoint extrapolation.
+    """
+    chart = spec['granularity']
+    page = document[chart['page'] - 1].get_drawings()
+    ticks = [(page[index]['rect'].y0 + page[index]['rect'].y1) / 2
+             for index in chart['sigmaTicks']]
+    logs = [math.log10(value) for value in chart['sigmaValues']]
+    mean_y, mean_log = sum(ticks) / len(ticks), sum(logs) / len(logs)
+    slope = sum((y - mean_y) * (v - mean_log) for y, v in zip(ticks, logs)) / sum(
+        (y - mean_y) ** 2 for y in ticks)
+    intercept = mean_log - slope * mean_y
+    if max(abs(slope * y + intercept - v) for y, v in zip(ticks, logs)) > 0.001:
+        raise SystemExit('Granularity log-axis ticks do not match the pinned chart calibration')
+
+    density_curves, grain_curves = {}, {}
+    for name in ('red', 'green', 'blue'):
+        points = bezier(page[chart['densityCurves'][name]]['items'])
+        density_curves[name] = sorted((linear(y, chart['densityY']), x) for x, y in points)
+        index, first, last = chart['grainCurves'][name]
+        items = page[index]['items'][first:last]
+        if len(items) != last - first or any(a[-1] != b[1] for a, b in zip(items, items[1:])):
+            raise SystemExit('A granularity subpath is not the expected continuous curve')
+        grain_curves[name] = bezier(items)
+
+    rows = []
+    for density in chart['densityGrid']:
+        row = [density]
+        for name in ('red', 'green', 'blue'):
+            x = at(density_curves[name], density, absent=True)
+            y = None if x is None else at(grain_curves[name], x, absent=True)
+            if y is None:
+                raise SystemExit('Granularity sample lies outside a measured nomograph curve')
+            row.append(10 ** (slope * y + intercept))
+        rows.append(row)
+    return rows
 
 
 def vector_mtf(document, spec):
@@ -453,6 +524,12 @@ def main():
         write_spectral(document, spec)
         write('mtf.csv', 'page %d Modulation-Transfer Function Curves' % spec['mtf']['page'],
               ['cyclesPerMM', 'red', 'green', 'blue'], vector_mtf(document, spec))
+        if 'isolatedDye' in spec:
+            write('isolated-dye-density.csv', 'page %d peak-normalized CMY Dye Density Curves' % spec['isolatedDye']['page'],
+                  ['wavelengthNM', 'cyan', 'magenta', 'yellow'], vector_isolated_dye(document, spec))
+        if 'granularity' in spec:
+            write('granularity.csv', 'page %d Diffuse rms Granularity nomograph; absolute density, sigma-D at 48 um' % spec['granularity']['page'],
+                  ['density', 'red', 'green', 'blue'], vector_granularity(document, spec))
     else:
         page = spec['characteristic']['page']
         for name, rows in raster_characteristic(document, spec).items():

@@ -20,7 +20,19 @@
   "process": "c41",
   "provenance": {
     "nominalISO": "measured",
-    "trueISO": "artistic"
+    "trueISO": "artistic",
+    "spectral.characteristicCurves": "measured",
+    "spectral.exposureUnits": "approximation",
+    "spectral.dyeDensity": "approximation",
+    "spectral.sensitivity": "approximation",
+    "spectral.dyeSeparation": "approximation",
+    "spectral.granularity": "approximation",
+    "mtf.response": "approximation",
+    "mtf.cyclesPerMM": "approximation"
   },
-  "trueISO": 500
+  "trueISO": 800,
+  "characteristicSource": "process-cs41.csv",
+  "colour": {
+    "lutSize": 129
+  }
 }
