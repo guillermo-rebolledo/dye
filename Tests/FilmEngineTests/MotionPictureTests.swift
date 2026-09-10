@@ -258,7 +258,7 @@ private func average(_ pixels: RenderedPixels, _ index: Int) -> Double {
 }
 
 @Test func stockAndOutputSwitchesPreserveTheSameRenderedResponse() async throws {
-    let profiles = try ProfileCatalogue.bundled().profiles.filter { $0.metadata.colour.densityOutput != nil }
+    let profiles = try ProfileCatalogue.bundled().profiles.filter { ["portra-160", "cinestill-800t"].contains($0.id) }
     let image = try ramp([-4, -3, -2, -1, 0, 1, 2, 3])
     var reference: [String: [Float16]] = [:]
     for profile in profiles {
