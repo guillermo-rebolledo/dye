@@ -14,14 +14,8 @@ struct EditorView: View {
         NavigationStack {
             EditorScreen(model: model, canvas: canvas, error: model.error, photo: $photo,
                          showPresets: { showsPresets = true }, showContactSheet: { showsContactSheet = true },
-                         showExport: { isExporting = true })
-                .navigationTitle("Dye")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Settings", systemImage: "gearshape") { showsSettings = true }
-                    }
-                }
+                         showExport: { isExporting = true }, showSettings: { showsSettings = true })
+                .toolbar(.hidden, for: .navigationBar)
         }
             .tint(Tokens.Palette.textPrimary)
             .preferredColorScheme(.dark)
@@ -59,6 +53,7 @@ private struct EditorScreen: View {
     let showPresets: () -> Void
     let showContactSheet: () -> Void
     let showExport: () -> Void
+    var showSettings: () -> Void = {}
     @State private var selection = EditorSelection()
     @State var isLoupeEnabled = false
     @State private var holdingBefore = false
@@ -69,7 +64,24 @@ private struct EditorScreen: View {
     private var isComparing: Bool { canvas.hasPhoto && (holdingBefore || accessibleBefore) }
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 12) {
+                if canvas.hasPhoto || model.beforePixels != nil {
+                    EditorPickers(model: model, selection: selection, hasPhoto: canvas.hasPhoto)
+                        .opacity(isComparing ? Tokens.Canvas.comparingDeckOpacity : 1)
+                } else {
+                    Spacer(minLength: 0)
+                }
+                Button("Settings", systemImage: "gearshape", action: showSettings)
+                    .labelStyle(.iconOnly)
+                    .font(.title3)
+                    .frame(width: 44, height: 44)
+                    .modifier(EditorGlass())
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Settings")
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
             if canvas.hasPhoto || model.beforePixels != nil {
                 editor
             } else {
@@ -89,8 +101,6 @@ private struct EditorScreen: View {
 
     private var editor: some View {
         VStack(spacing: 0) {
-            EditorPickers(model: model, selection: selection, hasPhoto: canvas.hasPhoto)
-                .opacity(isComparing ? Tokens.Canvas.comparingDeckOpacity : 1)
             GeometryReader { geometry in
                 if geometry.size.width > geometry.size.height {
                     HStack(spacing: 0) {

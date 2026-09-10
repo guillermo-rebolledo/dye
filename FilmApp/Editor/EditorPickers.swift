@@ -21,8 +21,6 @@ struct EditorPickers: View {
         .foregroundStyle(Tokens.Palette.textPrimary)
         .buttonStyle(.plain)
         .disabled(!hasPhoto)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
         .frame(maxWidth: 560, alignment: .leading)
         .frame(maxWidth: .infinity)
         .sheet(isPresented: Binding(get: { selection.isFilmstripOpen }, set: { selection.isFilmstripOpen = $0 })) {
@@ -77,7 +75,8 @@ struct EditorPickers: View {
         HStack(spacing: 8) {
             Text(title)
                 .font(.subheadline.weight(.medium))
-                .fixedSize(horizontal: !dynamicTypeSize.isAccessibilitySize, vertical: true)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                .truncationMode(.tail)
             Image(systemName: "chevron.down")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
