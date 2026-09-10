@@ -40,7 +40,9 @@ six ordinary steps apart; shutter marks remain one stop apart. Existing word
 formats such as “neutral”, “none” and “push +0.4” remain plain text.
 
 Liquid Glass uses the native iOS 26 API and a shared selected-lens identity.
-iOS 17–18 use a material fallback. Reduce Transparency replaces blur with an
+Building the app requires Xcode 26 or later for the Liquid Glass symbols; the
+app CI job explicitly selects Xcode 26.3 on macOS 15. Runtime availability guards
+preserve the iOS 17 deployment target. iOS 17–18 use a material fallback. Reduce Transparency replaces blur with an
 opaque capsule; Increase Contrast adds its edge. Reduce Motion retains haptics.
 The rail offers both an adjustable accessibility element and individually named,
 selected parameter buttons. Reset, compare and loupe retain named actions.
