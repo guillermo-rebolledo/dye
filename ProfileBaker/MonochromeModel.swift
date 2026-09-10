@@ -39,7 +39,7 @@ struct MonochromeSpectralModel {
         guard requiredProvenance.allSatisfy({ curves.metadata.provenance[$0] != nil }) else {
             throw FilmError.invalid("Missing spectral per-parameter Provenance")
         }
-        guard monochrome.spectralWeight == nil, monochrome.contrastFilters == nil else {
+        guard monochrome.spectralWeight == nil, monochrome.contrastFilters == nil, monochrome.spectralContributions == nil else {
             throw FilmError.invalid("Spectral Weights are derived by the Baker, not authored in stock.json")
         }
         densityCurveName = monochrome.densityCurve

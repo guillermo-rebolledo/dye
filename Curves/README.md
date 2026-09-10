@@ -108,17 +108,19 @@ front of it or the White Balance adaptation behind it.
 
 ## Derived Curve Sets
 
-A Stock that is another Stock's Emulsion does not get its own measurements. Give it
-a directory holding a `stock.json` of **overrides only**, naming its parent in
-`derivedFrom`; the Baker reads every CSV and `spectral.json` from the parent's
-directory and emits byte-identical Colour Cubes. Only `derivedFrom`, `id`,
-`displayName`, `process`, `nominalISO`, `trueISO`, `halation` and `provenance` may
-be overridden, so the diff can only say what actually differs. The source
-fingerprint covers the parent Curve Set and the override document together, so
-changing either invalidates a Profile baked from the other.
+A derived Stock shares its parent's spectral inputs, but may have a distinct
+process response. Its `stock.json` names `derivedFrom`; optional
+`characteristicSource` names a local `logExposure,red,green,blue` CSV. The Baker
+fingerprints the parent inputs, local curve and override document together.
+CineStill 800T uses its published Cs41 chart, with exposure-unit and process
+limitations recorded in PROCESS-SOURCES.md. It does not inherit the parent's
+measured ECN-2 granularity when the process changes.
 
-`cinestill-800t` derives from `vision3-500t`: identical film without the Remjet
-anti-halation backing, so the only physical parameter it restates is Halation.
+Identity, process, rating, bloom/halation and provenance may be overridden. A
+`colour` override may contain only `lutSize`, so a different process curve can
+request finer sampling. Other spectral parameters remain shared priors. Local
+negative curves may be monotonized only within a 0.01-density digitization bound;
+larger reversals fail. Raw manufacturer-chart samples remain committed unchanged.
 
 ## What the foundation study model does
 
@@ -254,3 +256,23 @@ The spectral validation report distinguishes measured optical density (normal
 development only) from numerical scan-output error (all variants). The default
 0.03 bound applies in each stage's units. A passing scan comparison does not
 validate the artistic colour model against a real photograph.
+
+## Separated density and observation profiles
+
+New spectral bakes generate `colour.densityOutput` and return Density Space from
+Film Response. Grain is applied before the scanner, paper or viewing transform.
+Film-density cubes can be 33³, 65³ or 129³ when expanded numerical probes require
+it; observation cubes have their own resolution/domain. Scan and Print share film
+payloads, while identical scan observations share one payload across offsets.
+The version-1 container layout is unchanged. See docs/profile-format.md.
+
+Optional `isolated-dye-density.csv` supplies signed CMY dye/mask difference spectra
+for a negative and is fitted to its aggregate minimum/midscale chart. Optional
+`granularity.csv` supplies `density,red,green,blue` RMS fluctuations at the 48 µm
+aperture. These files join the fingerprint. The original RMS scalar remains a
+fallback, not a measurement substituted for the new curve.
+
+The Contrast Filters' transmission table now comes from the pinned WRATTEN 2
+PDFs using Scripts/digitize-wratten.py. The former logistic generator is historical
+and must not overwrite the measured table. For independent film/scan validation,
+see ../docs/accuracy-validation.md; passing a bake gate is not a photographic match.

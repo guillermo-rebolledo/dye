@@ -57,7 +57,7 @@ drops the printing without naming a rectangle for each piece of it.
 ### What this sheet could not supply
 
 `sensitivity.csv` and `dye-density.csv` are **taken from the Vision3 50D Curve
-Set**, and both are marked **artistic** in this Profile's Provenance because they
+Set**, and both are marked **approximation** in this Profile's Provenance because they
 are not this Stock's own measurements.
 
 The plates are there — page 3 publishes both charts — but neither separates. The

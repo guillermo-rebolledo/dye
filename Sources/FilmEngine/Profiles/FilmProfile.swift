@@ -226,7 +226,10 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         /// Whether the Stock grains at all. A Profile with no granularity, or a
         /// Density Response that is zero everywhere, has nothing for the Pass to add
         /// and no control to offer.
-        public var isSilent: Bool { rmsGranularity <= 0 || !densityResponse.contains { $0 > 0 } }
+        public var isSilent: Bool {
+            if let measuredDensityCurves { return !measuredDensityCurves.joined().contains { $0.rms > 0 } }
+            return rmsGranularity <= 0 || !densityResponse.contains { $0 > 0 }
+        }
         public init(model: GrainModel, rmsGranularity: Double, grainRadiusMicrons: Double,
                     densityResponse: [Double], channelCorrelation: Double, channelRadiusScale: [Double]) {
             self.model = model; self.rmsGranularity = rmsGranularity; self.grainRadiusMicrons = grainRadiusMicrons
@@ -311,7 +314,7 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         }
         try require(!id.isEmpty && !displayName.isEmpty, "missing identity or Display Name")
         try require([nominalISO, trueISO, balance].allSatisfy { $0.isFinite && $0 > 0 }, "invalid Stock speed or Stock Balance")
-        try require((2...65).contains(colour.lutSize), "Colour Cube size must be 2...65")
+        try require((2...129).contains(colour.lutSize), "Colour Cube size must be 2...129")
         try require(process.isMonochrome == (monochrome != nil), "Monochrome section must occur only for B&W")
         try require(process.isMonochrome ? colour.lutVariants.isEmpty : !colour.lutVariants.isEmpty,
                     "B&W uses a Density Curve; colour uses Colour Cubes")
@@ -435,9 +438,13 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         if colour.inputShaper != nil { parameters += ["colour.inputShaper"] }
         if colour.cubeOutput != nil { parameters += ["colour.cubeOutput"] }
         if colour.printVariants != nil { parameters += ["colour.printVariants"] }
+        if colour.densityOutput != nil { parameters += ["colour.densityOutput"] }
+        if grain.measuredDensityCurves != nil { parameters += ["grain.measuredDensityCurves", "grain.densityExtrapolation"] }
+        if mtf.channelResponse != nil { parameters += ["mtf.channelResponse"] }
         if monochrome != nil {
             parameters += ["monochrome.spectralWeight", "monochrome.densityCurve"]
             if colour.inputShaper != nil { parameters += ["monochrome.contrastFilters"] }
+            if monochrome?.spectralContributions != nil { parameters += ["monochrome.spectralContributions"] }
         }
         try require(parameters.allSatisfy { provenance[$0] != nil }, "missing per-parameter Provenance")
     }

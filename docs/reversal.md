@@ -6,15 +6,11 @@ image, so its branch of the pipeline differs from a negative's in four places.
 
 ## `outputStage: none` skips inversion and print
 
-`FilmProfile.validate` already required `outputStage: none` for E-6. The spectral
-extension now accepts that alongside `scan`: a reversal Colour Cube is
-`displayLinearRec2020` like a negative's, but what it carries is the transparency
-itself rather than the Baker's scan of a negative. The renderer's Output Stage
-resolves to `passthrough` for it, and setting `RenderSettings.outputStage` to
-`scan` cannot put an inversion back. That is enforced on the Profile's own Output
-Stage rather than on its cube's contents, so it holds for `study-e6` too, whose
-Density Space cube the override could otherwise have inverted. Nothing in the
-branch reaches the Print stage, which is still unimplemented for everything.
+`FilmProfile.validate` requires `outputStage: none` for E-6. Newly baked Profiles
+return film density, add grain and then evaluate their Viewing Light transform.
+There is no negative inversion or print choice; forcing the scan setting still
+cannot turn a transparency into a negative. Legacy fused and synthetic reversal
+Profiles keep their previous passthrough observation behavior.
 
 ## The reversal density curve
 

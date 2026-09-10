@@ -110,7 +110,7 @@ struct CurveSet {
     /// Remjet removal changes what light does inside the film and what the box says.
     /// Everything the Colour Cubes are baked from stays with the parent Curve Set.
     static let derivableKeys: Set<String> = ["derivedFrom", "id", "displayName", "process",
-                                             "nominalISO", "trueISO", "bloom", "halation", "provenance", "characteristicSource"]
+                                             "nominalISO", "trueISO", "bloom", "halation", "provenance", "characteristicSource", "colour"]
 
     init(directory: URL) throws {
         let document = try Data(contentsOf: directory.appendingPathComponent("stock.json"))
@@ -129,6 +129,15 @@ struct CurveSet {
             self.directory = directory.deletingLastPathComponent().appendingPathComponent(parent)
             derivation = document
             var merged = try JSONSerialization.jsonObject(with: Data(contentsOf: self.directory.appendingPathComponent("stock.json"))) as? [String: Any] ?? [:]
+            if let overrides = authored["colour"] {
+                guard let colour = overrides as? [String: Any], Set(colour.keys) == ["lutSize"],
+                      let size = colour["lutSize"] as? Int else {
+                    throw FilmError.invalid("A derived colour override may only choose its LUT resolution")
+                }
+                var inherited = merged["colour"] as? [String: Any] ?? [:]
+                inherited["lutSize"] = size
+                merged["colour"] = inherited
+            }
             granularityDirectory = (authored["process"] as? String).map { $0 != merged["process"] as? String } == true
                 ? directory : self.directory
             // Provenance merges key by key, so a derivation records only what it changed.
@@ -137,7 +146,7 @@ struct CurveSet {
                 provenance.merge(overrides) { _, new in new }
                 merged["provenance"] = provenance
             }
-            for (key, value) in authored where key != "provenance" { merged[key] = value }
+            for (key, value) in authored where key != "provenance" && key != "colour" { merged[key] = value }
             metadata = try JSONDecoder().decode(FilmProfile.self, from: JSONSerialization.data(withJSONObject: merged))
         } else {
             self.directory = directory
@@ -154,8 +163,8 @@ struct CurveSet {
         }
         // 65³ is for a Stock whose curve turns faster than 33 nodes can follow;
         // it costs eight times the payload, so it is the Curve Set's choice, not a default.
-        guard metadata.colour.lutSize == 33 || metadata.colour.lutSize == 65 else {
-            throw FilmError.invalid("The Baker emits 33³ or 65³ Colour Cubes")
+        guard [33, 65, 129].contains(metadata.colour.lutSize) else {
+            throw FilmError.invalid("The Baker emits 33³, 65³ or 129³ Colour Cubes")
         }
     }
 
@@ -201,6 +210,7 @@ struct CurveSet {
             // in the same way the fingerprint does.
             if metadata.process.isMonochrome {
                 result.monochrome = try MonochromeSpectralModel(curves: self).monochrome
+                result.provenance["monochrome.spectralContributions"] = .artistic
             } else {
                 let model = try SpectralModel(curves: self)
                 result.colour.cubeOutput = .density

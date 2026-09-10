@@ -24,9 +24,8 @@ scaled per channel by `channelRadiusScale`. `densityResponse` is the 32-entry
 **Density Response**, sampled from the Stock's base density to twice its mid-grey
 density. `channelCorrelation` sits near zero for colour negative, where the three
 Emulsion layers grain independently, and near one for a black & white silver
-Stock, which has one layer. `model` is read at render time on the Export path
-only: `procedural` is what a Preview always renders, and `stochastic` is still
-later work that resolves to it. `dye-cloud` has a kernel of its own — see
+Stock, which has one layer. `model` is the same on Preview and Export, even under thermal pressure.
+`stochastic` is still later work that resolves to `procedural`. `dye-cloud` has a kernel of its own — see
 [The dye-cloud model](#the-dye-cloud-model).
 
 ## The dye-cloud model
@@ -51,8 +50,8 @@ density sigma it names.
 Only XP2 Super among the black & white Stocks is chromogenic, and it is the reason
 this exists. Portra 400, Portra 160 and Cinestill 800T are chromogenic too and have
 declared `dye-cloud` since before it had a kernel, so an Export of those three
-changes with it. A Preview does not: `Renderer.grainModel` renders `procedural`
-there whatever the Stock declares.
+changes with it. Preview uses the same declared model; changing path or thermal state no longer
+changes the algorithm.
 
 ## The pass
 
@@ -83,10 +82,10 @@ there whatever the Stock declares.
    of its own field and `sqrt(channelCorrelation)` of one shared between all three,
    a split that preserves variance, so the parameter reads as the correlation it
    names.
-6. **Apply it as density.** A Density Space signal takes the fluctuation directly.
-   A Colour Cube that already carries the Baker's scan has returned a positive, so
-   the same extra density is a transmission the light passes through: `value ×
-   10^−density`.
+6. **Apply it as density.** New spectral Profiles return layer density and add
+   the fluctuation there. The separate scanner/paper/viewer transform then reads
+   that perturbed density. Legacy fused profiles retain the old positive-RGB
+   attenuation fallback; it is not equivalent to grain before scanning.
 
 The noise itself is smoothstep-interpolated value noise from an integer hash of the
 **global** pixel coordinate, so a later tiled Export samples one field from any tile
@@ -120,3 +119,18 @@ the difference between a render with Grain and the same render without it.
   doubles the amplitude, neighbouring pixels are uncorrelated, and the amplitude at
   a known pitch is the published figure carried by Selwyn's law.
 - The seed fixes the field without changing its amplitude.
+
+## Measured granularity and calibration
+
+Vision3 500T carries `grain.measuredDensityCurves`, one sigma(D) curve per layer,
+measured at the 48 µm aperture over absolute density 0.95–2.00. Runtime resamples
+these into separate channel tables, scales for aperture and intensity, and holds
+endpoints outside that range with explicit approximation provenance. The table
+replaces the artistic bell and RMS scalar for that Profile. It does not calibrate
+grain radii, power spectrum or layer covariance. C-41 CineStill does not inherit
+these ECN-2 measurements.
+
+Colour middle gray now uses the Profile's log shaper, just as monochrome did.
+Shipped-profile tests cover normal and fractional Development Offsets through Scan,
+Print and reversal viewing. A separate synthetic nonlinear-observer test verifies
+that output is F(D + grain), rather than a noise multiplier on F(D).

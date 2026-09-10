@@ -276,7 +276,7 @@ public struct ColourCube: Sendable, Equatable {
     public let size: Int
     public let rgba: [Float16]
     public init(size: Int, rgba: [Float16]) throws {
-        guard (2...65).contains(size), rgba.count == size * size * size * 4,
+        guard (2...129).contains(size), rgba.count == size * size * size * 4,
               rgba.allSatisfy(\.isFinite) else { throw FilmError.invalid("Invalid Colour Cube") }
         self.size = size
         self.rgba = rgba

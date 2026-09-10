@@ -105,7 +105,7 @@ func everyCurveSetBakesDeterministicallyAndMatchesReference(stock: String) throw
     let (status, message) = try baker(["bake", curves.path, output.path])
     try #require(status == 0, Comment(rawValue: message))
     let profile = try ProfileContainer.decode(Data(contentsOf: output))
-    #expect(profile.metadata.colour.lutSize == 33)
+    #expect(profile.metadata.colour.lutSize == 65)
     #expect(profile.metadata.colour.lutVariants.map(\.pushStops) == [-1, 0, 1, 2])
     #expect(profile.metadata.provenance["grain.rmsGranularity"] == .artistic)
     let (validationStatus, report) = try baker(["validate", curves.path, output.path,

@@ -134,3 +134,11 @@ appears in. Its enlarger is filtered and exposed per Development Offset the way
 the cube was baked, so a Profile baked against a different RA-4 paper fails there
 rather than quietly rendering someone else's darkroom — the paper's three CSVs
 are part of every printing Profile's source fingerprint.
+
+## Density/observation separation
+
+New bakes share one film-density transform between Scan and Print. A separate
+Print observation cube per Development Offset reads the density after Grain.
+The paper/enlarger model is unchanged, but grain no longer bypasses it. Generic
+scanner and enlarger assumptions still require calibration against a chosen lab
+workflow; see [accuracy validation](accuracy-validation.md).

@@ -36,6 +36,10 @@ jobs:
             [ -f "$stock/stock.json" ] || continue
             id="$(basename "$stock")"
             "$PROFILE_BAKER_EXECUTABLE" validate "$stock" "Sources/FilmEngine/Catalogue/$id.filmprofile" ".build/accuracy-reports/$id" 0.03
+            case "$id" in
+              portra-*|vision3-*|cinestill-*|provia-*|velvia-*)
+                "$PROFILE_BAKER_EXECUTABLE" validate-model "$stock" "Sources/FilmEngine/Catalogue/$id.filmprofile" ".build/accuracy-reports/$id-model.json" ;;
+            esac
           done
       - name: Test candidate profiles
         run: swift test --skip previewRenderAndStockSwitchStayWithinInteractiveBudgets

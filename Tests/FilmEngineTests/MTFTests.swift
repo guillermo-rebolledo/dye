@@ -69,6 +69,7 @@ private func modulation(_ pixels: [Float16], width: Int, height: Int, cyclesPerM
     // Read through the identity cube: the Film Response is not what is under test.
     var metadata = Profile.identity.metadata
     metadata.mtf = portra.metadata.mtf
+    metadata.provenance["mtf.channelResponse"] = portra.metadata.provenance["mtf.channelResponse"]
     let profile = try Profile(metadata: metadata, payloads: ["identity.lut3d": ColourCube.identity.payload])
     let renderer = try Renderer()
     for frequency in [5.0, 10] {
@@ -120,6 +121,7 @@ private func modulation(_ pixels: [Float16], width: Int, height: Int, cyclesPerM
     }
     metadata.mtf = .init(cyclesPerMM: frequencies, response: curves[1])
     metadata.mtf.channelResponse = curves
+    metadata.provenance["mtf.channelResponse"] = .artistic
     let profile = try Profile(metadata: metadata, payloads: ["identity.lut3d": ColourCube.identity.payload])
     let renderer = try Renderer()
     let image = try grating(width: 1024, height: 64, cyclesPerMM: 6)

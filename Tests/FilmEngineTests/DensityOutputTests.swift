@@ -15,6 +15,7 @@ private func densityObservation(squared: Bool) throws -> Profile {
                                         lutVariants: [.init(pushStops: 0, lut: "output.lut3d")], printVariants: nil)
     metadata.provenance["colour.inputShaper"] = .artistic
     metadata.provenance["colour.cubeOutput"] = .artistic
+    metadata.provenance["colour.densityOutput"] = .artistic
     metadata.grain = .init(model: .procedural, rmsGranularity: 0.05, grainRadiusMicrons: 1,
                            densityResponse: Array(repeating: 1, count: 32), channelCorrelation: 0,
                            channelRadiusScale: [1, 1, 1])
@@ -35,7 +36,7 @@ private func densityObservation(squared: Bool) throws -> Profile {
     let renderer = try Renderer()
     let linear = try densityObservation(squared: false)
     let quadratic = try densityObservation(squared: true)
-    let pixels = (0..<(128 * 128)).flatMap { _ in [Float16(0.18), 0.18, 0.18, 1] }
+    let pixels: [Float16] = (0..<(128 * 128)).flatMap { _ -> [Float16] in [0.18, 0.18, 0.18, 1] }
     let image = try LinearImage(width: 128, height: 128, rgba: pixels)
     let settings = RenderSettings(output: .workingSpace, halationIntensity: 0, bloomIntensity: 0)
     let density = try await renderer.render(image: .linear(image), profile: linear, settings: settings)

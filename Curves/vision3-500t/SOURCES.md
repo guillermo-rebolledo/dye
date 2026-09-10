@@ -12,8 +12,9 @@ PDF SHA-256: `06eca2287fbaf57a1aeacbb8151bbd48e23aefb30af2114b412e9c1c63f4d1db`.
   physical log10 lux-seconds and density **including base density**, extracted
   from the drawn Bezier paths using the chart limits x = −4…1, D = 0…3. The
   curves are drawn across the full plotted width. Kodak labels this chart's
-  densitometry **ECN-2**, not Status M; the spectral model reads it as if it were
-  Status M, which is an approximation this Curve Set does not correct for.
+  densitometry **ECN-2**, not Status M; ECN-2 names the process, not a separate standard density status. Kodak process
+  control uses Status M, but this caption alone does not resolve the measurement
+  conditions. No invented conversion is applied.
   The chart carries a secondary "Camera Stops" axis whose −8…+8 span disagrees
   with the labelled −4…1 log-exposure span by about 4%. The labelled physical
   axis is used, because it is the one the model needs.
@@ -37,8 +38,8 @@ PDF SHA-256: `06eca2287fbaf57a1aeacbb8151bbd48e23aefb30af2114b412e9c1c63f4d1db`.
   No clipping or second peak normalization is applied during digitisation.
 - Page 3, Modulation-Transfer Function Curves: `mtf.csv`, sampled on logarithmic
   frequency and response axes. Responses are stored as ratios, not percent. R/G/B
-  are retained in the CSV; the Profile's single MTF field uses green, a documented
-  reduction rather than a claim of three identical MTFs.
+  are retained in the CSV; the baked Profile retains all three channel responses. The legacy shared MTF
+  field remains green for compatibility.
 - Page 2: Exposure Index 500 under tungsten (3200 K), and no filter or exposure
   correction for exposure times from 1/1000 s to 1 s. Box Speed, True Speed,
   Stock Balance and the Reciprocity Failure threshold are therefore measured; the
@@ -145,7 +146,7 @@ outside the extracted density interval remain unmeasured by these tables.
   matrix is the Portra model's matrix reused unchanged: no separate tuning was
   done for this Stock. Only offset 0 has published Characteristic Curves; the
   −1/+1/+2 variants are tuned predictions and are never reported as measured.
-- Halation, Grain, the scanner and Reciprocity Failure above one second are
+- Halation, grain radii/correlation, the scanner and Reciprocity Failure above one second are
   artistic. Halation `strength` 0.008 reflects that this Stock has a Remjet
   anti-halation backing, which Kodak states on page 1; the number itself is
   published by nobody. It is the value Cinestill 800T departs from.

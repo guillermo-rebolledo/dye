@@ -89,7 +89,7 @@ white cancels and only the dyes' shape survives.
 ## The dye set is Provia's, and is not a Velvia measurement
 
 `dye-density.csv` is digitised from **Provia 100F's** Spectral Dye Density
-Curves, not Velvia's, and `spectral.dyeDensity` is marked artistic here for that
+Curves, not Velvia's, and `spectral.dyeDensity` is marked approximation here for that
 reason. Velvia's own chart (page 8) publishes the same isolated cyan, magenta
 and yellow dyes, but prints all three in one colour, and they cross one another
 twice. Where two curves cross, their ink merges into a single run for a few

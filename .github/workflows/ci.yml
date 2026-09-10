@@ -67,6 +67,10 @@ jobs:
             [ -f "$stock/stock.json" ] || continue
             id="$(basename "$stock")"
             "$baker" validate "$stock" "Sources/FilmEngine/Catalogue/$id.filmprofile" ".build/step-wedges/$id" 0.03
+            case "$id" in
+              portra-*|vision3-*|cinestill-*|provia-*|velvia-*)
+                "$baker" validate-model "$stock" "Sources/FilmEngine/Catalogue/$id.filmprofile" ".build/step-wedges/$id-model.json" ;;
+            esac
           done
       - uses: actions/upload-artifact@v7
         if: always()

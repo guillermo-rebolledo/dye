@@ -31,5 +31,8 @@
     "mtf.cyclesPerMM": "approximation"
   },
   "trueISO": 800,
-  "characteristicSource": "process-cs41.csv"
+  "characteristicSource": "process-cs41.csv",
+  "colour": {
+    "lutSize": 129
+  }
 }
