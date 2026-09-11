@@ -324,11 +324,11 @@ private struct ExportSheetStates: View {
     }
 
     private static let photo = EditorModel.ExportRecord(
-        url: URL(fileURLWithPath: "/tmp/portra-400.heic"), pixelWidth: 8064, pixelHeight: 6048,
-        output: .displayP3, byteCount: 31_200_000, tileCount: 24, elapsedSeconds: 14.8)
+        file: .unowned(URL(fileURLWithPath: "/tmp/portra-400.heic"), byteCount: 31_200_000),
+        pixelWidth: 8064, pixelHeight: 6048, output: .displayP3, tileCount: 24, elapsedSeconds: 14.8)
 
     private static let lut = EditorModel.ExportRecord(
-        url: URL(fileURLWithPath: "/tmp/portra-400.cube"), byteCount: 1_180_000,
+        file: .unowned(URL(fileURLWithPath: "/tmp/portra-400.cube"), byteCount: 1_180_000),
         tileCount: 1, elapsedSeconds: 0.4)
 }
 

@@ -79,15 +79,20 @@ final class ImageWriter {
             var source = row * tileWidth * 4
             var index = ((y + row) * frameWidth + x) * 4
             for _ in 0..<tileWidth {
-                let alpha = min(max(Double(rgba[source + 3]), 0), 1)
+                let alpha = clamped(Double(rgba[source + 3]))
                 for channel in 0..<4 {
                     let value = Double(rgba[source + channel]) * (channel == 3 ? 1 : alpha)
-                    destination[index + channel] = convert((min(max(value, 0), 1) * maximum).rounded())
+                    destination[index + channel] = convert((clamped(value) * maximum).rounded())
                 }
                 source += 4
                 index += 4
             }
         }
+    }
+
+    private static func clamped(_ value: Double) -> Double {
+        guard value.isFinite else { return value > 0 ? 1 : 0 }
+        return min(max(value, 0), 1)
     }
 
     func encode(quality: Double, creationDate: Date? = nil) throws -> Data {

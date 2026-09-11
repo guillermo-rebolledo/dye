@@ -4,6 +4,37 @@ import ImageIO
 import Metal
 import Foundation
 
+/// What the decode path will accept from a file, on both Render Paths.
+///
+/// Two bounds, because one of them does not do the job on its own. The per-edge
+/// bound is a texture limit and cannot be relaxed; on its own it admits a
+/// 16384 x 16384 frame, which is 268 megapixels and several gigabytes of transient
+/// raster. The total-pixel bound is what closes that, and it is set comfortably
+/// above any camera a photograph is likely to come from — a 100 megapixel
+/// medium-format back is 11656 x 8742 — so it excludes decompression bombs and
+/// nothing anybody actually shot.
+public enum ImageLimits {
+    /// The largest texture edge the supported devices can allocate.
+    public static let maximumEdge = 16_384
+    /// 120 megapixels, which no consumer camera reaches.
+    public static let maximumPixels = 120_000_000
+
+    /// Checked against the file's header before anything is allocated for pixels,
+    /// which is the only place the check protects anyone.
+    static func check(width: Int, height: Int) throws {
+        guard width > 0, height > 0 else { throw FilmError.invalid("Photo has no usable dimensions") }
+        // Both messages name the size and the limit, because a photograph vanishing
+        // with nothing said about why is the thing being fixed here.
+        guard width <= maximumEdge, height <= maximumEdge else {
+            throw FilmError.invalid("This photo is too large: \(width) × \(height), and no edge may exceed \(maximumEdge) pixels")
+        }
+        guard width * height <= maximumPixels else {
+            let megapixels = Int((Double(width * height) / 1e6).rounded())
+            throw FilmError.invalid("This photo is too large: \(megapixels) megapixels, and the limit is \(maximumPixels / 1_000_000) megapixels")
+        }
+    }
+}
+
 struct ImageDecoder {
     let device: any MTLDevice
     let workingSpace = CGColorSpace(name: CGColorSpace.extendedLinearITUR_2020)!
@@ -28,12 +59,29 @@ struct ImageDecoder {
             throw FilmError.invalid("Unsupported photo file")
         }
         let type = CGImageSourceGetType(source) as String? ?? ""
+        let header = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        // Bound the *source* before decoding it. ImageIO parses a header without
+        // decoding a pixel, so an oversized frame is refused for the cost of reading
+        // a few bytes rather than for the cost of its raster.
+        // A file whose header does not state its size cannot be bounded before it is
+        // decoded, so it is refused rather than decoded and bounded afterwards — which
+        // is the ordering this check exists to remove.
+        guard let sourceWidth = header?[kCGImagePropertyPixelWidth] as? Int,
+              let sourceHeight = header?[kCGImagePropertyPixelHeight] as? Int else {
+            throw FilmError.invalid("This photo does not declare its size")
+        }
+        try ImageLimits.check(width: sourceWidth, height: sourceHeight)
         if UTTypeConformsToRaw(type) {
             guard let raw = CIRAWFilter(imageData: data, identifierHint: type) else {
                 throw FilmError.invalid("The system RAW decoder does not support this photo")
             }
             raw.isDraftModeEnabled = false
-            let native = max(raw.nativeSize.width, raw.nativeSize.height)
+            let size = raw.nativeSize
+            guard size.width.isFinite, size.height.isFinite, size.width >= 1, size.height >= 1 else {
+                throw FilmError.invalid("RAW decode failed")
+            }
+            try ImageLimits.check(width: Int(size.width), height: Int(size.height))
+            let native = max(size.width, size.height)
             if let maximumDimension, native > CGFloat(maximumDimension) {
                 raw.scaleFactor = Float(CGFloat(maximumDimension) / native)
             }
@@ -49,7 +97,15 @@ struct ImageDecoder {
             if raw.isSharpnessSupported { raw.sharpnessAmount = 0 }
             if raw.isLuminanceNoiseReductionSupported { raw.luminanceNoiseReductionAmount = 0 }
             if raw.isColorNoiseReductionSupported { raw.colorNoiseReductionAmount = 0 }
-            guard let image = raw.outputImage, !image.extent.isEmpty, !image.extent.isInfinite else { throw FilmError.invalid("RAW decode failed") }
+            // `isEmpty` is `width <= 0 || height <= 0` and every comparison against NaN
+            // is false, so a NaN extent is neither empty nor infinite and `Int(_:)` on
+            // it is a trap rather than a throw. So is `Int(1e300)`. Both are ruled out
+            // here rather than at the conversion.
+            guard let image = raw.outputImage, !image.extent.isEmpty, !image.extent.isInfinite,
+                  image.extent.width.isFinite, image.extent.height.isFinite,
+                  image.extent.width >= 1, image.extent.height >= 1 else {
+                throw FilmError.invalid("RAW decode failed")
+            }
             let texture = try makeTexture(width: Int(image.extent.width), height: Int(image.extent.height))
             // Render on an explicit command buffer and await it: with a nil buffer Core
             // Image commits asynchronously and later reads of the texture race the decode.
@@ -58,18 +114,17 @@ struct ImageDecoder {
             try await withCheckedThrowingContinuation(Renderer.completion(command))
             return texture
         }
-        guard let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+        guard let image = Self.image(from: source, maximumDimension: maximumDimension),
               let space = image.colorSpace, space.model == .rgb || space.model == .monochrome else {
             throw FilmError.invalid("Photo has no supported input colour profile")
         }
-        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
-        let exif = properties?[kCGImagePropertyExifDictionary] as? [CFString: Any]
-        guard properties?[kCGImagePropertyProfileName] != nil || exif?[kCGImagePropertyExifColorSpace] as? Int == 1 else {
+        let exif = header?[kCGImagePropertyExifDictionary] as? [CFString: Any]
+        guard header?[kCGImagePropertyProfileName] != nil || exif?[kCGImagePropertyExifColorSpace] as? Int == 1 else {
             // ImageIO supplies a default sRGB CGColorSpace even when the file has
             // no tag. The metadata must establish that assignment explicitly.
             throw FilmError.invalid("This photo has no colour profile; assign one before opening it")
         }
-        let orientation = properties?[kCGImagePropertyOrientation] as? Int ?? 1
+        let orientation = header?[kCGImagePropertyOrientation] as? Int ?? 1
         let swapsAxes = (5...8).contains(orientation)
         var scale = 1.0
         if let maximumDimension, max(image.width, image.height) > maximumDimension {
@@ -84,17 +139,17 @@ struct ImageDecoder {
         //
         // The whole-frame form held three full-size allocations simultaneously: a
         // Float32 staging buffer, a Float16 copy of it, and the destination texture.
-        // For a 48MP frame that is 1.45GB resident before the Export has rendered a
-        // Tile — four times the largest allocation `ImageWriter` reasons about, and
-        // unaccounted for anywhere. Banding replaces the two staging buffers with one
-        // band of each, and the conversion happens in the same pass as the
-        // unpremultiply rather than as a second whole-frame map.
+        // For a 48MP Export that is 1.45GB resident before the first Tile is rendered —
+        // four times the largest allocation `ImageWriter` reasons about, and accounted
+        // for nowhere. The Preview no longer reaches this size at all, because the
+        // source is subsampled during decode; the Export still does, and it is the path
+        // where the frame is the whole frame by definition.
         //
         // The rows are the *destination's*, so a band is a band of the texture whatever
-        // the EXIF orientation did to the axes; the orientation transform is composed
-        // with a translation that puts the band's rows where the whole-frame draw would
-        // have put them. `bandedDecodeMatchesAWholeFrameDecodeForEveryOrientation` is
-        // the assertion that this is a memory change and not a pixel one.
+        // the EXIF orientation did to the axes; the orientation transform composes with
+        // a translation that puts the band's rows where the whole-frame draw would have
+        // put them. `aBandedDecodeMatchesAWholeFrameDecodeAtEveryOrientation` is the
+        // assertion that this is a memory change and not a pixel one.
         let bandRows = max(1, min(height, bandBytes / (width * 16)))
         var staging = [Float](repeating: 0, count: width * bandRows * 4)
         var half = [Float16](repeating: 0, count: width * bandRows * 4)
@@ -131,14 +186,19 @@ struct ImageDecoder {
             }
             // CGContext is premultiplied; the Metal pipeline uses straight alpha. The
             // divide and the conversion to the Working Space's precision are one pass.
+            //
+            // `clampedHalf` rather than `Float16(_:)` for every component, including
+            // alpha: that is where "pixels are finite" is established rather than
+            // assumed, and the divide immediately above is what can break it, since the
+            // alpha it divides by can be arbitrarily small.
             for pixel in stride(from: 0, to: count, by: 4) {
                 let alpha = staging[pixel + 3]
                 if alpha > 0 {
-                    for channel in 0..<3 { half[pixel + channel] = Float16(staging[pixel + channel] / alpha) }
+                    for channel in 0..<3 { half[pixel + channel] = Self.clampedHalf(staging[pixel + channel] / alpha) }
                 } else {
-                    for channel in 0..<3 { half[pixel + channel] = Float16(staging[pixel + channel]) }
+                    for channel in 0..<3 { half[pixel + channel] = Self.clampedHalf(staging[pixel + channel]) }
                 }
-                half[pixel + 3] = Float16(alpha)
+                half[pixel + 3] = Self.clampedHalf(alpha)
             }
             half.withUnsafeBytes {
                 texture.replace(region: MTLRegionMake2D(0, row, width, rows), mipmapLevel: 0,
@@ -147,6 +207,28 @@ struct ImageDecoder {
             row += rows
         }
         return texture
+    }
+
+    /// The Preview Render Path asks ImageIO for a thumbnail rather than for the frame,
+    /// so ImageIO subsamples *during* decode. Drawing a full-resolution `CGImage` down
+    /// would shrink the destination and materialise the source raster anyway, which is
+    /// what made the Preview cost the photograph rather than the Preview.
+    private static func image(from source: CGImageSource, maximumDimension: Int?) -> CGImage? {
+        guard let maximumDimension else { return CGImageSourceCreateImageAtIndex(source, 0, nil) }
+        // Orientation is applied by the drawing transform below, from the metadata, so
+        // ImageIO must not also apply it here.
+        let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                        kCGImageSourceThumbnailMaxPixelSize: maximumDimension,
+                                        kCGImageSourceCreateThumbnailWithTransform: false,
+                                        kCGImageSourceShouldCacheImmediately: true]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+            ?? CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }
+
+    /// NaN to zero, and a magnitude past float16 range to the largest it can hold.
+    private static func clampedHalf(_ value: Float) -> Float16 {
+        guard value.isFinite else { return value.isNaN ? 0 : (value > 0 ? .greatestFiniteMagnitude : -.greatestFiniteMagnitude) }
+        return Float16(min(max(value, -Float(Float16.greatestFiniteMagnitude)), Float(Float16.greatestFiniteMagnitude)))
     }
 
     /// Whether the CPU ever touches a texture, which is the only thing that decides
@@ -166,9 +248,7 @@ struct ImageDecoder {
     }
 
     func makeTexture(width: Int, height: Int, access: Access = .shared) throws -> any MTLTexture {
-        guard width > 0, height > 0, width <= 16_384, height <= 16_384 else {
-            throw FilmError.invalid("Photo exceeds the supported texture dimensions")
-        }
+        try ImageLimits.check(width: width, height: height)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: width, height: height, mipmapped: false)
         // Nothing in `Pipeline.metal` is a render pass; every kernel is a compute
         // kernel writing through `texture2d<half, access::write>`.

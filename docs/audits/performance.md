@@ -15,10 +15,15 @@ Worked in MEM-272 on branch `gortizdev/mem-272-performance-remediation`. This se
 records what landed and, more importantly, what did not and why. It is the only part
 of this document written after the audit; everything below it is the audit as taken.
 
+Two findings overlap MEM-273, the security and privacy remediation of the same day's
+audit, which reached `main` first: PERF-02's Preview half and PERF-12's clamp both
+arrived there, from the memory-safety side rather than the performance side. They are
+marked as such below.
+
 | ID | Status |
 | --- | --- |
 | PERF-01 | **Partly.** Options 1 and 2 taken: the Apron is bounded by a share of the budget edge, and the budget follows the device. A 48MP frame plans 130 Tiles at 11.3× overdraw rather than 768 at 44.4×. **Option 3 — the per-frame coarse pyramid — was not taken**; see below. |
-| PERF-02 | **Partly.** Banded decode, bit-identical at all eight orientations. The Preview path still decodes whole and scales down; see below. |
+| PERF-02 | **Done**, by two branches. The Export path decodes in bands, bit-identical at all eight orientations; the Preview path subsamples during decode, which arrived with the security work as MEM-273's SEC-02. |
 | PERF-03 | **Done.** The sweep runs only while a surface showing the Catalogue is on screen, selected Stock first. |
 | PERF-04 | **Done.** Byte budget, entries pinned to the Plan building them, a payload-read counter, and release on memory pressure. |
 | PERF-05 | **Done.** `waitUntilCompleted` is a suspension, with a render turn guarding the shared textures. Within one Renderer that turn still serialises whole renders — what stops a Preview waiting out a Tile is PERF-06, not this. |
@@ -29,7 +34,7 @@ of this document written after the audit; everything below it is the audit as ta
 | PERF-09 | **Done.** Pyramid and MTF textures are `.private` and no longer render targets. Unmeasured on device, as the finding says. |
 | PERF-10 | **Partly.** The library and its 21 pipeline states are built once per device rather than per Renderer. Still `makeLibrary(source:)` once per process; a build-time `.metallib` was not attempted. |
 | PERF-11 | **Done.** One Plan per Export, asserted by a counter. |
-| PERF-12 | **Done**, with the arithmetic unchanged — see below. |
+| PERF-12 | **Done**, with the arithmetic unchanged — see below. The clamp it quantises through is MEM-273's NaN-safe one. |
 | PERF-13 | **Barely.** Only the redundant alpha read is gone; see below. |
 | PERF-14 | **Done.** `.id()` removed, display queue shared per device, filmstrip lazy. |
 | PERF-15 | **Not taken.** |
@@ -79,19 +84,24 @@ are what caught them.
   same number, and scaling a `Float16` by a million is exact, so the digits are
   provably the same digits.
 
-### The Preview's subsampled decode, declined
+### The Preview's subsampled decode, and who did it
 
-The spec asks that "the Preview path subsamples during decode rather than decoding
-whole and scaling down". It was not taken. ImageIO can subsample — `kCGImageSourceSubsampleFactor`,
-or a thumbnail decode — but only at powers of two, so the frame still has to be
-resampled the rest of the way, and resampling an already-subsampled source is not the
-same image as resampling the original. **That changes what a photographer sees in the
-Preview**, which is the one thing the spec's Solution says none of this work does.
+This work declined it and the security remediation took it, which is worth recording
+because the reasoning that declined it was wrong about where the cost was.
 
-The memory argument for it is also weak where it matters: the Preview's own buffers
-are sized by its 2048px destination, not by the file, so the saving would be inside
-ImageIO rather than in anything this branch can bound or assert. The Critical decode
-finding is the full-resolution Export path, and that one is fixed.
+The objection here was that ImageIO subsamples only at powers of two, so the frame
+still has to be resampled the rest of the way, and resampling an already-subsampled
+source is not the same image as resampling the original — a visible change to the
+Preview, which the spec's Solution says none of this work makes. That much is true.
+What it missed is that the Preview's cost was never its own buffers, which are sized
+by the 2048px destination: it was the full-resolution `CGImage` ImageIO materialised
+in order to be drawn down from, which is the photograph rather than the Preview. That
+is a decompression-bomb surface as well as a memory one, which is how MEM-273 came to
+it from the other direction.
+
+So the Preview does now subsample during decode, via
+`CGImageSourceCreateThumbnailAtIndex`, and the Preview's pixels did change. Sanctioned
+under MEM-273 rather than here.
 
 ### PERF-13, and what a "needs measurement" finding is allowed to cost
 

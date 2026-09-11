@@ -1,0 +1,8 @@
+# Actions are pinned to commit SHAs so a moved tag cannot alter a build. Pins that
+# nobody maintains are their own hazard, so Dependabot maintains them.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
