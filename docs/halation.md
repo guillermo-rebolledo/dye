@@ -40,7 +40,9 @@ Above 100%, a quadratic creative boost raises strength to at least 0.3 at
 200% and lowers the threshold toward 0.4 in linear light. This lets ordinary
 SDR photo highlights scatter; doubling the stock threshold’s tiny excess alone
 was often invisible. The 0–100% range, stock tint, and radii are unchanged.
-Profiles with zero halation stay disabled.
+Profiles with zero halation, including Identity, stay unchanged at 0–100%. Above
+100% they use an artistic highlight glow with a 1.1 baseline threshold,
+420/150/70 µm radii and a [1, 0.18, 0.08] tint, with the same creative boost.
 
 ## The pass
 
