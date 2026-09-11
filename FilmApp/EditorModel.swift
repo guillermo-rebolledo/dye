@@ -1,5 +1,4 @@
 import SwiftUI
-import PhotosUI
 import Photos
 import ImageIO
 import os
@@ -172,7 +171,7 @@ import FilmEngine
         catch { self.error = UserFacingError(error, doing: .loadingCatalogue) }
     }
 
-    func open(_ item: PhotosPickerItem) async {
+    func open(_ item: PickedPhoto) async {
         let request = UUID()
         openGeneration = request
         isLoading = true
@@ -185,7 +184,7 @@ import FilmEngine
             // distinguishable because each is awaited on its own line.
             let existing = self.renderer
             async let built = existing != nil ? existing! : try await Renderer.make()
-            async let transferred = item.loadTransferable(type: Data.self)
+            async let transferred = item.loadData()
             let renderer = try await built
             self.renderer = renderer
             guard let data = try await transferred else {

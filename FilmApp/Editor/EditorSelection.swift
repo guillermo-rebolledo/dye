@@ -6,7 +6,7 @@ import SwiftUI
     private(set) var railIndex = 0
     private(set) var activeParameter: Parameter.Identity?
     private var parameters: [Parameter] = []
-    var stage: EditorStage { parameters.first { $0.id == activeParameter }?.stage ?? .light }
+    var stage: EditorStage { parameters.first { $0.id == activeParameter }?.stage ?? .adjust }
     // Browsing never changes the dial selection or its scroll position.
     var isFilmstripOpen = false
     var isOutputBrowserOpen = false

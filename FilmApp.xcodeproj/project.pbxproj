@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		253000000000000000000061 /* SinglePhotoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 253000000000000000000060 /* SinglePhotoPicker.swift */; };
 		253000000000000000000043 /* EditorPickers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 253000000000000000000042 /* EditorPickers.swift */; };
 		253000000000000000000041 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 253000000000000000000040 /* SettingsView.swift */; };
 		1658F61DFA296CDD54A13800 /* FilmApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2554E3D1F229ED00B2F5308 /* FilmApp.swift */; };
@@ -40,6 +41,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		253000000000000000000060 /* SinglePhotoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SinglePhotoPicker.swift; sourceTree = "<group>"; };
 		253000000000000000000042 /* EditorPickers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorPickers.swift; sourceTree = "<group>"; };
 		253000000000000000000040 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		253000000000000000000001 /* PresetSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetSheet.swift; sourceTree = "<group>"; };
@@ -111,6 +113,7 @@
 				25300000000000000000002E /* ShutterDial.swift */,
 				253000000000000000000030 /* CanvasView.swift */,
 				253000000000000000000032 /* EditorView.swift */,
+				253000000000000000000060 /* SinglePhotoPicker.swift */,
 				253000000000000000000034 /* Filmstrip.swift */,
 			);
 			path = Editor;
@@ -239,6 +242,7 @@
 				25300000000000000000002F /* ShutterDial.swift in Sources */,
 				253000000000000000000031 /* CanvasView.swift in Sources */,
 				253000000000000000000033 /* EditorView.swift in Sources */,
+				253000000000000000000061 /* SinglePhotoPicker.swift in Sources */,
 				253000000000000000000035 /* Filmstrip.swift in Sources */,
 				253000000000000000000012 /* ContactSheetView.swift in Sources */,
 				253000000000000000000041 /* SettingsView.swift in Sources */,
