@@ -93,7 +93,11 @@ public actor Renderer {
     private static func pipelines(for device: any MTLDevice) throws -> [String: any MTLComputePipelineState] {
         try pipelineCache.withLock { cache in
             if let existing = cache[device.registryID] { return existing }
-            let url = Bundle.module.url(forResource: "Pipeline", withExtension: "metal", subdirectory: "Metal")!
+            // A packaging fault is the likeliest way this app fails on a device it
+            // has never run on, so it reports rather than traps.
+            guard let url = Bundle.module.url(forResource: "Pipeline", withExtension: "metal", subdirectory: "Metal") else {
+                throw FilmError.invalid("Missing shader source Pipeline.metal")
+            }
             let options = MTLCompileOptions()
             // Safe math is what the Golden Images and the identity bit-exactness test
             // are asserted against. It is not a performance setting to be relaxed.
@@ -189,8 +193,8 @@ public actor Renderer {
 
     /// Colour-managed decode into the Working Space, optionally downsampled for the
     /// Preview Render Path so slider changes re-render a screen-sized image.
-    public func decode(_ data: Data, maximumDimension: Int? = nil) async throws -> LinearImage {
-        let texture = try await decoder.decode(data, maximumDimension: maximumDimension)
+    public func decode(_ data: Data, maximumDimension: Int? = nil, assumingSRGB: Bool = false) async throws -> LinearImage {
+        let texture = try await decoder.decode(data, maximumDimension: maximumDimension, assumingSRGB: assumingSRGB)
         return try readback(texture)
     }
 
@@ -243,7 +247,7 @@ public actor Renderer {
 
     func texture(for image: RenderImage) async throws -> any MTLTexture {
         switch image {
-        case .encoded(let data): return try await decoder.decode(data)
+        case .encoded(let data, let assumingSRGB): return try await decoder.decode(data, assumingSRGB: assumingSRGB)
         case .linear(let image):
             let texture = try decoder.makeTexture(width: image.width, height: image.height)
             image.rgba.withUnsafeBytes {
@@ -437,7 +441,7 @@ public actor Renderer {
         /// The Scattering Passes' reach: wide, and the only part of the Apron worth
         /// trading against, because it is also the only part whose furthest pixels
         /// carry almost none of the halo. Widest is the modelled lens's Bloom at 900
-        /// µm — further than even Cinestill's Halation, which MEM-252 expected to
+        /// µm — further than even Halogen 800's Halation, which MEM-252 expected to
         /// dominate, because Bloom did not have a Pass when it was written.
         var scatterReach: Double { max(bloom?.reach ?? 0, halation?.reach ?? 0) }
 

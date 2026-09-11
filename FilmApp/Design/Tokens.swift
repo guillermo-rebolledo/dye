@@ -137,11 +137,15 @@ extension Tokens {
         /// The slab behind swipe-to-delete.
         static let delete = Colour.oklch(0.55, 0.19, 25).color
 
-        // Text. The opacities are the handoff's four steps below primary.
+        // Text. The opacities are the handoff's four steps below primary, with the
+        // fourth raised off the handoff's 0.4: at 0.4 it read 3.7:1 on the deck, and
+        // every remaining use of it is informational rather than disabled.
         static let textPrimary = ink(1)
         static let textSecondary = ink(0.7)
         static let textTertiary = ink(0.55)
-        static let textQuaternary = ink(0.4)
+        static let textQuaternary = ink(0.5)
+        // The only role allowed below the 4.5:1 threshold, because a disabled
+        // control is meant to read as unavailable.
         static let textDisabled = ink(0.3)
 
         /// Text drawn over the canvas keeps the dark-mode ink in every
@@ -490,9 +494,9 @@ private struct TokenCatalogue: View {
         ("readout", .readout, "+0.0 EV"), ("unit", .unit, "5200 K"),
         ("chip value", .chipValue, "+0.3"), ("tag", .tag, "● detent"),
         ("stage name", .stageName, "Film"), ("control name", .controlName, "Exposure"),
-        ("chip name", .chipName, "Halation"), ("sheet body", .sheetBody, "Portra 400"),
+        ("chip name", .chipName, "Halation"), ("sheet body", .sheetBody, "Linen 400"),
         ("caption", .caption, "One third of a stop over the meter."),
-        ("sub-label", .subLabel, "Kodak Portra 400 · C-41"),
+        ("sub-label", .subLabel, "Modelled · Linen 400 · C-41"),
         ("action label", .actionLabel, "Export"),
     ]
 
@@ -678,12 +682,17 @@ extension Tokens.TypeStyle {
 extension Tokens {
     enum Filmstrip {
         static let height: CGFloat = 140
-        static let stripHeight: CGFloat = 104
+        // 60 pt thumbnail, the name, and the qualifier line under it.
+        static let stripHeight: CGFloat = 116
         static let footerGap: CGFloat = 8
         static let footerHeight: CGFloat = 24
         static let footerLineHeight: CGFloat = 12
         static let cellWidth: CGFloat = 96
         static let cellHeight: CGFloat = 60
+        /// The `Studies` heading between the last film and the first study. Wider
+        /// than a cell because it carries a sentence rather than a name.
+        static let studiesWidth: CGFloat = 150
+        static let studiesRule: CGFloat = 1
         static let processEdge: CGFloat = 3
         static let selectionRing: CGFloat = 1.5
         static let selectionHalo: CGFloat = 4
@@ -708,6 +717,8 @@ extension Tokens {
 extension Tokens.TypeStyle {
     static let filmIndex = Self(size: 9, weight: .medium, isMono: true, lineHeight: 9, tracking: 0.45)
     static let filmName = Self(size: 11, weight: .medium, isMono: false, lineHeight: 12)
+    /// The line under a Filmstrip cell's name saying what kind of claim the name is.
+    static let filmQualifier = Self(size: 9, weight: .regular, isMono: false, lineHeight: 10)
     static let filmLegend = Self(size: 10, weight: .medium, isMono: true, lineHeight: 10, tracking: 0.6)
     static let filmControls = Self(size: 12, weight: .semibold, isMono: false, lineHeight: 12)
     static let filmProvenance = Self(size: 10, weight: .regular, isMono: false, lineHeight: 12)
@@ -842,7 +853,7 @@ extension Tokens {
 
 extension Tokens.TypeStyle {
     static let presetName = Self(size: 14, weight: .semibold, isMono: false)
-    /// `Portra 400 · +0.3 EV · 5200 K · Print`.
+    /// `Linen 400 · +0.3 EV · 5200 K · Print`.
     static let presetSummary = Self(size: 11, weight: .regular, isMono: true)
 }
 

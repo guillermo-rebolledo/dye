@@ -18,6 +18,7 @@
     ],
     "outputStage": "none"
   },
+  "accuracy": "synthetic",
   "displayName": "Reversal study (synthetic)",
   "format": "135",
   "grain": {

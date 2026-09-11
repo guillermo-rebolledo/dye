@@ -1,7 +1,7 @@
-# Exported from Dye: Kodak Portra 400, Display P3.
+# Exported from Dye: Modelled · Linen 400, Display P3.
 # Colour only. This LUT carries no grain, halation, bloom, micro-contrast
 # or vignette, so it will look flatter than the app does.
-TITLE "Kodak Portra 400 · push +1.0 · +0.5 EV · 4800 K"
+TITLE "Modelled · Linen 400 · push +1.0 · +0.5 EV · 4800 K"
 LUT_3D_SIZE 9
 DOMAIN_MIN 0.0 0.0 0.0
 DOMAIN_MAX 1.0 1.0 1.0

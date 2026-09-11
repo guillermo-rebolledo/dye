@@ -96,3 +96,18 @@ Grain radius, the Density Response, Halation, Bloom, Stock Balance and the MTF a
 artistic. Halation strength is zero, as for the other silver Stocks. The measured
 density gate holds to 0.0016 density against the digitised curve, well inside the
 0.03 bound; that measures the bake and the render, not Foma's colour.
+
+## Rights
+
+Attribution: FOMA BOHEMIA spol. s r.o., for the published datasheets and technical publications cited
+above. This repository contains **independent numerical readings and an extraction
+script**, not the source PDFs and not reproduced chart artwork. Extracting numerical
+facts from a published chart is a different act from reproducing the chart, and this
+project keeps to the former.
+
+**No open-content licence is claimed for FOMA BOHEMIA spol. s r.o.'s material.** Nothing in `Curves/`
+ships inside the application; only the baked
+`Sources/FilmEngine/Catalogue/*.filmprofile` files do. Dye is not affiliated with,
+endorsed by, or sponsored by FOMA BOHEMIA spol. s r.o.. See the repository's `NOTICE.md`.
+
+CIE data in this directory is separately licensed CC BY-SA 4.0; see `NOTICE.md`.

@@ -49,6 +49,93 @@ finding below, re-check the code rather than assuming one of the three is right.
 
 ---
 
+## Implementation status — 2026-09-10, MEM-274
+
+The **engineering subset** of this audit has been implemented. Fifty-seven checklist
+items below are ticked. What follows is what changed, what the audit got wrong, and
+what is deliberately still open.
+
+**Four owner decisions were taken.** They are recorded here because the rest of the
+checklist depends on them.
+
+| Question | Decision |
+| --- | --- |
+| **Q1** Trademark | **Option A / D — rename the Catalogue.** All twelve Display Names are Dye's own. The store description may name the films that inspired the looks, in prose, with the disclaimer after it. |
+| **Q3** iPad | **iPhone only.** `TARGETED_DEVICE_FAMILY = 1`. The app still runs in compatibility mode and needs no iPad screenshots. Reversible. |
+| **Q5** Launch Catalogue | **Not an owner answer — a default.** All seventeen Profiles still ship; the five studies are no longer scattered through the middle of the browser but sorted together at the end. Q5 was not among the four questions put to the owner, so this unblocks the ordering work and nothing more. Whether the studies ship at all is still open. |
+| **Q6** Accuracy | **A distinct qualifier, not a wider Approximation.** `FilmProfile.accuracy` is a new field with three cases, and the Approximation label outranks it. |
+
+**Two findings in this audit were wrong, and the correction matters.**
+
+- **REL-20 was already fixed.** The audit correctly said to treat the grain defect as
+  open until the probe was re-run, and it flagged the risk of citing `98ba1ec` from
+  `c19bc12`. Commit `9c3ed87` had already shaped the colour reference coordinate the
+  way the monochrome branch does — `Renderer.swift` calls
+  `responseCoordinate(0.18, shaper:)` on both branches — and
+  `measuredColourGrainsAtPhysicalMiddleGrayInEveryOutputStage` already asserts a
+  non-zero grain envelope across all nine measured colour Profiles at every Output
+  Stage and Development Offset, including fractional ones. It passes. Nothing about
+  the Grain control's promise is false, and the store description may say so.
+- **REL-19's premise held, but the fix the audit proposed could not reach it.** The
+  binary `isApproximation` cannot qualify a Profile that carries no Approximation,
+  which is exactly the flagship case. `Accuracy` is a separate field for that reason.
+  Every named Stock is `modelled`; nothing is `validated`, and
+  `aStockWhoseAccuracyIsUnestablishedIsQualifiedToo` fails if anything claims to be
+  before a held-out capture benchmark exists.
+
+**Two things were harder than the audit expected.**
+
+- `INFOPLIST_KEY_UILaunchScreen_Generation = YES` emits an empty `UILaunchScreen`
+  dictionary and **silently drops** `INFOPLIST_KEY_UILaunchScreen_UIColorName`. Both
+  the documented spelling and the obvious alternative were tried against a real
+  archive and neither took. A minimal `FilmApp/Info.plist` supplies that one key and
+  everything else stays synthesised, which is the fallback REL-04 anticipated.
+- This toolchain writes `CFBundleIconName` under
+  `CFBundleIcons.CFBundlePrimaryIcon`, not at the top level. That is where iOS reads
+  it, and `Scripts/check-archive.py` accepts either — but the *(recalled)* claim in
+  REL-01 is about upload validation specifically and **has not been verified against
+  a real upload**. It is the first thing to check when the first archive is uploaded.
+
+**Profile ids still carry the marks, deliberately.** `portra-400`, `vision3-500t` and
+the rest are internal handles: they key saved Presets, Golden Image fixtures and the
+CI Step Wedge patterns. Since the Export filename now derives from the Display Name
+there is no path from an id to anything a user reads, and `Scripts/check-archive.py`
+asserts that. Renaming them is a separate, larger change and is not needed for v1.
+
+**What this pass did not touch**, and why:
+
+- **REL-22, REL-37, REL-38, REL-40, and the App Store Connect half of REL-08 and
+  REL-40.** Owner and App Store Connect decisions.
+- **REL-09 and REL-39 are closed in code.** The privacy policy and the support page
+  are text in `FilmApp/Legal.swift`, shown on device — no network, no dead row — and
+  published as two static pages by `Scripts/build-site.py` into `docs/`, which GitHub
+  Pages serves from `main`. `Scripts/test_ci_site.py` fails the build if the
+  published pages and the app ever disagree, because a policy that has drifted from
+  the app is a false statement rather than a stale file. What is left is entering the
+  two URLs in App Store Connect, and confirming they load once this merges.
+- **The non-affiliation disclaimer reaches the app only.** The store description and
+  the support page need the same paragraph, and both are owner scope.
+- **REL-29 and REL-41.** Export peak memory and the Catalogue's 210 MB. Specified
+  with the performance and security work, per this audit's own *Out of scope*.
+  **REL-30 is closed**, by the security remediation rather than by this work:
+  `security.md` SEC-03 framed it as a full-resolution copy of the user's photograph
+  left on disk forever, which is a privacy defect rather than a storage one.
+  `ExportedFile` gives the engine the file's lifetime, so it is removed as soon as
+  the user can no longer act on it, and a launch sweep clears what older versions
+  left behind.
+- **REL-37's `.xcconfig`.** `DEVELOPMENT_TEAM` is still written into both build
+  configurations. Moving it is a developer-convenience refactor of a value that is
+  already right, and the archive path is the one thing in this change that has been
+  verified end to end; destabilising it to tidy a build setting is a bad trade.
+- **REL-33's device matrix.** Nothing in it can be closed by reasoning. It is now the
+  manual matrix in `docs/release.md`, worked before each submission.
+- **REL-26's string catalogue, REL-24's light appearance, REL-19's Provenance row,
+  the `accessibility5` snapshot check and the XCUITest launch smoke test.** All
+  nice-to-have, all still open.
+- **REL-27's spelling variant (Q7).** Still British throughout, still undecided.
+
+---
+
 ## Blocking summary
 
 These are the items that make submission **literally impossible** or that will
@@ -2704,12 +2791,12 @@ runtime fixes; then the listing. Each item names the finding it closes.
 
 **Decisions (do these first — everything else depends on them)**
 
-- [ ] Answer **Q1** and record the trademark strategy with a date · REL-12
+- [x] Answer **Q1** and record the trademark strategy with a date · REL-12
 - [ ] Answer **Q2** and record the business model · REL-22
-- [ ] Answer **Q3** and record the iPad decision · REL-05
+- [x] Answer **Q3** and record the iPad decision · REL-05
 - [ ] Answer **Q4** and record the launch scope · REL-20, REL-29
-- [ ] Answer **Q5** and record which Stocks ship and in what order · REL-23, REL-41
-- [ ] Answer **Q6** and record the accuracy positioning · REL-19
+- [ ] Answer **Q5** and record which Stocks ship · REL-23, REL-41 — *provisionally all seventeen, studies last; this was a default taken to unblock the ordering work, not an owner decision*
+- [x] Answer **Q6** and record the accuracy positioning · REL-19
 - [ ] Answer **Q7** and record the spelling variant · REL-27
 - [ ] Answer **Q8** and record the appearance decision · REL-24
 - [ ] Answer **Q9**: confirm the developer account, team, entity and bundle identifier · REL-37
@@ -2717,55 +2804,56 @@ runtime fixes; then the listing. Each item names the finding it closes.
 
 **Legal**
 
-- [ ] Apply the Q1 decision to the twelve `Curves/*/stock.json` `displayName` fields · REL-12
-- [ ] Re-run `Scripts/bake-catalogue.sh` on a Mac and commit the regenerated Catalogue · REL-12
-- [ ] Remove or genericise the five `Wratten N` strings at `FilmProfile.swift:43-47` · REL-12
-- [ ] Remove `"Kodak's"` from `FilmApp/Editor/Parameter.swift:578` · REL-12
-- [ ] Change the `"kodachrome-64"` fixture id at `FilmApp/PresetSheet.swift:285` · REL-12
-- [ ] Change the Export filename at `FilmApp/EditorModel.swift:330` if ids are now user-visible under the new naming · REL-12
-- [ ] Write the non-affiliation disclaimer and place it in the app, the store description and the support page · REL-14
-- [ ] Add a rights paragraph to the thirteen `Curves/*/SOURCES.md` files that lack one · REL-15
-- [ ] Replace or state the rights position for the CineStill storefront-image source · REL-15
-- [ ] Add a root `LICENSE` · REL-16
-- [ ] Add `NOTICE.md` discharging the CIE CC BY-SA 4.0 attribution · REL-15, REL-16
-- [ ] Add an Acknowledgements screen to `FilmApp/SettingsView.swift` · REL-16
-- [ ] Delete or replace the six PR-evidence PNGs containing Apple's sample photograph · REL-17
+- [x] Apply the Q1 decision to the twelve `Curves/*/stock.json` `displayName` fields · REL-12
+- [x] Re-run `Scripts/bake-catalogue.sh` on a Mac and commit the regenerated Catalogue · REL-12
+- [x] Remove or genericise the five `Wratten N` strings at `FilmProfile.swift:43-47` · REL-12
+- [x] Remove `"Kodak's"` from `FilmApp/Editor/Parameter.swift:578` · REL-12
+- [x] Change the `"kodachrome-64"` fixture id at `FilmApp/PresetSheet.swift:285` · REL-12
+- [x] Change the Export filename at `FilmApp/EditorModel.swift:330` if ids are now user-visible under the new naming · REL-12
+- [x] Write the non-affiliation disclaimer and place it **in the app** (`FilmApp/Legal.swift`, Settings → About) · REL-14
+- [ ] Put the same disclaimer in the store description and on the support page · REL-14
+- [x] Add a rights paragraph to the thirteen `Curves/*/SOURCES.md` files that lack one · REL-15
+- [x] Replace or state the rights position for the CineStill storefront-image source · REL-15
+- [x] Add a root `LICENSE` · REL-16
+- [x] Add `NOTICE.md` discharging the CIE CC BY-SA 4.0 attribution · REL-15, REL-16
+- [x] Add an Acknowledgements screen to `FilmApp/SettingsView.swift` · REL-16
+- [x] Delete or replace the six PR-evidence PNGs containing Apple's sample photograph · REL-17
 - [ ] Source and record the rights for the store screenshot imagery · REL-17, REL-38
 - [ ] Have counsel review the chosen trademark option and the datasheet-derivation position · REL-12, REL-15
 
 **Build and bundle (these make an upload possible at all)**
 
-- [ ] Create `FilmApp/Assets.xcassets` with an `AppIcon` set (light, dark, tinted) · REL-01
-- [ ] Add the asset catalogue to the target and set `ASSETCATALOG_COMPILER_APPICON_NAME` in both configurations · REL-01
-- [ ] Set `MARKETING_VERSION = 1.0` and `CURRENT_PROJECT_VERSION = 1` in both configurations · REL-02
-- [ ] Set `INFOPLIST_KEY_CFBundleDisplayName = Dye` in both configurations · REL-03
-- [ ] Set `INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone` (and `_iPad` if iPad ships) · REL-04
-- [ ] Set `INFOPLIST_KEY_UIRequiredDeviceCapabilities = metal` · REL-04
-- [ ] Set `INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO` · REL-04, REL-40
-- [ ] Set `INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.photography` · REL-04
-- [ ] Add a launch-screen background colour matching `#050505` · REL-04, REL-24
-- [ ] Set `TARGETED_DEVICE_FAMILY` to match the Q3 decision · REL-05
-- [ ] Add `FilmApp/PrivacyInfo.xcprivacy` with empty tracking/API/data arrays and add it to the Resources phase · REL-07
-- [ ] Commit `FilmApp.xcodeproj/xcshareddata/xcschemes/FilmApp.xcscheme` with Archive pinned to Release · REL-06, REL-34
+- [x] Create `FilmApp/Assets.xcassets` with an `AppIcon` set (light, dark, tinted) · REL-01
+- [x] Add the asset catalogue to the target and set `ASSETCATALOG_COMPILER_APPICON_NAME` in both configurations · REL-01
+- [x] Set `MARKETING_VERSION = 1.0` and `CURRENT_PROJECT_VERSION = 1` in both configurations · REL-02
+- [x] Set `INFOPLIST_KEY_CFBundleDisplayName = Dye` in both configurations · REL-03
+- [x] Set `INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone` (and `_iPad` if iPad ships) · REL-04
+- [x] Set `INFOPLIST_KEY_UIRequiredDeviceCapabilities = metal` · REL-04
+- [x] Set `INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO` · REL-04, REL-40
+- [x] Set `INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.photography` · REL-04
+- [x] Add a launch-screen background colour matching `#050505` · REL-04, REL-24
+- [x] Set `TARGETED_DEVICE_FAMILY` to match the Q3 decision · REL-05
+- [x] Add `FilmApp/PrivacyInfo.xcprivacy` with empty tracking/API/data arrays and add it to the Resources phase · REL-07
+- [x] Commit `FilmApp.xcodeproj/xcshareddata/xcschemes/FilmApp.xcscheme` with Archive pinned to Release · REL-06, REL-34
 - [ ] Move `DEVELOPMENT_TEAM` into an `.xcconfig` · REL-37
-- [ ] Set `DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"` for Release explicitly · REL-35
+- [x] Set `DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"` for Release explicitly · REL-35
 
 **Engineering — correctness and crash risk**
 
-- [ ] Replace the force unwrap at `Sources/FilmEngine/Profiles/Profile.swift:62-63` with a thrown error · REL-06
-- [ ] Replace the force unwrap at `Sources/FilmEngine/Renderer.swift:44` with a thrown error · REL-06
-- [ ] Build a Release archive and confirm the three SPM resource paths exist inside the `.app` · REL-06
-- [ ] Create the SwiftData `ModelContainer` with `try` and an in-memory fallback · REL-32
-- [ ] Add `VersionedSchema` and a `SchemaMigrationPlan` stub for `Preset` · REL-32
+- [x] Replace the force unwrap at `Sources/FilmEngine/Profiles/Profile.swift:62-63` with a thrown error · REL-06
+- [x] Replace the force unwrap at `Sources/FilmEngine/Renderer.swift:44` with a thrown error · REL-06
+- [x] Build a Release archive and confirm the SPM resource paths exist inside the `.app` — now two, not three: `Profiles/Calibration` is gone and the identity Profile is compiled in · REL-06
+- [x] Create the SwiftData `ModelContainer` with `try` and an in-memory fallback · REL-32
+- [x] Add `VersionedSchema` and a `SchemaMigrationPlan` stub for `Preset` · REL-32
 - [ ] Verify a v1 → v2 schema change preserves saved Presets · REL-32
-- [ ] Re-run `docs/audits/film-stock-accuracy-probe.py` and fix the colour grain reference coordinate · REL-20
-- [ ] Add renderer tests over shipped colour Profiles asserting a non-zero grain envelope · REL-20
+- [x] Re-run `docs/audits/film-stock-accuracy-probe.py` and fix the colour grain reference coordinate · REL-20
+- [x] Add renderer tests over shipped colour Profiles asserting a non-zero grain envelope · REL-20
 - [ ] Update the Golden Images on a Metal-capable Mac · REL-20
 - [ ] Size `ExportOptions.textureBudgetBytes` from `os_proc_available_memory()` · REL-29
 - [ ] Stop holding the assembled frame and the encoded `Data` simultaneously · REL-29
 - [ ] Evict thumbnail caches before starting an Export · REL-29
 - [ ] Measure a 48 MP Export in all three formats on an A12-class device with Instruments · REL-29
-- [ ] Sweep `tmp/` on launch and delete the previous Export when a new one starts · REL-30
+- [x] Sweep `tmp/` on launch and delete the previous Export when a new one starts · REL-30
 - [ ] Precompile the Metal library into a `.metallib` instead of `makeLibrary(source:)` · REL-33
 - [ ] Add a timeout, progress and a Cancel to the iCloud photo-download path · REL-33
 - [ ] Wrap the Export in `beginBackgroundTask` and handle expiry · REL-33
@@ -2774,23 +2862,24 @@ runtime fixes; then the listing. Each item names the finding it closes.
 
 **Engineering — behaviour, copy and accessibility**
 
-- [ ] Render and write the Export before requesting Photos authorisation; keep Share on denial · REL-10
+- [x] Render and write the Export before requesting Photos authorisation; keep Share on denial · REL-10
 - [ ] Merge this audit with `security.md` and `performance.md` into one reconciled work list · REL-11
-- [ ] Split the corrupt-file and untagged-file errors and offer "Open as sRGB" · REL-28
+- [x] Split the corrupt-file and untagged-file errors and offer "Open as sRGB" · REL-28
 - [ ] Fix SEC-01, SEC-02 and SEC-04 on the decode path alongside REL-28 · REL-11, REL-28
-- [ ] Add a `FilmError` presentation layer so no engine identifier reaches the UI · REL-31
-- [ ] Restore the Approximation qualifier at all seven naming sites and the Exported LUT header · REL-18
-- [ ] Extract the qualifier into one place and add a test that asserts every naming site uses it · REL-18
-- [ ] Decide whether `spectral.contrastFilters` alone should qualify a whole Profile, and update `CONTEXT.md` if not · REL-18
+- [x] Add a `FilmError` presentation layer so no engine identifier reaches the UI · REL-31
+- [x] Restore the Approximation qualifier at all seven naming sites and the Exported LUT header · REL-18
+- [x] Extract the qualifier into one place and add a test that asserts every naming site uses it · REL-18
+- [x] Decide whether `spectral.contrastFilters` alone should qualify a whole Profile, and update `CONTEXT.md` if not · REL-18
 - [ ] Surface per-parameter Provenance in the Film Stock browser · REL-19
-- [ ] Hide or explain the five synthetic studies, and add an explicit Catalogue sort order · REL-23
-- [ ] Fix `"Stock"` → `"Film Stock"` at `Parameter.swift:303`, `:305`, `:734` · REL-27
+- [x] Add an explicit Catalogue sort order that groups the five synthetic studies at the end · REL-23
+- [x] Give the studies a labelled section and a one-line explanation in the browser · REL-23
+- [x] Fix `"Stock"` → `"Film Stock"` at `Parameter.swift:303`, `:305`, `:734` · REL-27
 - [ ] Apply the Q7 spelling decision to the user-facing strings · REL-27
-- [ ] Fix `Cinestill` → `CineStill` if the brand names survive Q1 · REL-27
-- [ ] Correct the "grouped by Process" claim in `README.md` · REL-23
-- [ ] Add an `accessibilityLabel` and a Delete accessibility action to the Preset row · REL-25
-- [ ] Raise `textQuaternary`, and stop using `textDisabled` for the Contact Sheet legend · REL-25
-- [ ] Add a Privacy Policy, Support and Acknowledgements section to `FilmApp/SettingsView.swift` · REL-09, REL-16, REL-39
+- [x] Fix `Cinestill` → `CineStill` if the brand names survive Q1 · REL-27
+- [x] Correct the "grouped by Process" claim in `README.md` · REL-23
+- [x] Add an `accessibilityLabel` and a Delete accessibility action to the Preset row · REL-25
+- [x] Raise `textQuaternary`, and stop using `textDisabled` for the Contact Sheet legend · REL-25
+- [x] Add a Privacy Policy, Support and Acknowledgements section to `FilmApp/SettingsView.swift` · REL-09, REL-16, REL-39
 - [ ] Proofread all user-facing strings on device at default and `accessibility5` sizes · REL-27
 - [ ] Add a `Localizable.xcstrings` catalogue and `SWIFT_EMIT_LOC_STRINGS = YES` · REL-26
 
@@ -2809,21 +2898,21 @@ runtime fixes; then the listing. Each item names the finding it closes.
 
 **Release engineering**
 
-- [ ] Add a CI job that builds a Release archive on `main` · REL-34
+- [x] Add a CI job that builds a Release archive on `main` · REL-34
 - [ ] Add a tag-gated signed archive and TestFlight upload job · REL-34
 - [ ] Add a launch smoke test (XCUITest) to CI · REL-34
 - [ ] Add an `accessibility5` snapshot check to CI · REL-25, REL-34
-- [ ] Archive dSYMs as a CI artefact keyed by build number · REL-35
+- [x] Archive dSYMs as a CI artefact keyed by build number · REL-35
 - [ ] Adopt the versioning scheme and tag the first submitted build · REL-36
-- [ ] Add `CHANGELOG.md` · REL-36
-- [ ] Promote this checklist into `docs/release.md` · REL-36
+- [x] Add `CHANGELOG.md` · REL-36
+- [x] Promote this checklist into `docs/release.md` · REL-36
 - [ ] Push a signed build to TestFlight and install it from the TestFlight app · REL-37
 - [ ] Run the whole reviewer path on the TestFlight build · REL-06, REL-33
 
 **Store listing (do this last — Q1 and Q6 determine most of it)**
 
-- [ ] Publish the privacy policy at a stable URL · REL-09
-- [ ] Publish the support page at a stable URL · REL-39
+- [x] Publish the privacy policy at a stable URL · REL-09
+- [x] Publish the support page at a stable URL · REL-39
 - [ ] Reserve the app name in App Store Connect and confirm availability · REL-13, REL-40
 - [ ] Create the App Store Connect record for `app.memoji.dye` · REL-37
 - [ ] Accept the required Apple agreements · REL-37

@@ -1,0 +1,26 @@
+Copyright © 2026 Memoji Inc. All rights reserved.
+
+This repository is published for reference. No licence is granted to use, copy,
+modify, merge, publish, distribute, sublicense or sell any part of it, or to build
+or ship a derivative of the Dye application, except as expressly permitted below or
+by separate written agreement.
+
+Exception — CIE datasets and their derivatives
+----------------------------------------------
+
+`observer.csv`, and any file derived from it, contain data published by the
+Commission Internationale de l'Éclairage under the Creative Commons
+Attribution-ShareAlike 4.0 International licence, and are redistributed here under
+that same licence rather than under the terms above. See `NOTICE.md` for the
+attribution, the DOIs and the record of changes.
+
+    https://creativecommons.org/licenses/by-sa/4.0/
+
+Trademarks
+----------
+
+Dye is not affiliated with, endorsed by, or sponsored by any film manufacturer.
+Manufacturer names appearing in `Curves/*/SOURCES.md` and in the audit and design
+documents under `docs/` are used descriptively, to cite the published sources a
+Curve Set's numbers were read from. All trademarks are the property of their
+respective owners. See `NOTICE.md`.

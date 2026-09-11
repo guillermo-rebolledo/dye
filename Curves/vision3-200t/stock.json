@@ -50,7 +50,8 @@
       }
     ]
   },
-  "displayName": "Kodak Vision3 200T",
+  "accuracy": "modelled",
+  "displayName": "Tungsten 200",
   "format": "135",
   "grain": {
     "channelCorrelation": 0.15,

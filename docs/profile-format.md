@@ -41,8 +41,23 @@ A missing required marker is an error. Measured means supported by a cited sourc
 all bundled study Profiles are synthetic and mark every parameter artistic.
 `approximation` is stronger than artistic: it says the Stock publishes no usable
 measurement of that parameter, so the value stands in for one. Any Profile carrying
-one answers `metadata.isApproximation`, and the app labels it in the picker, in the
-film subtitle and in a line beneath the picker.
+one answers `metadata.isApproximation`.
+
+Optional `accuracy` records how far the Profile's appearance has been checked against
+the Stock it models: `validated`, `modelled`, or `synthetic` for something that models
+no Stock at all. It is not Provenance and does not replace it — Provenance records
+where one parameter's *value* came from, and a Profile can be built entirely from
+measured values and still never have been compared with a photograph. **A Profile that
+omits the field is `modelled`**, so omission is always the modest claim. Nothing in the
+Catalogue is `validated`, and a test fails if anything claims to be before a held-out
+capture benchmark exists.
+
+`metadata.qualifiedDisplayName` combines the two into the string the app renders
+**wherever it names the Stock** — `Approx. · Halogen 800`, `Modelled · Linen 400` —
+with `spokenDisplayName` for VoiceOver. Approximation outranks accuracy, because a
+borrowed measurement is the stronger caveat. Every naming site reads those two
+properties rather than `displayName`, and
+`everyNamingSiteUsesTheQualifiedDisplayName` fails when a new site reaches past them.
 
 All radii remain in film-plane microns. At render time the conversion is
 `radiusMicrons / (format.frameWidthMM * 1000) * max(imageWidth, imageHeight)`:

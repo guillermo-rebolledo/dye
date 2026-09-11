@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import FilmEngine
 
 /// The Export sheet: the full-resolution photo, or the colour half of the same look
@@ -225,6 +226,23 @@ private struct ExportFinished: View {
             if let date = record.savedDate {
                 Text("Saved to Photos · \(date.formatted(date: .abbreviated, time: .omitted))")
                     .typeStyle(.caption).foregroundStyle(Tokens.Palette.textSecondary)
+            }
+            // The export succeeded; only the last step of it did not. Saying
+            // "not saved" here would be a lie about a file that is right there.
+            if let refusal = record.notAddedToPhotos {
+                VStack(alignment: .leading, spacing: Tokens.Metrics.space5) {
+                    Text(refusal == .denied
+                         ? "Exported, but not added to Photos. Dye does not have permission to add photos."
+                         : "Exported, but Photos would not accept it. You can still share it.")
+                        .typeStyle(.caption).foregroundStyle(Tokens.Palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if refusal == .denied, let settings = URL(string: UIApplication.openSettingsURLString) {
+                        Link("Open Settings", destination: settings)
+                            .font(.footnote.weight(.semibold))
+                            .frame(minHeight: Tokens.Metrics.minimumHitTarget)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             ShareLink(item: record.url) {
                 Label("Share", systemImage: "square.and.arrow.up")

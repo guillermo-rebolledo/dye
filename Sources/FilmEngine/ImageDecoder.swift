@@ -59,11 +59,11 @@ struct ImageDecoder {
     /// `MTLTexture` is not `Sendable` — so without inheriting the caller's isolation
     /// the texture this returns would be crossing an isolation boundary to get home.
     /// The Renderer is the only caller and the decoder is its own.
-    func decode(_ data: Data, maximumDimension: Int? = nil,
+    func decode(_ data: Data, maximumDimension: Int? = nil, assumingSRGB: Bool = false,
                 isolation: isolated (any Actor)? = #isolation) async throws -> any MTLTexture {
         if let maximumDimension, maximumDimension < 1 { throw FilmError.invalid("Preview dimension must be positive") }
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
-            throw FilmError.invalid("Unsupported photo file")
+            throw FilmError.photo(.unsupportedFormat)
         }
         let type = CGImageSourceGetType(source) as String? ?? ""
         let header = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
@@ -80,7 +80,7 @@ struct ImageDecoder {
         try ImageLimits.check(width: sourceWidth, height: sourceHeight)
         if UTTypeConformsToRaw(type) {
             guard let raw = CIRAWFilter(imageData: data, identifierHint: type) else {
-                throw FilmError.invalid("The system RAW decoder does not support this photo")
+                throw FilmError.photo(.unsupportedRaw)
             }
             raw.isDraftModeEnabled = false
             let size = raw.nativeSize
@@ -121,15 +121,19 @@ struct ImageDecoder {
             try await withCheckedThrowingContinuation(Renderer.completion(command))
             return texture
         }
+        // A file the system will not decode and a file with no colour tag are two
+        // different failures, and used to share one misleading message.
         guard let image = Self.image(from: source, maximumDimension: maximumDimension),
               let space = image.colorSpace, space.model == .rgb || space.model == .monochrome else {
-            throw FilmError.invalid("Photo has no supported input colour profile")
+            throw FilmError.photo(.undecodable)
         }
         let exif = header?[kCGImagePropertyExifDictionary] as? [CFString: Any]
-        guard header?[kCGImagePropertyProfileName] != nil || exif?[kCGImagePropertyExifColorSpace] as? Int == 1 else {
+        // `assumingSRGB` is the user having said "open it anyway" to the refusal below,
+        // which is the only thing that can establish the assignment the file lacks.
+        guard assumingSRGB || header?[kCGImagePropertyProfileName] != nil || exif?[kCGImagePropertyExifColorSpace] as? Int == 1 else {
             // ImageIO supplies a default sRGB CGColorSpace even when the file has
             // no tag. The metadata must establish that assignment explicitly.
-            throw FilmError.invalid("This photo has no colour profile; assign one before opening it")
+            throw FilmError.photo(.untagged)
         }
         let orientation = header?[kCGImagePropertyOrientation] as? Int ?? 1
         let swapsAxes = (5...8).contains(orientation)

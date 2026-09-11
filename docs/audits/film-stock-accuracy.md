@@ -13,11 +13,11 @@ bakes and regression tests constrain parts of the pipeline. The scanner, dye
 separation, interlayer interactions, development variants and several spatial
 parameters still contain assumptions that can dominate the final appearance.
 
-The most immediate finding is a **grain calibration defect affecting all nine
-shipped measured/derived colour profiles**: the renderer samples middle gray at
-the wrong cube coordinate. A CPU probe of the committed profiles finds a zero
-grain envelope at actual middle gray in every one. Fixing that has a clearer
-justification than further artistic tuning.
+The most immediate finding was a **grain calibration defect affecting all nine
+shipped measured/derived colour profiles**: the renderer sampled middle gray at
+the wrong cube coordinate. A CPU probe of the committed profiles found a zero
+grain envelope at actual middle gray in every one. **This has since been fixed and
+is covered by a renderer test over the shipped Profiles — see finding 1.**
 
 For the next calibration effort, this audit assumes a **specified stock + process
 + controlled scan** as the primary reference. That is a proposed target, not a
@@ -27,7 +27,21 @@ Output Stages against their own references.
 
 ## Findings, ordered by action priority
 
-### 1. Fix the colour grain reference coordinate — confirmed defect
+### 1. Fix the colour grain reference coordinate — confirmed defect, since fixed
+
+> **Closed 2026-09-10 (MEM-274).** This defect was real at `98ba1ec` and is fixed at
+> `HEAD`. `Renderer.swift`'s `responseEntry` now calls
+> `responseCoordinate(0.18, shaper:)` on the colour branch, exactly as the monochrome
+> branch always did, so the reference lands at physical middle gray rather than at the
+> cube coordinate 0.18. `GrainTests.measuredColourGrainsAtPhysicalMiddleGrayInEveryOutputStage`
+> asserts a non-zero grain envelope over every one of the nine shipped measured colour
+> Profiles, at every Output Stage and every Development Offset including fractional
+> ones — which is the integration coverage the "Next change" note below asked for.
+> The probe script reads the `98ba1ec` Git baseline and so still reports the old
+> numbers; that is the baseline it was written against, not the current state. The
+> analysis below is kept as written, because it is the record of how the defect was
+> found and it explains the fix.
+
 
 [Renderer.swift](../../Sources/FilmEngine/Renderer.swift), `responseEntry`, samples
 colour cubes at `0.18` to obtain `grayDensity`. For a logarithmically shaped cube,

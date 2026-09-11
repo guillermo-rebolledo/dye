@@ -22,7 +22,13 @@ specifications.
 | blue | [WRATTEN 2 No. 47](https://www.kodak.com/content/products-brochures/Film/Basic-Color-Filters-W2-47.pdf) | `168a816b10cf0b56ac4c0aaba50a39206c0c78e1c79f802adaa3f5bb21a02bba` |
 
 No. 15 is deep yellow, despite the application's `orange` name. It remains
-No. 15 because the film reference tables specify that filter. Attribution:
+No. 15 because the film reference tables specify that filter. The application names
+the glass by colour and depth rather than by filter number, because the number is a
+live trademark; see `NOTICE.md`.
+
+## Rights
+
+Attribution:
 Eastman Kodak Company, KODAK WRATTEN 2 Optical Filter curves. The repository
 contains independent numerical readings and an extraction script, not the
 source PDFs or reproduced chart artwork. No open-content licence is claimed

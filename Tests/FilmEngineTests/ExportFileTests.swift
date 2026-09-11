@@ -31,7 +31,10 @@ private func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath:
                                              settings: .init(output: .displayP3), format: .jpeg, in: root)
     // The share affordance outlives the save, so the file survives a finished Export.
     #expect(exists(file.url))
-    #expect(file.url.lastPathComponent == "identity.jpg")
+    // Named after the Display Name rather than the Profile id, because ids still carry
+    // manufacturer marks and a filename is something the user reads. `filenameStem`
+    // owns the rule; `Scripts/check-archive.py` asserts it from the other end.
+    #expect(file.url.lastPathComponent == "no-film-stock.jpg")
     #expect(file.byteCount > 0)
     file.discard()
     #expect(!exists(file.url))
@@ -63,7 +66,7 @@ private func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath:
     let root = try temporaryRoot()
     defer { try? FileManager.default.removeItem(at: root) }
     let file = try await renderer.exportedLUTFile(profile: .identity, settings: .init(output: .displayP3), in: root)
-    #expect(file.url.lastPathComponent == "identity.cube")
+    #expect(file.url.lastPathComponent == "no-film-stock.cube")
     #expect(exists(file.url))
     file.discard()
     #expect(!exists(file.url))

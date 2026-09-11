@@ -107,7 +107,17 @@ _Avoid_: preset (means a user artifact), LUT, config, definition
 **Display Name**:
 The user-facing name of a Stock, deliberately isolated as a single Profile field so
 the whole Catalogue can be renamed for trademark reasons without touching anything else.
+That mechanism has now been exercised: the Catalogue ships under names of its own.
+The field covers most of the surface but not all of it — the Contrast Filter names,
+the Export filename and one control's help text named manufacturers from outside the
+Profile data, and a rename that stops at the Catalogue is incomplete.
 _Avoid_: title, label, name (unqualified — collides with the Profile's stable id)
+
+**Qualified Display Name**:
+The Display Name as the app must render it: the Display Name with its qualifier in
+front. Every naming site reads this rather than the bare Display Name, and a test at
+the Profile codec seam fails when a new site reaches past it.
+_Avoid_: labelled name, prefixed name
 
 **Catalogue**:
 The full set of Profiles shipped in the app bundle.
@@ -152,6 +162,17 @@ read off reference scans. Distinct from a tuned value, which sits on top of the
 Stock's own measured curves. A Profile carrying any Approximation is an
 approximation, and the app labels it as one wherever it names the Stock.
 _Avoid_: estimate, guess, empirical
+
+**Accuracy**:
+How far a Profile's appearance has been checked against the Stock it models —
+`validated`, `modelled`, or `synthetic` for something that models no Stock at all.
+Distinct from Provenance, which records where one parameter's *value* came from: a
+Profile can be built entirely from measured values and still never have been compared
+with a photograph. A Profile that omits the field is `modelled`, so omission is
+always the modest claim. Every named Stock in the Catalogue is `modelled` today.
+An Approximation outranks it in the Qualified Display Name, because a borrowed
+measurement is the stronger caveat.
+_Avoid_: validation, confidence, quality, fidelity
 
 **Bake**:
 To run the spectral model over a Curve Set and emit a Profile.
@@ -421,11 +442,27 @@ carries the same modelled lens and both its parameters are artistic. If the
 Catalogue ever wants to distinguish lenses, `bloom` is where that belongs, and it
 should stop living in the Profile at that point. **Resolved, but note the seam.**
 
-**"Approximation" is now a term.** It was open whether Foma and Kentmere would ship
-labelled or be held back. They ship, labelled: `Provenance` has a third case and the
-picker, the film subtitle and a line under the picker all say so. The decision was
-forced by what the datasheets actually contain rather than by preference — Kentmere
-publishes no characteristic curve and no spectral sensitivity at all, so its Profiles
-borrow FP4 Plus's and HP5 Plus's shapes, while Foma's sheets turned out to publish
-more than expected, including RMS granularity and a Schwarzschild table.
-**Resolved.**
+**"Approximation" is now a term.** It was open whether the Foma and Kentmere Stocks
+would ship labelled or be held back. They ship, labelled. The decision was forced by
+what the datasheets actually contain rather than by preference — Kentmere publishes no
+characteristic curve and no spectral sensitivity at all, so its Profiles borrow FP4
+Plus's and HP5 Plus's shapes, while Foma's sheets turned out to publish more than
+expected, including RMS granularity and a Schwarzschild table. **Resolved.**
+
+This entry was wrong for a while, and the correction is worth keeping. It recorded the
+question as resolved on the strength of "the picker, the film subtitle and a line
+under the picker all say so", and the editor rebuild at `a080f4e` removed all three.
+For several commits the glossary described behaviour the code did not have, and only
+the Filmstrip carried the label. The mechanism is now one property —
+Qualified Display Name — read by every naming site, with a test that fails when a new
+site reaches past it. **A vocabulary entry that describes behaviour is a claim about
+the code, and needs something that checks it.**
+
+**Unqualified naming had to be made to mean something.** The Approximation label could
+not reach the problem it was pointed at: the flagship colour Stock carries no
+Approximation at all, so it was presented completely unqualified while thirty of its
+forty Provenance entries were artistic and the project's own accuracy audit says
+photographic accuracy is not established. Widening what counts as an Approximation
+would have conflated two different things. **Accuracy** is a separate field instead,
+and everything in the Catalogue is `modelled` until a held-out capture benchmark
+exists. **Resolved.**

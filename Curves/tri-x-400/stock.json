@@ -14,7 +14,8 @@
     "lutVariants": [],
     "outputStage": "scan"
   },
-  "displayName": "Kodak Tri-X 400",
+  "accuracy": "modelled",
+  "displayName": "Newsprint 400",
   "format": "135",
   "grain": {
     "channelCorrelation": 1,

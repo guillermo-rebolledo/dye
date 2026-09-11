@@ -109,7 +109,9 @@ struct CurveSet {
 
     /// A derivation shares spectral sources while recording process-specific
     /// sensitometry, supported rendering resolution and explicit source provenance.
-    static let derivableKeys: Set<String> = ["derivedFrom", "id", "displayName", "process",
+    /// `accuracy` is derivable because how far a Profile has been checked against its
+    /// own Stock says nothing about how far its parent was checked against a different one.
+    static let derivableKeys: Set<String> = ["derivedFrom", "id", "displayName", "accuracy", "process",
                                              "nominalISO", "trueISO", "bloom", "halation", "provenance", "characteristicSource", "colour"]
 
     init(directory: URL) throws {

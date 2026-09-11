@@ -26,7 +26,13 @@ struct EditorPickers: View {
         .sheet(isPresented: Binding(get: { selection.isFilmstripOpen }, set: { selection.isFilmstripOpen = $0 })) {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Film Stock").font(.title2.bold())
-                Text(model.profile.metadata.displayName).font(.headline)
+                Text(model.profile.metadata.qualifiedDisplayName).font(.headline)
+                // The qualifiers only mean anything if the sheet says what they are,
+                // and this is the one screen where every name is on show at once.
+                Text(Legal.qualifierExplanation)
+                    .font(.footnote)
+                    .foregroundStyle(Tokens.Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Filmstrip(catalogue: model.catalogue, thumbnails: model.thumbnails,
                           selectedStock: Binding(get: { model.selectedStock }, set: { model.selectedStock = $0 }),
                           close: { selection.isFilmstripOpen = false })
@@ -57,10 +63,10 @@ struct EditorPickers: View {
 
     private var stockPicker: some View {
         Button { selection.isFilmstripOpen = true } label: {
-            pickerLabel(model.isIdentity ? "Film Stock" : model.profile.metadata.displayName)
+            pickerLabel(model.isIdentity ? "Film Stock" : model.profile.metadata.qualifiedDisplayName)
         }
         .accessibilityLabel("Film Stock")
-        .accessibilityValue(model.profile.metadata.displayName)
+        .accessibilityValue(model.profile.metadata.spokenDisplayName)
         .accessibilityHint("Choose a film stock")
     }
 

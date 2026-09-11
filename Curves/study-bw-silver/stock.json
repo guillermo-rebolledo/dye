@@ -9,6 +9,7 @@
     "lutVariants": [],
     "outputStage": "scan"
   },
+  "accuracy": "synthetic",
   "displayName": "Silver study (synthetic)",
   "format": "135",
   "grain": {

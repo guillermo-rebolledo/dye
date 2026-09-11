@@ -11,4 +11,8 @@ Apple references informing this change:
 
 The main screen now uses a SwiftUI navigation bar for its title and Settings button. Stage selection has a visible disclosure chevron and system text styles. Toolbar labels scale with Dynamic Type; accessibility sizes use a native More menu for secondary actions; the deck grows to accommodate them. Landscape editing controls can scroll vertically.
 
-Screenshots are direct `simctl io booted screenshot` captures from the iPhone 17 Pro simulator running iOS 26.5 on this Mac. The flower image is a sample already in the simulator's photo library.
+**The captures were removed.** They were direct `simctl io booted screenshot` captures
+from the iPhone 17 Pro simulator running iOS 26.5, and the flower image in them was
+Apple's own simulator sample photograph — disclosed here at the time, but licensed for
+use within Xcode rather than for republication on a public repository. See
+[`../README.md`](../README.md) for what a replacement must be captured against.

@@ -7,6 +7,38 @@ Open `FilmApp.xcodeproj`, choose the FilmApp scheme and an iOS simulator or devi
 then run. Choose a photo using the system photo picker (no full-library permission
 is required). For a device, select your signing team in Xcode.
 
+## What the Catalogue is called, and what it claims
+
+**The Catalogue ships under names of its own.** Twelve Profiles model Stocks whose
+product names are live commercial trademarks, and shipping under those names is a
+Guideline 5.2 exposure and a real takedown risk. `Curves/` and this file keep the
+real spelling, because a Curve Set has to cite the datasheet its numbers came from.
+The application does not:
+
+| Curve Set | Display Name | Curve Set | Display Name |
+| --- | --- | --- | --- |
+| `portra-160` | Linen 160 | `provia-100f` | Meridian 100 |
+| `portra-400` | Linen 400 | `velvia-50` | Vermilion 50 |
+| `tri-x-400` | Newsprint 400 | `vision3-50d` | Daylight 50 |
+| `t-max-100` | Graphite 100 | `vision3-200t` | Tungsten 200 |
+| `cinestill-800t` | Halogen 800 | `vision3-250d` | Daylight 250 |
+| `fomapan-100` | Ash 100 | `vision3-500t` | Tungsten 500 |
+
+Profile **ids** are unchanged. They key saved Presets, Golden Image fixtures and the
+CI Step Wedge patterns, and they are never shown. `Scripts/check-archive.py` fails
+the build if a mark appears in a Display Name in the shipped Catalogue, or as a
+string literal in the app binary that is not a lower-case identifier. That is a
+guard against the obvious regression, not a proof. See `NOTICE.md`.
+
+**Every Stock says what it is.** A name in the app carries a qualifier in front of
+it. `Modelled` means built from published measurements and judgement, with no
+photographic comparison against real film. `Approx.` means more: for at least one
+parameter the manufacturer publishes no usable measurement, and a value borrowed
+from a related Stock stands in. An unqualified name would mean a Stock checked
+against held-out captures, and nothing in the Catalogue is that yet — so nothing
+ships unqualified. `FilmProfile.qualifiedDisplayName` is the single source, and a
+test fails when a new naming site reaches for the bare Display Name.
+
 Tap **Film Stock** at the top of the editor to choose a stock. The picker then
 shows the selected stock’s name. Choose **No Film Stock** in the browser to remove
 the film response; this neutral profile uses the internal ID `identity`.
@@ -116,9 +148,12 @@ RAW support uses the system decoder; synthetic DNG fixtures verify scene-linear
 exposure ratios. Real camera fixtures and on-device memory and performance validation
 are still needed: a simulator does not reproduce the memory pressure tiling exists for.
 
-Profiles now ship in the bundle and populate a picker grouped by Process. The
-[container format](docs/profile-format.md) documents schema, Provenance and lazy
-loading. The five synthetic studies are intentionally not claims of stock accuracy.
+Profiles ship in the bundle and populate one flat horizontal filmstrip, with a
+coloured process edge per cell and a legend above it — not, as this file used to
+claim, a picker grouped by Process. The [container format](docs/profile-format.md)
+documents schema, Provenance and lazy loading. The five synthetic studies are
+intentionally not claims of stock accuracy, and now sit together at the end of the
+browser rather than scattered through the middle of it.
 
 The offline macOS `ProfileBaker` converts version-controlled CSV Curve Sets into
 loadable Profiles and validates them through the renderer using numerical Step

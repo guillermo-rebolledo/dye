@@ -14,7 +14,8 @@
     "lutVariants": [],
     "outputStage": "scan"
   },
-  "displayName": "Kodak T-Max 100",
+  "accuracy": "modelled",
+  "displayName": "Graphite 100",
   "format": "135",
   "grain": {
     "channelCorrelation": 1,

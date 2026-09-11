@@ -100,6 +100,28 @@ jobs:
           xcodebuild -project FilmApp.xcodeproj -scheme FilmApp
           -sdk iphonesimulator -configuration Debug
           -derivedDataPath .build/app CODE_SIGNING_ALLOWED=NO build
+      # Debug on the simulator proves the least useful thing about a shipping app.
+      # An unsigned Release archive needs no secrets and still exercises -O codegen,
+      # Release-only warnings, the asset catalogue and the SPM resource-bundle
+      # layout — all of which were previously first exercised by the submission.
+      - name: Archive for Release
+        run: >-
+          xcodebuild -project FilmApp.xcodeproj -scheme FilmApp
+          -configuration Release -destination 'generic/platform=iOS'
+          -archivePath .build/Dye.xcarchive -derivedDataPath .build/archive
+          CODE_SIGNING_ALLOWED=NO
+          CURRENT_PROJECT_VERSION=${{ github.run_number }} archive
+      # The bundle facts an upload rejects are properties of the archive, not of any
+      # unit test. Checking them here fails the build instead of the upload.
+      - name: Inspect the archive
+        run: python3 Scripts/check-archive.py .build/Dye.xcarchive
+      # Keyed by build number so a crash from any build can be symbolicated later.
+      - uses: actions/upload-artifact@v7
+        if: success()
+        with:
+          name: dsyms-${{ github.run_number }}
+          path: .build/Dye.xcarchive/dSYMs
+          if-no-files-found: error
 
   # Preserve the existing required check, including for docs-only PRs. A failed
   # dependency must fail this check, not silently skip it and permit merging.

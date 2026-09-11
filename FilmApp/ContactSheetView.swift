@@ -86,7 +86,7 @@ struct ContactSheetView: View {
                 images[profile.id] = pixels
             }
         } catch is CancellationError { }
-        catch { self.error = error.localizedDescription }
+        catch { self.error = UserFacingError(error, doing: .rendering).message }
     }
 }
 
@@ -141,7 +141,7 @@ struct ContactSheetPaper: View {
                                               lineWidth: Tokens.Elevation.hairlineWidth))
             .overlay { if marked { SelectionMark() } }
             HStack(alignment: .firstTextBaseline, spacing: Tokens.Metrics.space4) {
-                Text(profile.metadata.displayName)
+                Text(profile.metadata.qualifiedDisplayName)
                     .typeStyle(.contactName).foregroundStyle(Tokens.Palette.textSecondary)
                     .lineLimit(1).truncationMode(.tail)
                 Spacer(minLength: 0)
@@ -153,7 +153,7 @@ struct ContactSheetPaper: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(profile.metadata.displayName)
+        .accessibilityLabel(profile.metadata.spokenDisplayName)
         .accessibilityValue(images[profile.id] == nil ? "developing" : "")
         .accessibilityAddTraits(marked ? .isSelected : [])
     }
@@ -162,9 +162,10 @@ struct ContactSheetPaper: View {
     /// size is read off a render rather than asserted, so it cannot go stale.
     private var legend: some View {
         let processes = Set(profiles.filter { $0.id != Profile.identity.id }.map(\.metadata.process)).count
+        // Informational, not disabled: the disabled role sits at 2.6:1 on the deck.
         return Text("\(profiles.count) stocks · \(processes) processes")
             .typeStyle(.contactFooter)
-            .foregroundStyle(Tokens.Palette.textDisabled)
+            .foregroundStyle(Tokens.Palette.textTertiary)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
     }
 }

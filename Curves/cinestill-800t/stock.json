@@ -1,6 +1,7 @@
 {
   "derivedFrom": "vision3-500t",
-  "displayName": "Cinestill 800T",
+  "accuracy": "modelled",
+  "displayName": "Halogen 800",
   "halation": {
     "radiusMicrons": [
       420,

@@ -12,6 +12,14 @@ struct Filmstrip: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var profiles: [Profile] { [.identity] + catalogue }
+
+    /// Where the synthetic studies start, so the strip can say so before them. The
+    /// Catalogue sorts them last; `No Film Stock` is synthetic too but leads the
+    /// strip, and it is not one of them.
+    private var firstStudy: Int? {
+        profiles.firstIndex { $0.id != "identity" && $0.metadata.accuracyClaim == .synthetic }
+    }
+
     var body: some View {
         VStack(spacing: Tokens.Filmstrip.footerGap) {
             strip
@@ -54,6 +62,7 @@ struct Filmstrip: View {
                 // eager stack, of which about four are ever visible.
                 LazyHStack(alignment: .top, spacing: Tokens.Metrics.space10) {
                     ForEach(Array(profiles.enumerated()), id: \.element.id) { index, profile in
+                        if index == firstStudy { studiesHeading }
                         cell(profile, index: index).id(profile.id)
 
                     }
@@ -78,9 +87,28 @@ struct Filmstrip: View {
         .overlay(alignment: .bottom) { sprockets.padding(.bottom, Tokens.Filmstrip.rebateInset) }
     }
 
+    /// The break in the strip where the Catalogue stops modelling films. It is a
+    /// heading rather than a cell: nothing to tap, and a rule on its leading edge so
+    /// that scrolling past it reads as leaving one section for another.
+    private var studiesHeading: some View {
+        HStack(spacing: Tokens.Metrics.space10) {
+            Rectangle().fill(Tokens.Sheet.rowSeparator)
+                .frame(width: Tokens.Filmstrip.studiesRule)
+            VStack(alignment: .leading, spacing: Tokens.Metrics.space5) {
+                Text("Studies").typeStyle(.sectionLabel)
+                    .foregroundStyle(Tokens.Palette.textSecondary)
+                Text(Legal.studiesExplanation).typeStyle(.filmQualifier)
+                    .foregroundStyle(Tokens.Palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(width: Tokens.Filmstrip.studiesWidth, height: Tokens.Filmstrip.cellHeight, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Studies. " + Legal.studiesExplanation)
+    }
+
     private func cell(_ profile: Profile, index: Int) -> some View {
         let selected = profile.id == selectedStock
-        let approximation = profile.metadata.isApproximation ? ", approximation" : ""
         return Button {
             guard !selected else { return }
             Haptics.stockChange()
@@ -102,17 +130,28 @@ struct Filmstrip: View {
                                 .allowsHitTesting(false)
                         }
                     }
-                Text((profile.metadata.isApproximation ? "Approx. · " : "") + profile.metadata.displayName)
-                    .typeStyle(.filmName)
-                    .foregroundStyle(selected ? Tokens.Palette.accent : Tokens.Palette.textPrimary)
-                    .lineLimit(1).truncationMode(.tail)
+                // Two lines rather than one: at 96 pt a cell fits about sixteen
+                // characters, and an inline qualifier would truncate away the name
+                // it is qualifying. The qualifier sits under it instead, quieter,
+                // where a strip of them reads as a column rather than as noise.
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(profile.metadata.displayName) // bare-display-name: qualified by the line below
+                        .typeStyle(.filmName)
+                        .foregroundStyle(selected ? Tokens.Palette.accent : Tokens.Palette.textPrimary)
+                        .lineLimit(1).truncationMode(.tail)
+                    Text(profile.metadata.nameQualifier ?? " ")
+                        .typeStyle(.filmQualifier)
+                        .foregroundStyle(Tokens.Palette.textTertiary)
+                        .lineLimit(1)
+                        .accessibilityHidden(true)
+                }
             }
             .frame(width: Tokens.Filmstrip.cellWidth)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .animation(Tokens.Motion.ease(Tokens.Motion.tick, reduceMotion: reduceMotion), value: selectedStock)
-        .accessibilityLabel(profile.metadata.displayName + approximation)
+        .accessibilityLabel(profile.metadata.spokenDisplayName)
         .accessibilityValue(thumbnails[profile.id] == nil ? "developing" : "")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }

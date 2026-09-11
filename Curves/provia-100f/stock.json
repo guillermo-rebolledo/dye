@@ -32,7 +32,8 @@
     ],
     "outputStage": "none"
   },
-  "displayName": "Fujifilm Provia 100F",
+  "accuracy": "modelled",
+  "displayName": "Meridian 100",
   "format": "135",
   "grain": {
     "channelCorrelation": 0.15,

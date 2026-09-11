@@ -41,7 +41,7 @@ extension Renderer {
                            in directory: URL = ExportedFile.temporaryRoot) async throws -> ExportedFile {
         let data = try await export(image: image, profile: profile, settings: settings,
                                     format: format, options: options, progress: progress)
-        return try Self.store(data, stem: profile.id, extension: format.fileExtension, in: directory)
+        return try Self.store(data, stem: profile.metadata.filenameStem, extension: format.fileExtension, in: directory)
     }
 
     /// The Exported LUT, owned the same way. It is a lattice written as text rather
@@ -49,7 +49,7 @@ extension Renderer {
     public func exportedLUTFile(profile: Profile, settings: RenderSettings = .init(), size: Int = 33,
                                 in directory: URL = ExportedFile.temporaryRoot) async throws -> ExportedFile {
         let text = try await exportedLUT(profile: profile, settings: settings, size: size)
-        return try Self.store(Data(text.utf8), stem: profile.id, extension: "cube", in: directory)
+        return try Self.store(Data(text.utf8), stem: profile.metadata.filenameStem, extension: "cube", in: directory)
     }
 
     /// Cancellation that lands after the bytes are on disk still has to clean up, so
