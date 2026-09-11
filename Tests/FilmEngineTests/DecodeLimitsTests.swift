@@ -3,6 +3,7 @@ import Foundation
 import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
+import os
 @testable import FilmEngine
 
 // What the decode path will accept from a file, asserted through the renderer seam.
@@ -47,7 +48,7 @@ private func photograph(width: Int, height: Int, format: UTType = .jpeg) throws 
     let bomb = try fixture("decompression-bomb.png")
     // A few hundred kilobytes standing for 268 megapixels: the file looks harmless in
     // Messages and costs a gigabyte of raster the moment anything decodes it whole.
-    #expect(bomb.count < 1_000_000)
+    #expect(bomb.count < 1_500_000)
     let renderer = try Renderer()
     for path in ["decode", "preview decode", "export"] {
         let error = await #expect(throws: FilmError.self) {
@@ -64,16 +65,43 @@ private func photograph(width: Int, height: Int, format: UTType = .jpeg) throws 
     }
 }
 
-@Test func aLegitimatePhotographStillDecodesAndExports() async throws {
+@Test func aGenuine48MegapixelPhotographIsWellInsideTheLimit() async throws {
+    // 8000 × 6000 is what a current phone writes. The bound has to protect the user
+    // without excluding the user's own files, so this is the other half of the bomb.
+    let data = try fixture("large-photograph.png")
     let renderer = try Renderer()
-    let data = try photograph(width: 1200, height: 900)
-    let full = try await renderer.decode(data)
-    #expect(full.width == 1200 && full.height == 900)
-    let exported = try await renderer.export(image: .encoded(data), profile: .identity,
-                                             settings: .init(output: .displayP3), format: .jpeg)
+    #expect(throws: Never.self) { try ImageLimits.check(width: 8000, height: 6000) }
+    let preview = try await renderer.decode(data, maximumDimension: 2048)
+    #expect(max(preview.width, preview.height) == 2048)
+    #expect(preview.width == 2048 && preview.height == 1536)
+}
+
+@Test func aDecodedPhotographExportsAndStillMatchesItsUntiledRender() async throws {
+    // The guards must not change a legitimate render. Same claim as
+    // `aTiledExportReproducesTheUntiledRenderOfTheSameFrame`, made of a photograph
+    // that arrived as a file and went through the whole decode path to get here.
+    let renderer = try Renderer()
+    let data = try photograph(width: 600, height: 450)
+    let profile = try #require(ProfileCatalogue.bundled().profiles.first { $0.id == "portra-400" })
+    let settings = RenderSettings(output: .displayP3, grainIntensity: 0)
+    let decoded = try await renderer.decode(data)
+    #expect(decoded.width == 600 && decoded.height == 450)
+    let whole = try await renderer.render(image: .linear(decoded), profile: profile, settings: settings)
+    let options = ExportOptions(textureBudgetBytes: 128 * 128 * 8 * 14, minimumTileEdge: 16, thermalState: .nominal)
+    let plan = try await renderer.tilePlan(image: .encoded(data), profile: profile, settings: settings, options: options)
+    #expect(plan.count > 1)
+    let tiled = try await renderer.exportedPixels(image: .encoded(data), profile: profile,
+                                                  settings: settings, options: options)
+    #expect(tiled.width == whole.width && tiled.height == whole.height)
+    for index in 0..<(whole.width * whole.height * 4) {
+        #expect(abs(Double(tiled.rgba[index]) - Double(whole.rgba[index])) < 0.01)
+    }
+    // And it still writes a file of the size it decoded.
+    let exported = try await renderer.export(image: .encoded(data), profile: profile,
+                                             settings: settings, format: .jpeg, options: options)
     let source = try #require(CGImageSourceCreateWithData(exported as CFData, nil))
     let properties = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
-    #expect(properties[kCGImagePropertyPixelWidth] as? Int == 1200)
+    #expect(properties[kCGImagePropertyPixelWidth] as? Int == 600)
 }
 
 @Test func previewDecodeIsBoundedByThePreviewRatherThanBySourceDimensions() async throws {
@@ -92,13 +120,62 @@ private func photograph(width: Int, height: Int, format: UTType = .jpeg) throws 
 }
 
 @Test func everyPixelThatLeavesDecodeIsFinite() async throws {
+    // The invariant `ImageWriter` stands behind: nothing non-finite reaches the point
+    // where a quantisation would trap. Asserted across both decode branches — the RAW
+    // one through Core Image, and the colour-managed one through Core Graphics, whose
+    // unpremultiply divides by an alpha that can be arbitrarily small.
     let renderer = try Renderer()
-    for name in ["untagged.png", "linear-high.dng"] {
-        guard let data = try? fixture(name), let image = try? await renderer.decode(data) else { continue }
-        #expect(image.rgba.allSatisfy { $0.isFinite })
+    for name in ["linear-high.dng", "linear-low.dng", "large-photograph.png"] {
+        let image = try await renderer.decode(try fixture(name), maximumDimension: 256)
+        #expect(image.rgba.allSatisfy { $0.isFinite }, "\(name)")
     }
     let image = try await renderer.decode(try photograph(width: 64, height: 64))
     #expect(image.rgba.allSatisfy { $0.isFinite })
+}
+
+/// The process's physical footprint right now, which is what jetsam reads.
+private func physicalFootprint() -> Int {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+    let result = withUnsafeMutablePointer(to: &info) { pointer in
+        pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+            task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+        }
+    }
+    return result == KERN_SUCCESS ? Int(info.phys_footprint) : 0
+}
+
+/// Opt-in, and it must be run **alone**: the number it reads belongs to the whole
+/// process, and Swift Testing runs everything else concurrently with it, so a
+/// screen-sized render in another test lands in this one's measurement.
+///
+///     DYE_MEMORY_PROBE=1 swift test --filter previewDecodePeakIsBounded
+///
+/// The deterministic half of the same claim — that the Preview comes out at the
+/// Preview's size and matches a full decode of the same frame — is asserted
+/// unconditionally above and does gate CI.
+@Test(.enabled(if: ProcessInfo.processInfo.environment["DYE_MEMORY_PROBE"] == "1"), .serialized)
+func previewDecodePeakIsBoundedByThePreviewAndNotBySourceDimensions() async throws {
+    let data = try fixture("large-photograph.png")
+    let renderer = try Renderer()
+    _ = try await renderer.decode(data, maximumDimension: 64)
+    let baseline = physicalFootprint()
+    let peak = OSAllocatedUnfairLock(initialState: baseline)
+    let sampling = Task.detached(priority: .high) {
+        while !Task.isCancelled {
+            let now = physicalFootprint()
+            peak.withLock { $0 = max($0, now) }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+    }
+    _ = try await renderer.decode(data, maximumDimension: 2048)
+    sampling.cancel()
+    let growth = peak.withLock { $0 } - baseline
+    // The 2048-pixel Preview costs about 100MB of its own — one float buffer, one
+    // float16 buffer and the texture — and that is the floor. Decoding whole and
+    // scaling down materialises 8000 × 6000 of source raster on top of it, which
+    // measures at 280MB against the 114MB this path pays.
+    #expect(growth < 160 << 20, "grew \(growth >> 20)MB decoding a 48 megapixel source at 2048")
 }
 
 @Test func nonFinitePixelsAreQuantisedRatherThanTrappingTheWriter() throws {

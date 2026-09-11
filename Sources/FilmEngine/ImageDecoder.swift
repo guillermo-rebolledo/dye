@@ -22,8 +22,11 @@ public enum ImageLimits {
     /// Checked against the file's header before anything is allocated for pixels,
     /// which is the only place the check protects anyone.
     static func check(width: Int, height: Int) throws {
-        guard width > 0, height > 0, width <= maximumEdge, height <= maximumEdge else {
-            throw FilmError.invalid("Photo exceeds the supported texture dimensions")
+        guard width > 0, height > 0 else { throw FilmError.invalid("Photo has no usable dimensions") }
+        // Both messages name the size and the limit, because a photograph vanishing
+        // with nothing said about why is the thing being fixed here.
+        guard width <= maximumEdge, height <= maximumEdge else {
+            throw FilmError.invalid("This photo is too large: \(width) × \(height), and no edge may exceed \(maximumEdge) pixels")
         }
         guard width * height <= maximumPixels else {
             let megapixels = Int((Double(width * height) / 1e6).rounded())
@@ -57,10 +60,14 @@ struct ImageDecoder {
         // Bound the *source* before decoding it. ImageIO parses a header without
         // decoding a pixel, so an oversized frame is refused for the cost of reading
         // a few bytes rather than for the cost of its raster.
-        if let sourceWidth = header?[kCGImagePropertyPixelWidth] as? Int,
-           let sourceHeight = header?[kCGImagePropertyPixelHeight] as? Int {
-            try ImageLimits.check(width: sourceWidth, height: sourceHeight)
+        // A file whose header does not state its size cannot be bounded before it is
+        // decoded, so it is refused rather than decoded and bounded afterwards — which
+        // is the ordering this check exists to remove.
+        guard let sourceWidth = header?[kCGImagePropertyPixelWidth] as? Int,
+              let sourceHeight = header?[kCGImagePropertyPixelHeight] as? Int else {
+            throw FilmError.invalid("This photo does not declare its size")
         }
+        try ImageLimits.check(width: sourceWidth, height: sourceHeight)
         if UTTypeConformsToRaw(type) {
             guard let raw = CIRAWFilter(imageData: data, identifierHint: type) else {
                 throw FilmError.invalid("The system RAW decoder does not support this photo")
@@ -157,7 +164,7 @@ struct ImageDecoder {
         // out-of-range magnitude to infinity rather than trapping, and the
         // unpremultiply above divides by an alpha that can be arbitrarily small, so
         // this is where "pixels are finite" is established rather than assumed.
-        let half = pixels.map(Self.finite)
+        let half = pixels.map(Self.clampedHalf)
         half.withUnsafeBytes {
             texture.replace(region: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0,
                             withBytes: $0.baseAddress!, bytesPerRow: width * 8)
@@ -182,7 +189,7 @@ struct ImageDecoder {
     }
 
     /// NaN to zero, and a magnitude past float16 range to the largest it can hold.
-    private static func finite(_ value: Float) -> Float16 {
+    private static func clampedHalf(_ value: Float) -> Float16 {
         guard value.isFinite else { return value.isNaN ? 0 : (value > 0 ? .greatestFiniteMagnitude : -.greatestFiniteMagnitude) }
         return Float16(min(max(value, -Float(Float16.greatestFiniteMagnitude)), Float(Float16.greatestFiniteMagnitude)))
     }

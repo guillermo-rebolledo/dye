@@ -116,13 +116,13 @@ private func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath:
     // filename does not rest on the Catalogue's contents staying well-behaved.
     for hostile in ["../../Library/Preferences/com.apple.something", "/etc/passwd", "..", ".", "",
                     "a\u{0}b", "réponse", String(repeating: "x", count: 400)] {
-        let name = ExportStore.fileName(hostile, extension: "heic")
+        let name = ExportedFile.fileName(hostile, extension: "heic")
         #expect(!name.contains("/") && !name.contains(".."))
         #expect(name.hasSuffix(".heic"))
         let directory = URL(fileURLWithPath: "/tmp/export")
         #expect(directory.appendingPathComponent(name).deletingLastPathComponent().path == directory.path)
     }
-    #expect(ExportStore.fileName("portra-400", extension: "heic") == "portra-400.heic")
+    #expect(ExportedFile.fileName("portra-400", extension: "heic") == "portra-400.heic")
 }
 
 @Test func anExportedFileCarriesNoLocationAndNoCameraIdentification() async throws {

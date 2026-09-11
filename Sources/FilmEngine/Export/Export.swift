@@ -50,7 +50,7 @@ extension Renderer {
     private static func store(_ data: Data, stem: String, extension fileExtension: String,
                               in directory: URL) throws -> ExportedFile {
         try Task.checkCancellation()
-        let file = try ExportStore.write(data, named: ExportStore.fileName(stem, extension: fileExtension), in: directory)
+        let file = try ExportedFile.write(data, named: ExportedFile.fileName(stem, extension: fileExtension), in: directory)
         if Task.isCancelled {
             file.discard()
             throw CancellationError()

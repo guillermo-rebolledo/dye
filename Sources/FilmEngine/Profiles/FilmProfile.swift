@@ -306,6 +306,16 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         return names
     }
 
+    /// The longest a Profile id may be, which is also how far the Export truncates a
+    /// filename built from one.
+    static let maximumIDLength = 64
+
+    /// What a Profile id may contain. The Export's filename sanitiser reads the same
+    /// rule, so the validator and the sanitiser cannot drift apart.
+    static func isSlugCharacter(_ character: Character) -> Bool {
+        character.isASCII && (character.isLetter || character.isNumber || character == "-" || character == "_")
+    }
+
     public func validate() throws {
         func require(_ condition: Bool, _ message: String) throws {
             if !condition { throw FilmError.invalid("Profile \(id): \(message)") }
@@ -318,7 +328,7 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         // accepts `../` without complaint. Constraining it here rather than at the
         // exporter is what keeps filename safety from resting on the Catalogue's
         // contents staying well-behaved.
-        try require(id.count <= 64 && id.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") },
+        try require(id.count <= Self.maximumIDLength && id.allSatisfy(Self.isSlugCharacter),
                     "Profile id must be a short ASCII slug")
         try require([nominalISO, trueISO, balance].allSatisfy { $0.isFinite && $0 > 0 }, "invalid Stock speed or Stock Balance")
         try require((2...129).contains(colour.lutSize), "Colour Cube size must be 2...129")

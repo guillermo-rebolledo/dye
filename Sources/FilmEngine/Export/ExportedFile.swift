@@ -33,7 +33,10 @@ public final class ExportedFile: @unchecked Sendable {
         ExportedFile(url: url, byteCount: byteCount, ownsFile: false)
     }
 
-    /// Removes the file and the directory holding it. Idempotent.
+    /// Removes the file and the directory holding it. Idempotent, and synchronous
+    /// because it is one `unlink` of one file the app wrote moments ago: cheap enough
+    /// to run wherever the last reference happens to be released, and a deletion that
+    /// might not have happened yet is worse than a deletion that blocks briefly.
     public func discard() {
         lock.lock()
         let already = isDiscarded
@@ -57,21 +60,20 @@ public final class ExportedFile: @unchecked Sendable {
     /// is one directory listing.
     ///
     /// Only entries whose names are the pattern the app itself generates — a bare
-    /// UUID — are removed. A sweep that guessed more widely would be destructive
-    /// beyond its own scope, and the temporary directory is not exclusively ours.
+    /// UUID naming a *directory* — are removed. A sweep that guessed more widely
+    /// would be destructive beyond its own scope, and while the temporary directory
+    /// is inside the app's own sandbox, the app is not the only thing that writes
+    /// there: the system frameworks it uses do too.
     public static func sweepLeftovers(in directory: URL = ExportedFile.temporaryRoot) {
         let manager = FileManager.default
-        guard let entries = try? manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return }
+        let keys: [URLResourceKey] = [.isDirectoryKey]
+        guard let entries = try? manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys) else { return }
         for entry in entries where UUID(uuidString: entry.lastPathComponent) != nil {
+            guard (try? entry.resourceValues(forKeys: Set(keys)))?.isDirectory == true else { continue }
             try? manager.removeItem(at: entry)
         }
     }
-}
 
-extension ExportedFile: Equatable {}
-
-/// Writes an Export to a file the engine owns.
-enum ExportStore {
     static func write(_ data: Data, named name: String, in root: URL) throws -> ExportedFile {
         let manager = FileManager.default
         let directory = root.appendingPathComponent(UUID().uuidString)
@@ -97,13 +99,12 @@ enum ExportStore {
     /// already a lowercase slug and `FilmProfile.validate()` now requires one, but a
     /// filename must not depend on that staying true — the moment a Profile can be
     /// imported, an id is attacker-chosen and `appendingPathComponent` accepts `../`
-    /// without complaint.
+    /// without complaint. The rule is the validator's own, so the two cannot drift.
     static func fileName(_ stem: String, extension fileExtension: String) -> String {
-        let allowed = stem.map { character -> Character in
-            character.isASCII && (character.isLetter || character.isNumber || character == "-" || character == "_")
-                ? character : "-"
-        }
-        let slug = String(allowed.prefix(64))
+        let allowed = stem.map { FilmProfile.isSlugCharacter($0) ? $0 : "-" }
+        let slug = String(allowed.prefix(FilmProfile.maximumIDLength))
         return "\(slug.isEmpty ? "export" : slug).\(fileExtension)"
     }
 }
+
+extension ExportedFile: Equatable {}
