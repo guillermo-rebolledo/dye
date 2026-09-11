@@ -43,6 +43,8 @@ Profile id.
 - **Accuracy** is a new Profile field, distinct from **Provenance**. Every named
   Stock is `modelled` — built from published measurements, never compared with a
   photograph of the film — and says so. Nothing claims `validated`.
+- The five synthetic studies sit together at the end of the Film Stock browser,
+  behind a heading that says what they are: calibration patterns, not films.
 
 ### Bundle and release engineering
 
@@ -68,6 +70,9 @@ Profile id.
   happen, with the engine's own words behind a Details disclosure.
 - Saved Presets open in an explicit container with a versioned schema and a
   migration plan. A store that cannot be opened no longer crashes the app on launch.
+- An Export no longer leaves a full-resolution copy of the photograph in the
+  temporary directory. One scratch directory holds the current Export and nothing
+  else, and it is emptied at launch.
 
 ### Accessibility
 

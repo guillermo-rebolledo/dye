@@ -12,6 +12,14 @@ struct Filmstrip: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var profiles: [Profile] { [.identity] + catalogue }
+
+    /// Where the synthetic studies start, so the strip can say so before them. The
+    /// Catalogue sorts them last; `No Film Stock` is synthetic too but leads the
+    /// strip, and it is not one of them.
+    private var firstStudy: Int? {
+        profiles.firstIndex { $0.id != "identity" && $0.metadata.accuracyClaim == .synthetic }
+    }
+
     var body: some View {
         VStack(spacing: Tokens.Filmstrip.footerGap) {
             strip
@@ -51,6 +59,7 @@ struct Filmstrip: View {
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: Tokens.Metrics.space10) {
                     ForEach(Array(profiles.enumerated()), id: \.element.id) { index, profile in
+                        if index == firstStudy { studiesHeading }
                         cell(profile, index: index).id(profile.id)
 
                     }
@@ -73,6 +82,26 @@ struct Filmstrip: View {
         .background(Tokens.Filmstrip.base)
         .overlay(alignment: .top) { sprockets.padding(.top, Tokens.Filmstrip.rebateInset) }
         .overlay(alignment: .bottom) { sprockets.padding(.bottom, Tokens.Filmstrip.rebateInset) }
+    }
+
+    /// The break in the strip where the Catalogue stops modelling films. It is a
+    /// heading rather than a cell: nothing to tap, and a rule on its leading edge so
+    /// that scrolling past it reads as leaving one section for another.
+    private var studiesHeading: some View {
+        HStack(spacing: Tokens.Metrics.space10) {
+            Rectangle().fill(Tokens.Sheet.rowSeparator)
+                .frame(width: Tokens.Filmstrip.studiesRule)
+            VStack(alignment: .leading, spacing: Tokens.Metrics.space5) {
+                Text("Studies").typeStyle(.sectionLabel)
+                    .foregroundStyle(Tokens.Palette.textSecondary)
+                Text(Legal.studiesExplanation).typeStyle(.filmQualifier)
+                    .foregroundStyle(Tokens.Palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(width: Tokens.Filmstrip.studiesWidth, height: Tokens.Filmstrip.cellHeight, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Studies. " + Legal.studiesExplanation)
     }
 
     private func cell(_ profile: Profile, index: Int) -> some View {

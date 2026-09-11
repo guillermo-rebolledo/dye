@@ -26,6 +26,15 @@ enum Legal {
         no film at all, so they are not marked.
         """
 
+    /// What the five synthetic studies at the end of the Catalogue are. Shown in the
+    /// Film Stock browser at the point where they begin, because a name ending in
+    /// "study" is not enough to tell a photographer that the entries after it model
+    /// no film that was ever sold.
+    static let studiesExplanation = """
+        Calibration patterns, not films. They model no stock, and exist so the \
+        pipeline can be checked against a known answer.
+        """
+
     /// The non-affiliation statement. The Catalogue ships under names of its own, so
     /// no manufacturer's mark appears in the app — but the store description names
     /// the films that inspired the looks, and this is the paragraph that qualifies it.

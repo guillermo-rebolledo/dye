@@ -689,6 +689,10 @@ extension Tokens {
         static let footerLineHeight: CGFloat = 12
         static let cellWidth: CGFloat = 96
         static let cellHeight: CGFloat = 60
+        /// The `Studies` heading between the last film and the first study. Wider
+        /// than a cell because it carries a sentence rather than a name.
+        static let studiesWidth: CGFloat = 150
+        static let studiesRule: CGFloat = 1
         static let processEdge: CGFloat = 3
         static let selectionRing: CGFloat = 1.5
         static let selectionHalo: CGFloat = 4

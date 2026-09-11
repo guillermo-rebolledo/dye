@@ -6,6 +6,12 @@ import FilmEngine
 struct FilmApp: App {
     private let store = PresetStore.open()
 
+    init() {
+        // Whatever the last session left in the scratch directory is a full-resolution
+        // copy of somebody's photograph, and this session has no use for it.
+        ExportScratch.clear()
+    }
+
     var body: some Scene {
         WindowGroup {
             EditorView()

@@ -51,7 +51,7 @@ finding below, re-check the code rather than assuming one of the three is right.
 
 ## Implementation status — 2026-09-10, MEM-274
 
-The **engineering subset** of this audit has been implemented. Fifty-four checklist
+The **engineering subset** of this audit has been implemented. Fifty-five checklist
 items below are ticked. What follows is what changed, what the audit got wrong, and
 what is deliberately still open.
 
@@ -112,12 +112,16 @@ asserts that. Renaming them is a separate, larger change and is not needed for v
   hardcoded in one place so that changing them is one edit.
 - **The non-affiliation disclaimer reaches the app only.** The store description and
   the support page need the same paragraph, and both are owner scope.
-- **The studies are ordered, not explained.** REL-23 offered "hide them" or "give
-  them a home with a one-line explanation"; this pass did the ordering half. They
-  still ship, unexplained, at the end of the browser.
-- **REL-29, REL-30, REL-41.** Export peak memory, the temporary-directory leak and
-  the Catalogue's 210 MB. Specified with the performance and security work, per this
-  audit's own *Out of scope*.
+- **REL-29 and REL-41.** Export peak memory and the Catalogue's 210 MB. Specified
+  with the performance and security work, per this audit's own *Out of scope*.
+  **REL-30 was pulled back in**: `security.md` SEC-03 frames it as a full-resolution
+  copy of the user's photograph left on disk forever, which is a privacy defect
+  rather than a storage one, and the fix is one file. `FilmApp/ExportScratch.swift`
+  keeps at most the current Export and empties the directory at launch.
+- **REL-37's `.xcconfig`.** `DEVELOPMENT_TEAM` is still written into both build
+  configurations. Moving it is a developer-convenience refactor of a value that is
+  already right, and the archive path is the one thing in this change that has been
+  verified end to end; destabilising it to tidy a build setting is a bad trade.
 - **REL-33's device matrix.** Nothing in it can be closed by reasoning. It is now the
   manual matrix in `docs/release.md`, worked before each submission.
 - **REL-26's string catalogue, REL-24's light appearance, REL-19's Provenance row,
@@ -2844,7 +2848,7 @@ runtime fixes; then the listing. Each item names the finding it closes.
 - [ ] Stop holding the assembled frame and the encoded `Data` simultaneously · REL-29
 - [ ] Evict thumbnail caches before starting an Export · REL-29
 - [ ] Measure a 48 MP Export in all three formats on an A12-class device with Instruments · REL-29
-- [ ] Sweep `tmp/` on launch and delete the previous Export when a new one starts · REL-30
+- [x] Sweep `tmp/` on launch and delete the previous Export when a new one starts · REL-30
 - [ ] Precompile the Metal library into a `.metallib` instead of `makeLibrary(source:)` · REL-33
 - [ ] Add a timeout, progress and a Cancel to the iCloud photo-download path · REL-33
 - [ ] Wrap the Export in `beginBackgroundTask` and handle expiry · REL-33
@@ -2863,7 +2867,7 @@ runtime fixes; then the listing. Each item names the finding it closes.
 - [x] Decide whether `spectral.contrastFilters` alone should qualify a whole Profile, and update `CONTEXT.md` if not · REL-18
 - [ ] Surface per-parameter Provenance in the Film Stock browser · REL-19
 - [x] Add an explicit Catalogue sort order that groups the five synthetic studies at the end · REL-23
-- [ ] Give the studies a labelled section and a one-line explanation in the browser · REL-23
+- [x] Give the studies a labelled section and a one-line explanation in the browser · REL-23
 - [x] Fix `"Stock"` → `"Film Stock"` at `Parameter.swift:303`, `:305`, `:734` · REL-27
 - [ ] Apply the Q7 spelling decision to the user-facing strings · REL-27
 - [x] Fix `Cinestill` → `CineStill` if the brand names survive Q1 · REL-27

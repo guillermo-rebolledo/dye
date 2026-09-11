@@ -485,16 +485,12 @@ import FilmEngine
     nonisolated private static func write(_ data: Data, named name: String) async throws -> URL {
         try Task.checkCancellation()
         let url = try await Task.detached(priority: .utility) {
-            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let url = directory.appendingPathComponent(name)
+            let url = try ExportScratch.prepare(for: name)
             try data.write(to: url, options: .atomic)
             return url
         }.value
         if Task.isCancelled {
-            try? await Task.detached(priority: .utility) {
-                try FileManager.default.removeItem(at: url.deletingLastPathComponent())
-            }.value
+            await Task.detached(priority: .utility) { ExportScratch.clear() }.value
             throw CancellationError()
         }
         return url
