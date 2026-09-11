@@ -39,38 +39,57 @@ final class ImageWriter {
     }
 
     /// Copies one Tile's core into the frame. `rgba` is the core alone, row-major.
+    ///
+    /// The branch on the container's depth is outside the loop rather than inside it,
+    /// each row is written through a typed pointer rather than a `storeBytes` per
+    /// component, and the row offsets are advanced rather than multiplied out per
+    /// component. A 48MP frame is 195 million of these, on the renderer actor, between
+    /// one Tile and the next — see the Preview it is keeping waiting.
+    ///
+    /// The arithmetic itself stays in `Double`, which looks like the wide type on a
+    /// path whose source is `Float16` and whose destination is sixteen bits. It is not
+    /// spare precision: `value * 65535` needs 38 bits of mantissa and `Float` has 24,
+    /// so quantising a sixteen-bit TIFF in `Float` moves code values by one.
+    /// `theWrittenImageIsByteIdenticalForEveryFormat` is where that was found.
     func write(_ rgba: UnsafeBufferPointer<Float16>, x: Int, y: Int, width tileWidth: Int, height tileHeight: Int) {
         precondition(rgba.count == tileWidth * tileHeight * 4)
         precondition(x >= 0 && y >= 0 && x + tileWidth <= width && y + tileHeight <= height)
         let maximum = Double((1 << format.bitsPerComponent) - 1)
-        let eightBit = format.bitsPerComponent == 8
         pixels.withUnsafeMutableBytes { raw in
-            for row in 0..<tileHeight {
-                let source = row * tileWidth * 4
-                let destination = ((y + row) * width + x) * 4
-                for column in 0..<tileWidth {
-                    // Straight alpha in, premultiplied out, because Core Graphics has
-                    // no straight-alpha 16-bit format. Alpha itself is not multiplied.
-                    let alpha = Self.clamped(Double(rgba[source + column * 4 + 3]))
-                    for channel in 0..<4 {
-                        let value = Double(rgba[source + column * 4 + channel]) * (channel == 3 ? 1 : alpha)
-                        let quantised = (Self.clamped(value) * maximum).rounded()
-                        let index = destination + column * 4 + channel
-                        if eightBit {
-                            raw.storeBytes(of: UInt8(quantised), toByteOffset: index, as: UInt8.self)
-                        } else {
-                            raw.storeBytes(of: UInt16(quantised).littleEndian, toByteOffset: index * 2, as: UInt16.self)
-                        }
-                    }
-                }
+            if format.bitsPerComponent == 8 {
+                let destination = raw.baseAddress!.assumingMemoryBound(to: UInt8.self)
+                Self.quantise(rgba, into: destination, maximum: maximum, x: x, y: y,
+                              frameWidth: width, tileWidth: tileWidth, tileHeight: tileHeight) { UInt8($0) }
+            } else {
+                let destination = raw.baseAddress!.assumingMemoryBound(to: UInt16.self)
+                Self.quantise(rgba, into: destination, maximum: maximum, x: x, y: y,
+                              frameWidth: width, tileWidth: tileWidth, tileHeight: tileHeight) { UInt16($0).littleEndian }
             }
         }
     }
 
-    /// Swift's `min`/`max` are not NaN-clamping — `max(.nan, 0)` is `.nan` — and
-    /// `UInt8(Double.nan)` is a hard trap rather than a throwable error, so it could
-    /// not be caught by the Export's own `catch`. Decode establishes that pixels are
-    /// finite; this is the last line of defence behind that, and it costs one branch.
+    /// Straight alpha in, premultiplied out, because Core Graphics has no
+    /// straight-alpha sixteen-bit format. Alpha itself is not multiplied.
+    private static func quantise<Component: FixedWidthInteger>(
+        _ rgba: UnsafeBufferPointer<Float16>, into destination: UnsafeMutablePointer<Component>,
+        maximum: Double, x: Int, y: Int, frameWidth: Int, tileWidth: Int, tileHeight: Int,
+        convert: (Double) -> Component
+    ) {
+        for row in 0..<tileHeight {
+            var source = row * tileWidth * 4
+            var index = ((y + row) * frameWidth + x) * 4
+            for _ in 0..<tileWidth {
+                let alpha = clamped(Double(rgba[source + 3]))
+                for channel in 0..<4 {
+                    let value = Double(rgba[source + channel]) * (channel == 3 ? 1 : alpha)
+                    destination[index + channel] = convert((clamped(value) * maximum).rounded())
+                }
+                source += 4
+                index += 4
+            }
+        }
+    }
+
     private static func clamped(_ value: Double) -> Double {
         guard value.isFinite else { return value > 0 ? 1 : 0 }
         return min(max(value, 0), 1)

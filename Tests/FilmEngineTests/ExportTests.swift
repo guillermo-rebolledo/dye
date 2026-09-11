@@ -37,7 +37,7 @@ private func flat(size: Int, value: Float16) throws -> LinearImage {
 /// out as several Tiles across, which is the only reason these tests are tiled at all.
 /// The Apron still comes from the Passes; what the core ends up as is what is left.
 private func tiling(paddedEdge: Int = 256, apronFraction: Double = 0.6) -> ExportOptions {
-    ExportOptions(textureBudgetBytes: paddedEdge * paddedEdge * 8 * 14, minimumTileEdge: 16,
+    ExportOptions(textureBudgetBytes: paddedEdge * paddedEdge * 8 * TilePlan.tileTextureCount, minimumTileEdge: 16,
                   thermalState: .nominal, apronFraction: apronFraction)
 }
 

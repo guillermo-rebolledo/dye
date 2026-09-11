@@ -271,7 +271,7 @@ private func average(_ pixels: RenderedPixels, _ index: Int) -> Double {
     }
     // Two slots force eviction between film and observation payloads. The same
     // input must remain identical after stock/output switches and repeated loads.
-    let shared = try Renderer(textureCacheCapacity: 2)
+    let shared = try Renderer(responseCacheBudgetBytes: 16 << 20)
     for _ in 0..<4 {
         for profile in profiles.reversed() {
             let stages: [OutputStage] = profile.metadata.colour.printVariants == nil ? [.none] : [.print, .scan]

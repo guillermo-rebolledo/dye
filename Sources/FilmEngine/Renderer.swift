@@ -11,27 +11,60 @@ public actor Renderer {
     let exportQueue: any MTLCommandQueue
     private let pipelines: [String: any MTLComputePipelineState]
     let decoder: ImageDecoder
-    private let textureCacheCapacity: Int
+    private let responseCacheBudgetBytes: Int
     private var responseCache: [ResponseEntry] = []
-    /// One per Scattering Pass: Bloom and Halation ask for different radii, so they
-    /// resolve to pyramids of different depths and cannot share one allocation.
-    private var pyramids: [Scattering: Pyramid] = [:]
+    /// Which Plan an entry was last handed to. A Plan can ask for four cubes at once —
+    /// lower and upper Film Response for a fractional Development Offset, and the same
+    /// pair again for the Output Stage — so a budget that let the fourth evict the
+    /// first would hand the Plan a texture it had already released.
+    private var planEpoch = 0
+    /// One pyramid, not one per Scattering Pass. Bloom and Halation ask for different
+    /// radii and so resolve to different depths, but that is a sizing question rather
+    /// than a lifetime one: they run at different points in the Pass order and Bloom's
+    /// composite is the last read of its pyramid before Halation's threshold is the
+    /// first write of one. Allocated to the deeper of the two, used a prefix at a time.
+    private var scatterPyramid: Pyramid?
     private var previewTextures: (input: any MTLTexture, scratch: any MTLTexture)?
     private var mtfTextures: [any MTLTexture]?
+    private var counters = RenderCounters()
 
-    private struct ResponseEntry {
+    struct ResponseEntry {
         let id: UUID
         let name: String
         let texture: any MTLTexture
+        /// What holding this entry costs, which is what the budget is counted in.
+        /// Entry counts cannot know that one Stock's cube is eight times another's.
+        let bytes: Int
+        /// The Plan that last asked for it; never evicted while that Plan is building.
+        var epoch: Int
         /// Density Space value of Working Space mid-grey, the scan's auto-balance reference.
         let grayDensity: SIMD3<Double>
         /// Density Space value of zero exposure, the scan's black point.
         let baseDensity: SIMD3<Double>
     }
 
-    public init(textureCacheCapacity: Int = 4) throws {
-        guard (2...32).contains(textureCacheCapacity) else { throw FilmError.invalid("Texture cache capacity must be 2...32") }
-        self.textureCacheCapacity = textureCacheCapacity
+    /// - Parameter responseCacheBudgetBytes: how much Colour Cube and Density Curve
+    ///   texture the Renderer may keep resident. Counted in bytes rather than in
+    ///   entries because the Catalogue's cubes are not the same size: a 65³ cube is
+    ///   2.10MB and Cinestill's 129³ is 16.38MB, so four entries is anywhere between
+    ///   8KB and 65MB. The default holds a whole Catalogue sweep at default settings,
+    ///   which is what stops a filmstrip or a Contact Sheet evicting its own earlier
+    ///   reads and paying the full sweep again on the next open.
+    /// - Parameter decodeBandBytes: how much staging buffer a colour-managed decode
+    ///   may hold at once. A full-resolution decode writes the destination texture a
+    ///   band of rows at a time rather than materialising the whole frame twice over.
+    ///
+    ///   The figure is a trade rather than a target. Each band is a separate
+    ///   `CGContext.draw`, so a smaller budget is less resident memory and more draws;
+    ///   64MB puts a 48MP frame at a dozen bands and its peak — the band, its
+    ///   conversion and the destination texture — at about 470MB against the 1.45GB a
+    ///   whole-frame decode held. What a draw per band actually costs is one of the
+    ///   things the audit's device backlog would settle.
+    public init(responseCacheBudgetBytes: Int = 96 << 20, decodeBandBytes: Int = 64 << 20) throws {
+        guard responseCacheBudgetBytes >= 16 << 20 else {
+            throw FilmError.invalid("The Colour Cube budget must be at least 16MB")
+        }
+        self.responseCacheBudgetBytes = responseCacheBudgetBytes
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue(),
               let exportQueue = device.makeCommandQueue() else {
             throw FilmError.invalid("Metal is unavailable")
@@ -40,21 +73,112 @@ public actor Renderer {
         self.queue = queue
         self.exportQueue = exportQueue
         exportQueue.label = "FilmEngine.export"
-        decoder = try ImageDecoder(device: device)
-        let url = Bundle.module.url(forResource: "Pipeline", withExtension: "metal", subdirectory: "Metal")!
-        let options = MTLCompileOptions()
-        if #available(macOS 15, iOS 18, *) { options.mathMode = .safe }
-        else { options.fastMathEnabled = false }
-        let library = try device.makeLibrary(source: String(contentsOf: url, encoding: .utf8), options: options)
-        var pipelines: [String: any MTLComputePipelineState] = [:]
-        for name in ["passthrough", "whiteBalance", "exposure", "reciprocity", "filmResponse", "monochromeResponse", "scanOutput", "outputTransform",
-                     "scatterThreshold", "scatterDownsample", "scatterBlurHorizontal", "scatterBlurVertical",
-                     "scatterScale", "scatterUpsample", "scatterComposite",
-                     "mtfBlur", "mtfCombine", "grain", "grainDyeCloud", "densityOutput", "adjust", "geometry"] {
-            guard let function = library.makeFunction(name: name) else { throw FilmError.invalid("Missing shader \(name)") }
-            pipelines[name] = try device.makeComputePipelineState(function: function)
+        decoder = try ImageDecoder(device: device, bandBytes: decodeBandBytes)
+        pipelines = try Self.pipelines(for: device)
+    }
+
+    /// Every shader the pass graph can run, built once per Metal device.
+    ///
+    /// `Pipeline.metal` ships as a copied resource rather than as a compiled target,
+    /// so this is 639 lines of Metal Shading Language compiled from source and 21
+    /// compute pipeline states built from the result. The editor stands up as many as
+    /// three Renderers — the Preview's, the thumbnails' and the Contact Sheet's — and
+    /// paid for all of it three times. The driver's own binary cache makes the second
+    /// and third cheap once it is warm, but it is cold on first launch after every
+    /// install and every update, which is exactly when first-photo time is being
+    /// judged.
+    ///
+    /// Keyed by the device's registry ID: a pipeline state belongs to the device that
+    /// built it, and nothing here assumes there is only ever one.
+    private static func pipelines(for device: any MTLDevice) throws -> [String: any MTLComputePipelineState] {
+        try pipelineCache.withLock { cache in
+            if let existing = cache[device.registryID] { return existing }
+            let url = Bundle.module.url(forResource: "Pipeline", withExtension: "metal", subdirectory: "Metal")!
+            let options = MTLCompileOptions()
+            // Safe math is what the Golden Images and the identity bit-exactness test
+            // are asserted against. It is not a performance setting to be relaxed.
+            if #available(macOS 15, iOS 18, *) { options.mathMode = .safe }
+            else { options.fastMathEnabled = false }
+            let library = try device.makeLibrary(source: String(contentsOf: url, encoding: .utf8), options: options)
+            var pipelines: [String: any MTLComputePipelineState] = [:]
+            for name in ["passthrough", "whiteBalance", "exposure", "reciprocity", "filmResponse", "monochromeResponse", "scanOutput", "outputTransform",
+                         "scatterThreshold", "scatterDownsample", "scatterBlurHorizontal", "scatterBlurVertical",
+                         "scatterScale", "scatterUpsample", "scatterComposite",
+                         "mtfBlur", "mtfCombine", "grain", "grainDyeCloud", "densityOutput", "adjust", "geometry"] {
+                guard let function = library.makeFunction(name: name) else { throw FilmError.invalid("Missing shader \(name)") }
+                pipelines[name] = try device.makeComputePipelineState(function: function)
+            }
+            cache[device.registryID] = pipelines
+            return pipelines
         }
-        self.pipelines = pipelines
+    }
+
+    /// Deployment reaches iOS 17, which predates `Mutex`.
+    private final class PipelineCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage: [UInt64: [String: any MTLComputePipelineState]] = [:]
+        func withLock<T>(_ body: (inout [UInt64: [String: any MTLComputePipelineState]]) throws -> T) rethrows -> T {
+            lock.lock(); defer { lock.unlock() }
+            return try body(&storage)
+        }
+    }
+
+    private static let pipelineCache = PipelineCache()
+
+    /// A GPU pass is now awaited rather than blocked on, so a second render can enter
+    /// the actor while one is in flight — and the ping-pong pair, the Scattering
+    /// Pyramid and the MTF textures are actor state that the pass in flight is still
+    /// reading and writing. This is the turn that keeps the two apart: everything from
+    /// resolving the Plan to reading back the result holds it, and it is released at
+    /// the one point where the textures are nobody's.
+    private var isRendering = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    private func takeRenderTurn() async {
+        while isRendering { await withCheckedContinuation { waiting.append($0) } }
+        isRendering = true
+    }
+
+    private func endRenderTurn() {
+        isRendering = false
+        guard !waiting.isEmpty else { return }
+        waiting.removeFirst().resume()
+    }
+
+    /// Suspends until the GPU is finished instead of holding the actor's thread for
+    /// the whole pass. Nothing else could enter a blocked actor — not another Preview
+    /// frame, not a thumbnail, not the Output Stage cards — and the CPU sat idle
+    /// rather than encoding the next command buffer.
+    static func completion(_ command: any MTLCommandBuffer) -> (CheckedContinuation<Void, any Error>) -> Void {
+        { continuation in
+            command.addCompletedHandler { buffer in
+                if let error = buffer.error { continuation.resume(throwing: error) } else { continuation.resume() }
+            }
+            command.commit()
+        }
+    }
+
+    /// What the tests read to observe contracts that leave no other trace outside the
+    /// Renderer: that the render Plan is built once per Export rather than once per
+    /// Tile, and that a warm Renderer stops reallocating Tile-sized textures. Nothing
+    /// in the engine reads them, and no behaviour depends on them.
+    public var renderCounters: RenderCounters { counters }
+
+    public func resetRenderCounters() { counters = RenderCounters() }
+
+    /// Bytes of Tile-sized scratch the pass graph is currently holding: the ping-pong
+    /// pair, the Scattering Pyramid and the MTF Pass's three textures. This is what
+    /// `TilePlan.tileTextureCount` is a per-Tile-pixel estimate of, and asserting one
+    /// against the other is what keeps the Export budget honest as the graph changes.
+    public var retainedTileTextureBytes: Int {
+        func bytes(_ texture: any MTLTexture) -> Int { texture.width * texture.height * 8 }
+        var total = previewTextures.map { bytes($0.input) + bytes($0.scratch) } ?? 0
+        if let pyramid = scatterPyramid {
+            total += bytes(pyramid.raw)
+            total += pyramid.levels.reduce(0) { $0 + bytes($1) } + pyramid.scratch.reduce(0) { $0 + bytes($1) }
+        }
+        total += mtfTextures?.reduce(0) { $0 + bytes($1) } ?? 0
+        return total
     }
 
     /// Pipeline compilation is synchronous; UI callers use this factory to keep it
@@ -65,8 +189,8 @@ public actor Renderer {
 
     /// Colour-managed decode into the Working Space, optionally downsampled for the
     /// Preview Render Path so slider changes re-render a screen-sized image.
-    public func decode(_ data: Data, maximumDimension: Int? = nil) throws -> LinearImage {
-        let texture = try decoder.decode(data, maximumDimension: maximumDimension)
+    public func decode(_ data: Data, maximumDimension: Int? = nil) async throws -> LinearImage {
+        let texture = try await decoder.decode(data, maximumDimension: maximumDimension)
         return try readback(texture)
     }
 
@@ -75,15 +199,18 @@ public actor Renderer {
     ///
     /// This is the Preview Render Path: one Tile that is the whole frame. `export`
     /// runs the same graph over many Tiles of one frame.
-    public func render(image: RenderImage, profile: Profile, settings: RenderSettings = .init()) throws -> RenderedPixels {
+    public func render(image: RenderImage, profile: Profile, settings: RenderSettings = .init()) async throws -> RenderedPixels {
         try settings.validate()
         try Task.checkCancellation()
+        await takeRenderTurn()
+        defer { endRenderTurn() }
         let input: any MTLTexture
         let scratch: any MTLTexture
         switch image {
         case .linear(let image):
             if previewTextures?.input.width != image.width || previewTextures?.input.height != image.height {
                 previewTextures = nil
+                counters.tileTextureAllocations += 1
                 previewTextures = (try decoder.makeTexture(width: image.width, height: image.height),
                                    try decoder.makeTexture(width: image.width, height: image.height))
             }
@@ -92,11 +219,12 @@ public actor Renderer {
             scratch = textures.scratch
         case .encoded:
             previewTextures = nil
-            input = try texture(for: image)
+            input = try await texture(for: image)
             scratch = try decoder.makeTexture(width: input.width, height: input.height)
         }
         let frame = Frame(width: input.width, height: input.height)
-        let plan = try plan(profile: profile, settings: settings, frame: frame, tile: input, spatial: true,
+        let plan = try plan(profile: profile, settings: settings, frame: frame,
+                            tileWidth: input.width, tileHeight: input.height, spatial: true,
                             grainModel: Self.grainModel(profile, path: .preview, thermalState: .nominal))
         // The pass graph writes both preview textures. Finish cold profile uploads
         // before refreshing the source: uploading earlier can leave the previous
@@ -107,15 +235,15 @@ public actor Renderer {
                               withBytes: $0.baseAddress!, bytesPerRow: image.width * 8)
             }
         }
-        let result = try execute(plan, input: input, scratch: scratch, frame: frame,
-                                 profile: profile, settings: settings, queue: queue)
+        let result = try await execute(plan, input: input, scratch: scratch, frame: frame,
+                                       profile: profile, settings: settings, queue: queue)
         let pixels = try readback(result)
         return RenderedPixels(width: pixels.width, height: pixels.height, rgba: pixels.rgba, output: settings.output)
     }
 
-    func texture(for image: RenderImage) throws -> any MTLTexture {
+    func texture(for image: RenderImage) async throws -> any MTLTexture {
         switch image {
-        case .encoded(let data): return try decoder.decode(data)
+        case .encoded(let data): return try await decoder.decode(data)
         case .linear(let image):
             let texture = try decoder.makeTexture(width: image.width, height: image.height)
             image.rgba.withUnsafeBytes {
@@ -142,19 +270,47 @@ public actor Renderer {
     /// carries the colour half of the look and nothing that reads a neighbour.
     func renderTile(_ input: any MTLTexture, into scratch: any MTLTexture, frame: Frame,
                     profile: Profile, settings: RenderSettings, queue: any MTLCommandQueue,
-                    spatial: Bool = true, grainModel: GrainModel = .procedural) throws -> any MTLTexture {
-        let plan = try plan(profile: profile, settings: settings, frame: frame, tile: input,
+                    spatial: Bool = true, grainModel: GrainModel = .procedural) async throws -> any MTLTexture {
+        await takeRenderTurn()
+        defer { endRenderTurn() }
+        let plan = try plan(profile: profile, settings: settings, frame: frame,
+                            tileWidth: input.width, tileHeight: input.height,
                             spatial: spatial, grainModel: grainModel)
-        return try execute(plan, input: input, scratch: scratch, frame: frame,
-                           profile: profile, settings: settings, queue: queue)
+        return try await execute(plan, input: input, scratch: scratch, frame: frame,
+                                 profile: profile, settings: settings, queue: queue)
     }
 
-    private func execute(_ plan: Plan, input: any MTLTexture, scratch: any MTLTexture, frame: Frame,
-                         profile: Profile, settings: RenderSettings, queue: any MTLCommandQueue) throws -> any MTLTexture {
+    /// The same Tile render against a Plan the caller already holds. Everything in a
+    /// Plan is resolved against the frame rather than the Tile — a Halation radius, a
+    /// grain cell and a vignette are all the frame's — so an Export resolves one and
+    /// every Tile of it renders against that one.
+    func renderTile(_ input: any MTLTexture, into scratch: any MTLTexture, plan: Plan, frame: Frame,
+                    profile: Profile, settings: RenderSettings, queue: any MTLCommandQueue) async throws -> any MTLTexture {
+        await takeRenderTurn()
+        defer { endRenderTurn() }
+        return try await execute(plan, input: input, scratch: scratch, frame: frame,
+                                 profile: profile, settings: settings, queue: queue)
+    }
+
+    func execute(_ plan: Plan, input: any MTLTexture, scratch: any MTLTexture, frame: Frame,
+                 profile: Profile, settings: RenderSettings, queue: any MTLCommandQueue) async throws -> any MTLTexture {
         guard let command = queue.makeCommandBuffer() else { throw FilmError.invalid("Cannot create render command") }
+        // One encoder for the whole graph rather than one per dispatch.
+        //
+        // A serial compute encoder already inserts the memory barriers a pass graph
+        // needs between successive dispatches on tracked resources, so ending an
+        // encoder between two Passes buys a hard boundary the code was getting for
+        // free — about fifty times per Preview frame, and about 6 500 times per 48MP
+        // Export. What the labels were doing for a frame capture, debug groups do.
+        guard let encoder = command.makeComputeCommandEncoder() else {
+            throw FilmError.invalid("Cannot create render command")
+        }
         var frameUniform = frame.packed
         var source = input
         var destination = scratch
+        // Neither Stock nor intensity that will use a pyramid should keep one alive.
+        // One release for both Passes, because there is now one allocation for both.
+        if plan.bloom == nil, plan.halation == nil { scatterPyramid = nil }
         for pass in Pass.allCases {
             // Four passes need more than one dispatch, or resources of their own, so
             // they encode themselves rather than going through the loop below. A Pass
@@ -162,23 +318,20 @@ public actor Renderer {
             // was holding: neither a Stock nor an intensity that will not use those
             // textures should keep them alive.
             if let scattering = Scattering(pass) {
-                guard let scatter = scattering == .bloom ? plan.bloom : plan.halation else {
-                    pyramids[scattering] = nil
-                    continue
-                }
-                try encodeScatter(scatter, scattering, command: command, source: source, destination: destination)
+                guard let scatter = scattering == .bloom ? plan.bloom : plan.halation else { continue }
+                try encodeScatter(scatter, scattering, encoder: encoder, source: source, destination: destination)
                 swap(&source, &destination)
                 continue
             }
             if pass == .mtf {
                 guard let mtf = plan.mtf else { mtfTextures = nil; continue }
-                try encodeMTF(mtf, command: command, source: source, destination: destination)
+                try encodeMTF(mtf, encoder: encoder, source: source, destination: destination)
                 swap(&source, &destination)
                 continue
             }
             if pass == .grain {
                 guard let grain = plan.grain else { continue }
-                try encodeGrain(grain, frame: &frameUniform, command: command, source: source, destination: destination)
+                try encodeGrain(grain, frame: &frameUniform, encoder: encoder, source: source, destination: destination)
                 swap(&source, &destination)
                 continue
             }
@@ -187,7 +340,7 @@ public actor Renderer {
                 var blend = plan.blend
                 try dispatch("densityOutput", label: "densityOutput",
                              textures: [(source, 0), (destination, 1), (observation.lower, 2), (observation.upper, 3)],
-                             command: command, grid: destination) {
+                             encoder: encoder, grid: destination) {
                     $0.setBytes(&minimum, length: MemoryLayout<SIMD4<Float>>.stride, index: 18)
                     $0.setBytes(&inverseSpan, length: MemoryLayout<SIMD4<Float>>.stride, index: 19)
                     $0.setBytes(&blend, length: MemoryLayout<Float>.stride, index: 5)
@@ -197,17 +350,16 @@ public actor Renderer {
             }
             if pass == .geometry {
                 guard let geometry = plan.geometry else { continue }
-                try encodeGeometry(geometry, frame: &frameUniform, command: command, source: source, destination: destination)
+                try encodeGeometry(geometry, frame: &frameUniform, encoder: encoder, source: source, destination: destination)
                 swap(&source, &destination)
                 continue
             }
             let name = pipelineName(for: pass, plan: plan, profile: profile)
             // A copy-only pass cannot change pixels; retain the current ping-pong source.
             guard name != "passthrough" else { continue }
-            guard let encoder = command.makeComputeCommandEncoder(), let pipeline = pipelines[name] else {
-                throw FilmError.invalid("Cannot encode \(pass)")
-            }
-            encoder.label = pass.rawValue
+            guard let pipeline = pipelines[name] else { throw FilmError.invalid("Cannot encode \(pass)") }
+            encoder.pushDebugGroup(pass.rawValue)
+            defer { encoder.popDebugGroup() }
             encoder.setComputePipelineState(pipeline)
             encoder.setTexture(source, index: 0)
             encoder.setTexture(destination, index: 1)
@@ -241,16 +393,17 @@ public actor Renderer {
             encoder.setBytes(&adjustments, length: MemoryLayout<AdjustmentUniforms>.stride, index: 15)
             encoder.dispatchThreads(MTLSize(width: input.width, height: input.height, depth: 1),
                 threadsPerThreadgroup: MTLSize(width: 16, height: 16, depth: 1))
-            encoder.endEncoding()
             swap(&source, &destination)
         }
-        command.commit()
-        command.waitUntilCompleted()
-        if let error = command.error { throw error }
+        encoder.endEncoding()
+        try await withCheckedThrowingContinuation(Self.completion(command))
         return source
     }
 
-    private struct Plan {
+    /// Everything a render needs that depends on the *frame* rather than on the Tile.
+    /// Internal rather than private so the Export path can build one for the frame and
+    /// hand the same one to every Tile of it.
+    struct Plan {
         let whiteBalance: simd_float3x3?
         let gain: Float
         /// Per-channel Reciprocity Failure, or nil when the frame was short enough
@@ -302,11 +455,17 @@ public actor Renderer {
         /// What a Tile origin has to be a multiple of for the Scattering Pyramids to
         /// halve the same grid in every Tile.
         var alignment: Int { max(bloom?.alignment ?? 1, halation?.alignment ?? 1) }
+
+        /// The deepest Scattering Pyramid this Plan builds. A Tile is consulted for
+        /// exactly one thing — how deep a pyramid will fit in it — so a Tile that can
+        /// carry this many levels resolves to this same Plan, and the Export can build
+        /// one Plan for the frame instead of one per Tile.
+        var scatterDepth: Int { max(bloom?.levelCount ?? 0, halation?.levelCount ?? 0) }
     }
 
     /// The two Passes that blur before the Film Response, in the order the light
     /// meets them: the taking lens first, then the film's own base.
-    private enum Scattering: String, Hashable {
+    enum Scattering: String, Hashable {
         case bloom, halation
         init?(_ pass: Pass) {
             switch pass { case .bloom: self = .bloom; case .halation: self = .halation; default: return nil }
@@ -314,7 +473,7 @@ public actor Renderer {
     }
 
     /// Everything a Scattering Pass needs, resolved against the image it will run on.
-    private struct Scatter {
+    struct Scatter {
         /// (threshold, knee half-width, strength × intensity, how much of the source
         /// the scattered light replaces rather than adds to).
         let parameters: SIMD4<Float>
@@ -324,6 +483,10 @@ public actor Renderer {
         /// The coarsest pyramid level any channel draws from, or nil when only the
         /// unblurred extract does and the Pass reaches no further than its own pixel.
         let topLevel: Int?
+        /// Pyramid levels this Pass builds. What a Tile has to be big enough for, and
+        /// so what decides whether a Plan resolved against the frame is also the Plan
+        /// every Tile of it resolves to.
+        let levelCount: Int
 
         /// How far this Pass draws light from, in pixels.
         ///
@@ -345,10 +508,16 @@ public actor Renderer {
         /// a Tile whose origin is not a multiple of this halves a different grid from
         /// its neighbour and their halos disagree by up to half a coarse texel.
         var alignment: Int { topLevel.map { 1 << $0 } ?? 1 }
+
+        /// How deep a pyramid fits in a Tile this size: a level that collapsed to a
+        /// single texel would carry no radius at all.
+        static func depthAvailable(tileWidth: Int, tileHeight: Int) -> Int {
+            max(1, Int(log2(Double(min(tileWidth, tileHeight)))))
+        }
     }
 
     /// The Stock's published response curve fitted to two Gaussians for this image.
-    private struct MTF {
+    struct MTF {
         /// (direct, fine, coarse, unused) weights summing to one.
         let coefficients: [SIMD4<Float>]
         /// (sigma, kernel radius) in pixels, for the fine and the coarse Gaussian.
@@ -359,13 +528,13 @@ public actor Renderer {
     /// Laid out to match `AdjustmentUniforms` in the shader: `tone` is (black point,
     /// brightness, shadows, highlights) and `colour` is (contrast, saturation,
     /// vibrance, unused), with Brilliance already folded in by `adjustments(_:)`.
-    private struct AdjustmentUniforms {
+    struct AdjustmentUniforms {
         var tone: SIMD4<Float>
         var colour: SIMD4<Float>
     }
 
     /// Laid out to match `GrainUniforms` in the shader; every member is 16-byte aligned.
-    private struct GrainUniforms {
+    struct GrainUniforms {
         var sigma: SIMD4<Float>
         var cell: SIMD4<Float>
         var mix: SIMD4<Float>
@@ -375,7 +544,7 @@ public actor Renderer {
     }
 
     /// The Geometry Pass's parameters, all of them already in pixels.
-    private struct Geometry {
+    struct Geometry {
         let vignette: Float
         /// The gate's displacement, fixed by the Seed rather than animated.
         let weave: SIMD2<Float>
@@ -384,7 +553,7 @@ public actor Renderer {
         var packed: SIMD4<Float> { SIMD4(vignette, weave.x, weave.y, border) }
     }
 
-    private struct Grain {
+    struct Grain {
         let uniforms: GrainUniforms
         /// The Profile's 32-entry Density Response, passed as its own buffer.
         let response: [Float]
@@ -393,7 +562,7 @@ public actor Renderer {
         let model: GrainModel
     }
 
-    private struct Observation {
+    struct Observation {
         let lower: any MTLTexture
         let upper: any MTLTexture
         let minimum: SIMD4<Float>
@@ -404,8 +573,12 @@ public actor Renderer {
     /// from `frame`, never from `tile`: a Tile is a window onto one frame, so a
     /// Halation radius, a grain cell and a vignette all have to be the frame's.
     /// `tile` is consulted only for how deep a Scattering Pyramid will fit in it.
-    private func plan(profile: Profile, settings: RenderSettings, frame: Frame,
-                      tile: any MTLTexture, spatial: Bool, grainModel: GrainModel = .procedural) throws -> Plan {
+    func plan(profile: Profile, settings: RenderSettings, frame: Frame,
+              tileWidth: Int, tileHeight: Int, spatial: Bool,
+              grainModel: GrainModel = .procedural) throws -> Plan {
+        counters.plansBuilt += 1
+        planEpoch += 1
+        defer { evictResponsesOverBudget() }
         let metadata = profile.metadata
         let width = frame.width, height = frame.height
         let whiteBalance = WhiteBalance.matrix(sceneKelvin: settings.temperatureKelvin, tint: settings.tint, stockBalanceKelvin: metadata.balance)
@@ -495,8 +668,10 @@ public actor Renderer {
                     grayDensity: SIMD4(Float(gray.x), Float(gray.y), Float(gray.z), scan ? 1 : 0),
                     baseDensity: SIMD4(Float(base.x), Float(base.y), Float(base.z), 0),
                     adjustments: Self.adjustments(settings.adjustments),
-                    bloom: spatial ? bloom(profile: profile, settings: settings, frame: frame, tile: tile) : nil,
-                    halation: spatial ? halation(profile: profile, settings: settings, frame: frame, tile: tile) : nil,
+                    bloom: spatial ? bloom(profile: profile, settings: settings, frame: frame,
+                                           tileWidth: tileWidth, tileHeight: tileHeight) : nil,
+                    halation: spatial ? halation(profile: profile, settings: settings, frame: frame,
+                                                 tileWidth: tileWidth, tileHeight: tileHeight) : nil,
                     mtf: spatial ? mtf(profile: profile, width: width, height: height) : nil,
                     grain: spatial ? grain(profile: profile, settings: settings, width: width, height: height,
                                            base: base, gray: gray, model: grainModel) : nil,
@@ -521,12 +696,15 @@ public actor Renderer {
     /// What a Tile of this frame has to carry, and where it may start. Measured against
     /// a Tile the size of the whole frame, so the Scattering Pyramids are as deep as
     /// they will ever be and both answers bound what any smaller Tile asks for.
-    func tiling(profile: Profile, settings: RenderSettings, source: any MTLTexture,
-                scatterFraction: Double) throws -> (apron: Int, alignment: Int) {
+    func tiling(profile: Profile, settings: RenderSettings, frameWidth: Int, frameHeight: Int,
+                scatterFraction: Double,
+                grainModel: GrainModel) throws -> (apron: Int, alignment: Int, plan: Plan) {
         let plan = try plan(profile: profile, settings: settings,
-                            frame: Frame(width: source.width, height: source.height), tile: source, spatial: true)
+                            frame: Frame(width: frameWidth, height: frameHeight),
+                            tileWidth: frameWidth, tileHeight: frameHeight, spatial: true,
+                            grainModel: grainModel)
         let scatter = Int((plan.scatterReach * min(max(scatterFraction, 0), 1)).rounded(.up))
-        return (max(plan.exactReach, scatter), plan.alignment)
+        return (max(plan.exactReach, scatter), plan.alignment, plan)
     }
 
     /// Film-Plane Microns become pixels through the Stock's Frame Width, which is the
@@ -710,7 +888,8 @@ public actor Renderer {
     /// The lens spreads a fraction of all the light across the frame, so Bloom has no
     /// threshold, no tint and one radius, and replaces what it takes rather than adding
     /// to it. Nil when the modelled lens or the user has nothing to diffuse.
-    private func bloom(profile: Profile, settings: RenderSettings, frame: Frame, tile: any MTLTexture) -> Scatter? {
+    private func bloom(profile: Profile, settings: RenderSettings, frame: Frame,
+                       tileWidth: Int, tileHeight: Int) -> Scatter? {
         // Zero-strength profiles retain their neutral default, but have a useful
         // scattering radius when the user enters the creative range above 100%.
         let metadata = profile.metadata.bloom.strength > 0 ? profile.metadata.bloom
@@ -724,12 +903,14 @@ public actor Renderer {
         // A zero threshold with the narrowest knee takes every positive value: light a
         // lens cannot have received is not light it can diffuse.
         return scatter(profile: profile, radiusMicrons: [Double](repeating: metadata.radiusMicrons, count: 3),
-                       parameters: SIMD4(0, 1e-4, Float(strength), 1), tint: [1, 1, 1], frame: frame, tile: tile)
+                       parameters: SIMD4(0, 1e-4, Float(strength), 1), tint: [1, 1, 1], frame: frame,
+                       tileWidth: tileWidth, tileHeight: tileHeight)
     }
 
     /// Resolves the Profile's Film-Plane Micron radii against this image, or nil when
     /// the Stock or the user has no Halation to add.
-    private func halation(profile: Profile, settings: RenderSettings, frame: Frame, tile: any MTLTexture) -> Scatter? {
+    private func halation(profile: Profile, settings: RenderSettings, frame: Frame,
+                          tileWidth: Int, tileHeight: Int) -> Scatter? {
         let metadata = profile.metadata.halation.strength > 0 ? profile.metadata.halation
             : FilmProfile.Halation(strength: 0, threshold: 1.1,
                                    radiusMicrons: [420, 150, 70], tint: [1, 0.18, 0.08])
@@ -743,14 +924,14 @@ public actor Renderer {
         let threshold = metadata.threshold + (min(metadata.threshold, 0.4) - metadata.threshold) * boost * boost
         return scatter(profile: profile, radiusMicrons: metadata.radiusMicrons,
                        parameters: SIMD4(Float(threshold), Float(max(threshold / 2, 1e-4)), Float(strength), 0),
-                       tint: metadata.tint, frame: frame, tile: tile)
+                       tint: metadata.tint, frame: frame, tileWidth: tileWidth, tileHeight: tileHeight)
     }
 
     /// Splits each channel's requested radius across the pyramid's levels. Film-Plane
     /// Microns become pixels through the Stock's Frame Width, so what is scattered
     /// covers the same fraction of the frame at any resolution.
     private func scatter(profile: Profile, radiusMicrons: [Double], parameters: SIMD4<Float>,
-                         tint: [Double], frame: Frame, tile: any MTLTexture) -> Scatter {
+                         tint: [Double], frame: Frame, tileWidth: Int, tileHeight: Int) -> Scatter {
         let pixelsPerMicron = Self.pixelsPerMicron(profile, width: frame.width, height: frame.height)
         let largest = radiusMicrons.max()! * pixelsPerMicron
         // Deep enough for the widest channel, and never deeper than the Tile allows:
@@ -758,7 +939,7 @@ public actor Renderer {
         // radius above comes from the frame and the depth cap here from the Tile,
         // which is what keeps a Tile's halo the same size as the untiled one's.
         let reach = Self.scatterLevelSigmas.firstIndex { $0 >= largest } ?? Self.maximumScatterLevels
-        let count = min(max(reach, 1), max(1, Int(log2(Double(min(tile.width, tile.height))))))
+        let count = min(max(reach, 1), Scatter.depthAvailable(tileWidth: tileWidth, tileHeight: tileHeight))
         let sigmas = Array(Self.scatterLevelSigmas.prefix(count + 1))
         var weights = [SIMD4<Float>](repeating: .zero, count: count + 1)
         for channel in 0..<3 {
@@ -779,12 +960,21 @@ public actor Renderer {
         // Weight 0 belongs to the unblurred extract, so weight index i is level i − 1.
         let top = weights.lastIndex { weight in (0..<3).contains { weight[$0] != 0 } } ?? 0
         return Scatter(parameters: parameters, tint: SIMD4(Float(tint[0]), Float(tint[1]), Float(tint[2]), 0),
-                       levelWeights: weights, topLevel: top > 0 ? top - 1 : nil)
+                       levelWeights: weights, topLevel: top > 0 ? top - 1 : nil, levelCount: count)
     }
 
-    private func pyramid(_ scattering: Scattering, width: Int, height: Int, count: Int) throws -> Pyramid {
-        if let pyramid = pyramids[scattering], pyramid.count == count,
-           pyramid.levels[0].width == width, pyramid.levels[0].height == height { return pyramid }
+    /// The pyramid for these dimensions, at least this deep. Deeper is kept rather
+    /// than trimmed: Bloom asks for more levels than Halation on the same frame, and
+    /// reallocating between the two would undo the point of sharing the allocation.
+    private func pyramid(width: Int, height: Int, requiring depth: Int) throws -> Pyramid {
+        let existing = scatterPyramid.flatMap {
+            $0.levels[0].width == width && $0.levels[0].height == height ? $0 : nil
+        }
+        if let existing, existing.count >= depth { return existing }
+        // Bloom asks for more levels than Halation on the same frame, so a pyramid at
+        // the right size but the wrong depth grows rather than being replaced.
+        let count = max(depth, existing?.count ?? 0)
+        counters.tileTextureAllocations += 1
         var levels: [any MTLTexture] = []
         var scratch: [any MTLTexture] = []
         for level in 0..<count {
@@ -793,28 +983,28 @@ public actor Renderer {
             // which a Tile reads as its own edge and an untiled render does not.
             let w = max(1, (width + (1 << level) - 1) >> level)
             let h = max(1, (height + (1 << level) - 1) >> level)
-            levels.append(try decoder.makeTexture(width: w, height: h))
-            scratch.append(try decoder.makeTexture(width: w, height: h))
+            levels.append(try decoder.makeTexture(width: w, height: h, access: .deviceOnly))
+            scratch.append(try decoder.makeTexture(width: w, height: h, access: .deviceOnly))
         }
-        let pyramid = Pyramid(raw: try decoder.makeTexture(width: width, height: height), levels: levels, scratch: scratch)
-        pyramids[scattering] = pyramid
+        let pyramid = Pyramid(raw: try decoder.makeTexture(width: width, height: height, access: .deviceOnly),
+                              levels: levels, scratch: scratch)
+        scatterPyramid = pyramid
         return pyramid
     }
 
     /// Threshold, blur each level, then accumulate coarse to fine and composite the
     /// tinted result back into the linear signal the Film Response reads.
-    private func encodeScatter(_ scatter: Scatter, _ scattering: Scattering, command: any MTLCommandBuffer,
+    private func encodeScatter(_ scatter: Scatter, _ scattering: Scattering, encoder: any MTLComputeCommandEncoder,
                                source: any MTLTexture, destination: any MTLTexture) throws {
-        let pyramid = try pyramid(scattering, width: source.width, height: source.height,
-                                  count: scatter.levelWeights.count - 1)
+        let count = scatter.levelWeights.count - 1
+        let pyramid = try pyramid(width: source.width, height: source.height, requiring: count)
         var parameters = scatter.parameters
         var tint = scatter.tint
         func dispatch(_ name: String, label: String, textures: [any MTLTexture], weight: SIMD4<Float>? = nil,
                       grid: any MTLTexture) throws {
-            guard let encoder = command.makeComputeCommandEncoder(), let pipeline = pipelines[name] else {
-                throw FilmError.invalid("Cannot encode \(label)")
-            }
-            encoder.label = label
+            guard let pipeline = pipelines[name] else { throw FilmError.invalid("Cannot encode \(label)") }
+            encoder.pushDebugGroup(label)
+            defer { encoder.popDebugGroup() }
             encoder.setComputePipelineState(pipeline)
             for (index, texture) in textures.enumerated() { encoder.setTexture(texture, index: index) }
             encoder.setBytes(&parameters, length: MemoryLayout<SIMD4<Float>>.size, index: 8)
@@ -823,22 +1013,21 @@ public actor Renderer {
             encoder.setBytes(&levelWeight, length: MemoryLayout<SIMD4<Float>>.size, index: 10)
             encoder.dispatchThreads(MTLSize(width: grid.width, height: grid.height, depth: 1),
                                     threadsPerThreadgroup: MTLSize(width: 16, height: 16, depth: 1))
-            encoder.endEncoding()
         }
         // Weight 0 belongs to the unblurred extract; weight L + 1 to pyramid level L.
         try dispatch("scatterThreshold", label: "\(scattering).threshold", textures: [source, pyramid.raw], grid: pyramid.raw)
-        for level in 0..<pyramid.count {
+        for level in 0..<count {
             let input = level == 0 ? pyramid.raw : pyramid.levels[level]
             try dispatch("scatterBlurHorizontal", label: "\(scattering).blurH.\(level)",
                          textures: [input, pyramid.scratch[level]], grid: pyramid.levels[level])
             try dispatch("scatterBlurVertical", label: "\(scattering).blurV.\(level)",
                          textures: [pyramid.scratch[level], pyramid.levels[level]], grid: pyramid.levels[level])
-            if level + 1 < pyramid.count {
+            if level + 1 < count {
                 try dispatch("scatterDownsample", label: "\(scattering).downsample.\(level + 1)",
                              textures: [pyramid.levels[level], pyramid.levels[level + 1]], grid: pyramid.levels[level + 1])
             }
         }
-        let top = pyramid.count - 1
+        let top = count - 1
         try dispatch("scatterScale", label: "\(scattering).scale.\(top)", textures: [pyramid.levels[top], pyramid.scratch[top]],
                      weight: scatter.levelWeights[top + 1], grid: pyramid.levels[top])
         for level in stride(from: top - 1, through: 0, by: -1) {
@@ -856,12 +1045,13 @@ public actor Renderer {
     /// pyramid is: a Preview re-renders the same dimensions on every change.
     private func mtfTextures(width: Int, height: Int) throws -> [any MTLTexture] {
         if let textures = mtfTextures, textures[0].width == width, textures[0].height == height { return textures }
-        let textures = try (0..<3).map { _ in try decoder.makeTexture(width: width, height: height) }
+        counters.tileTextureAllocations += 1
+        let textures = try (0..<3).map { _ in try decoder.makeTexture(width: width, height: height, access: .deviceOnly) }
         mtfTextures = textures
         return textures
     }
 
-    private func encodeMTF(_ mtf: MTF, command: any MTLCommandBuffer,
+    private func encodeMTF(_ mtf: MTF, encoder: any MTLComputeCommandEncoder,
                            source: any MTLTexture, destination: any MTLTexture) throws {
         let textures = try mtfTextures(width: source.width, height: source.height)
         func blur(_ gaussian: SIMD2<Float>, into result: any MTLTexture, label: String) throws {
@@ -869,7 +1059,7 @@ public actor Renderer {
                 var parameters = SIMD4<Float>(gaussian.x, gaussian.y, axis.x, axis.y)
                 try dispatch("mtfBlur", label: "\(label).\(index == 0 ? "h" : "v")",
                              textures: [(index == 0 ? source : textures[2], 0), (index == 0 ? textures[2] : result, 1)],
-                             command: command, grid: result) { $0.setBytes(&parameters, length: MemoryLayout<SIMD4<Float>>.size, index: 14) }
+                             encoder: encoder, grid: result) { $0.setBytes(&parameters, length: MemoryLayout<SIMD4<Float>>.size, index: 14) }
             }
         }
         try blur(mtf.fine, into: textures[0], label: "mtf.fine")
@@ -877,14 +1067,14 @@ public actor Renderer {
         let coefficients = mtf.coefficients
         try dispatch("mtfCombine", label: "mtf.combine",
                      textures: [(source, 0), (destination, 1), (textures[0], 4), (textures[1], 5)],
-                     command: command, grid: destination) { encoder in
+                     encoder: encoder, grid: destination) { encoder in
             coefficients.withUnsafeBytes { encoder.setBytes($0.baseAddress!, length: $0.count, index: 14) }
         }
     }
 
     /// The Grain and Geometry Passes are the two whose value depends on *where* in the
     /// frame a pixel sits, so both are given the Tile's placement in it.
-    private func encodeGrain(_ grain: Grain, frame: inout SIMD4<Float>, command: any MTLCommandBuffer,
+    private func encodeGrain(_ grain: Grain, frame: inout SIMD4<Float>, encoder: any MTLComputeCommandEncoder,
                              source: any MTLTexture, destination: any MTLTexture) throws {
         var uniforms = grain.uniforms
         // `dye-cloud` has its own kernel; `stochastic` is still MEM-239's phase 7 and
@@ -892,36 +1082,34 @@ public actor Renderer {
         try dispatch(grain.model == .dyeCloud ? "grainDyeCloud" : "grain",
                      label: "\(Pass.grain.rawValue).\(grain.model.rawValue)",
                      textures: [(source, 0), (destination, 1)],
-                     command: command, grid: destination) {
+                     encoder: encoder, grid: destination) {
             $0.setBytes(&uniforms, length: MemoryLayout<GrainUniforms>.stride, index: 11)
             $0.setBytes(grain.response, length: MemoryLayout<Float>.stride * grain.response.count, index: 12)
             $0.setBytes(&frame, length: MemoryLayout<SIMD4<Float>>.size, index: 17)
         }
     }
 
-    private func encodeGeometry(_ geometry: Geometry, frame: inout SIMD4<Float>, command: any MTLCommandBuffer,
+    private func encodeGeometry(_ geometry: Geometry, frame: inout SIMD4<Float>, encoder: any MTLComputeCommandEncoder,
                                 source: any MTLTexture, destination: any MTLTexture) throws {
         var parameters = geometry.packed
         try dispatch("geometry", label: Pass.geometry.rawValue, textures: [(source, 0), (destination, 1)],
-                     command: command, grid: destination) {
+                     encoder: encoder, grid: destination) {
             $0.setBytes(&parameters, length: MemoryLayout<SIMD4<Float>>.size, index: 16)
             $0.setBytes(&frame, length: MemoryLayout<SIMD4<Float>>.size, index: 17)
         }
     }
 
     private func dispatch(_ name: String, label: String, textures: [(any MTLTexture, Int)],
-                          command: any MTLCommandBuffer, grid: any MTLTexture,
+                          encoder: any MTLComputeCommandEncoder, grid: any MTLTexture,
                           bind: (any MTLComputeCommandEncoder) -> Void) throws {
-        guard let encoder = command.makeComputeCommandEncoder(), let pipeline = pipelines[name] else {
-            throw FilmError.invalid("Cannot encode \(label)")
-        }
-        encoder.label = label
+        guard let pipeline = pipelines[name] else { throw FilmError.invalid("Cannot encode \(label)") }
+        encoder.pushDebugGroup(label)
+        defer { encoder.popDebugGroup() }
         encoder.setComputePipelineState(pipeline)
         for (texture, index) in textures { encoder.setTexture(texture, index: index) }
         bind(encoder)
         encoder.dispatchThreads(MTLSize(width: grid.width, height: grid.height, depth: 1),
                                 threadsPerThreadgroup: MTLSize(width: 16, height: 16, depth: 1))
-        encoder.endEncoding()
     }
 
     private func pipelineName(for pass: Pass, plan: Plan, profile: Profile) -> String {
@@ -950,7 +1138,8 @@ public actor Renderer {
     private func responseEntry(for profile: Profile, name: String?) throws -> ResponseEntry {
         guard let name else { throw FilmError.invalid("Profile has no Film Response payload") }
         if let index = responseCache.firstIndex(where: { $0.id == profile.cacheID && $0.name == name }) {
-            let entry = responseCache.remove(at: index)
+            var entry = responseCache.remove(at: index)
+            entry.epoch = planEpoch
             responseCache.append(entry)
             return entry
         }
@@ -977,7 +1166,8 @@ public actor Renderer {
             let gray = Double(values[low]) + (position - Double(low)) * (Double(values[low + 1]) - Double(values[low]))
             let blackPoint = Self.responseCoordinate(0, shaper: profile.metadata.colour.inputShaper) * 1023
             let base = Double(values[min(Int(blackPoint), 1023)])
-            entry = ResponseEntry(id: profile.cacheID, name: name, texture: curve, grayDensity: SIMD3(repeating: gray),
+            entry = ResponseEntry(id: profile.cacheID, name: name, texture: curve, bytes: 1024 * 2,
+                                  epoch: planEpoch, grayDensity: SIMD3(repeating: gray),
                                   baseDensity: SIMD3(repeating: base))
         } else {
             let output = profile.metadata.colour.densityOutput
@@ -987,11 +1177,37 @@ public actor Renderer {
             let coordinate = Self.responseCoordinate(0.18, shaper: profile.metadata.colour.inputShaper)
             let baseCoordinate = profile.metadata.process == .e6 && output != nil ? 1.0 : 0.0
             entry = ResponseEntry(id: profile.cacheID, name: name, texture: try makeColourCube(cube),
+                                  bytes: cube.size * cube.size * cube.size * 8, epoch: planEpoch,
                                   grayDensity: cube.sample(SIMD3(repeating: coordinate)), baseDensity: cube.sample(SIMD3(repeating: baseCoordinate)))
         }
         responseCache.append(entry)
-        if responseCache.count > textureCacheCapacity { responseCache.removeFirst() }
+        evictResponsesOverBudget()
         return entry
+    }
+
+    /// Least recently used first, and never an entry the Plan being built is holding:
+    /// a Plan's own inputs are alive until it is encoded, whatever the budget says.
+    private func evictResponsesOverBudget() {
+        var held = responseCache.reduce(0) { $0 + $1.bytes }
+        while held > responseCacheBudgetBytes,
+              let index = responseCache.firstIndex(where: { $0.epoch != planEpoch }) {
+            held -= responseCache[index].bytes
+            responseCache.remove(at: index)
+        }
+    }
+
+    /// Colour Cube and Density Curve texture the Renderer is holding right now.
+    public var retainedResponseBytes: Int { responseCache.reduce(0) { $0 + $1.bytes } }
+
+    /// Drops every cached Colour Cube and the Scattering Pyramid. Nothing is lost but
+    /// the reading of them: a render that needs one reads it again. This is what a
+    /// memory-pressure warning calls, and what an editor that has gone away can call
+    /// rather than holding a few hundred megabytes for a re-render that may not come.
+    public func releaseCaches() {
+        responseCache.removeAll()
+        scatterPyramid = nil
+        mtfTextures = nil
+        previewTextures = nil
     }
 
     /// Where scene-linear grey lands in a Density Curve, in [0, 1]. A Curve Set with
@@ -1022,7 +1238,7 @@ public actor Renderer {
 /// The thirteen-stage pipeline, in the order the light meets it. Bloom is the taking
 /// lens and so precedes Halation, which happens inside the film; the Adjustment
 /// Pass follows the Output Stage because it is work done to the scan afterwards.
-private enum Pass: String, CaseIterable {
+enum Pass: String, CaseIterable {
     case decode, whiteBalance, exposure, reciprocity, bloom, halation, mtf, filmResponse, grain,
          outputStage, adjust, geometry, outputTransform
 }

@@ -49,7 +49,10 @@ struct Filmstrip: View {
     private var strip: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: Tokens.Metrics.space10) {
+                // Lazy, so only the cells on screen hold a Metal surface. Eighteen
+                // Stocks is eighteen `CAMetalLayer`s and eighteen drawable pools in an
+                // eager stack, of which about four are ever visible.
+                LazyHStack(alignment: .top, spacing: Tokens.Metrics.space10) {
                     ForEach(Array(profiles.enumerated()), id: \.element.id) { index, profile in
                         cell(profile, index: index).id(profile.id)
 

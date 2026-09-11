@@ -9,6 +9,136 @@ Catalogue and Colour Cube residency, Metal resource and pipeline-state reuse,
 SwiftUI invalidation and Metal surface lifetime in `FilmApp/`. Launch is covered.
 `ProfileBaker/`, `Curves/` and `Scripts/` are out of scope: the Baker never ships.
 
+## Remediation status
+
+Worked in MEM-272 on branch `gortizdev/mem-272-performance-remediation`. This section
+records what landed and, more importantly, what did not and why. It is the only part
+of this document written after the audit; everything below it is the audit as taken.
+
+Two findings overlap MEM-273, the security and privacy remediation of the same day's
+audit, which reached `main` first: PERF-02's Preview half and PERF-12's clamp both
+arrived there, from the memory-safety side rather than the performance side. They are
+marked as such below.
+
+| ID | Status |
+| --- | --- |
+| PERF-01 | **Partly.** Options 1 and 2 taken: the Apron is bounded by a share of the budget edge, and the budget follows the device. A 48MP frame plans 130 Tiles at 11.3× overdraw rather than 768 at 44.4×. **Option 3 — the per-frame coarse pyramid — was not taken**; see below. |
+| PERF-02 | **Done**, by two branches. The Export path decodes in bands, bit-identical at all eight orientations; the Preview path subsamples during decode, which arrived with the security work as MEM-273's SEC-02. |
+| PERF-03 | **Done.** The sweep runs only while a surface showing the Catalogue is on screen, selected Stock first. |
+| PERF-04 | **Done.** Byte budget, entries pinned to the Plan building them, a payload-read counter, and release on memory pressure. |
+| PERF-05 | **Done.** `waitUntilCompleted` is a suspension, with a render turn guarding the shared textures. Within one Renderer that turn still serialises whole renders — what stops a Preview waiting out a Tile is PERF-06, not this. |
+| PERF-06 | **Done.** The Export has its own Renderer. |
+| PERF-07 | **Done.** One shared Scattering Pyramid; `tileTextureCount` is 9 and asserted against the Renderer's own allocation. MTF textures are not pooled into it. |
+| PERF-08 | **Done.** One compute encoder per command buffer, debug groups per Pass. |
+| — | The one edit to `Pipeline.metal` is PERF-13's redundant alpha read. No arithmetic changed, and every Golden Image is bit-identical. |
+| PERF-09 | **Done.** Pyramid and MTF textures are `.private` and no longer render targets. Unmeasured on device, as the finding says. |
+| PERF-10 | **Partly.** The library and its 21 pipeline states are built once per device rather than per Renderer. Still `makeLibrary(source:)` once per process; a build-time `.metallib` was not attempted. |
+| PERF-11 | **Done.** One Plan per Export, asserted by a counter. |
+| PERF-12 | **Done**, with the arithmetic unchanged — see below. The clamp it quantises through is MEM-273's NaN-safe one. |
+| PERF-13 | **Barely.** Only the redundant alpha read is gone; see below. |
+| PERF-14 | **Done.** `.id()` removed, display queue shared per device, filmstrip lazy. |
+| PERF-15 | **Not taken.** |
+| PERF-16 | **Done.** Byte-identical, asserted by fixture. |
+| PERF-17 | **Done.** |
+| PERF-18 | **Done.** |
+| PERF-19 | **Documented, not fixed.** |
+| PERF-20 | **Not taken.** Still needs the measurement the finding asks for. |
+
+### PERF-01 option 3, and why the acceptance criteria are not met
+
+The acceptance criteria ask for `TilePlan.count ≤ 64` and total rendered pixels ≤ 4×
+frame pixels at 8064 × 6048. **Neither is met, and neither can be met by options 1 and
+2.** Overdraw is `((core + 2·apron) / core)²`, so 4× needs a core about 7.7 times the
+Apron — which at an Apron of 676 is a padded Tile of 6552 and a budget of 3.1GB. Only
+shrinking the Apron reaches it, and only option 3 shrinks the Apron.
+
+Option 3 was not taken because it cannot be done in one sweep and stay bit-exact. The
+shared coarse levels have to be built from the frame's own level 3, and level 3 is the
+output of a *thresholded* extract — so downsampling the frame and thresholding it is
+not the same image as thresholding and downsampling it, and
+`aTiledExportReproducesTheUntiledRenderOfTheSameFrame` at `apronFraction: 1` would
+stop returning exactly zero. Building it exactly means a first sweep over Tiles that
+runs the graph as far as the Scattering Pass and writes each Tile's level 3 into a
+shared frame-wide texture, then the coarse levels in frame coordinates, then the real
+sweep. Halation's input is Bloom's output, so it needs a sweep of its own as well:
+three passes over the frame, new shared-texture plumbing, and a new class of boundary
+bug at the shared levels. It is the right change and it is the one that delivers the
+user story; it is not a change to make alongside nineteen others.
+
+`aFrameTwiceTheSizeDoesNotCostFifteenTimesTheWork` holds the gate at 14× with a
+comment naming 1.6× as the number to tighten it to.
+
+### Where bit-identity changed the proposed fix
+
+Two of the proposed changes were wrong as written, and the fixtures the spec asked for
+are what caught them.
+
+- **PERF-12.** Quantising in `Float` rather than `Double` moves code values in a
+  sixteen-bit TIFF: `value * 65535` needs 38 mantissa bits and `Float` has 24. The
+  structural changes were taken — the branch on depth hoisted out of the loop, typed
+  row writes instead of `storeBytes` per component — and the arithmetic stayed
+  `Double`.
+
+  The fixture itself had to be narrowed to make the claim true. "Byte-identity for the
+  written image" cannot mean the written *file*: a TIFF embeds an ICC profile that
+  differs between OS versions, and HEIF and JPEG are a system encoder's arithmetic
+  rather than the writer's. What is recorded is the pixels a lossless container decodes
+  back to, which is exactly what the writer quantised. The 8-bit path has no lossless
+  container at all — both containers that use it are lossy — so it cannot have a
+  fixture, and is gated instead by agreeing with the 16-bit path, which catches a
+  rounding rule that moved in one and not the other.
+- **PERF-16.** `%f` rounds an exact tie to even; `(value * 1e6).rounded()` rounds away
+  from zero. Thirty-two of the `Float16` values below one land on a tie, so the naive
+  integer formatter changed the file. `.toNearestOrEven` is the same decision on the
+  same number, and scaling a `Float16` by a million is exact, so the digits are
+  provably the same digits.
+
+### The Preview's subsampled decode, and who did it
+
+This work declined it and the security remediation took it, which is worth recording
+because the reasoning that declined it was wrong about where the cost was.
+
+The objection here was that ImageIO subsamples only at powers of two, so the frame
+still has to be resampled the rest of the way, and resampling an already-subsampled
+source is not the same image as resampling the original — a visible change to the
+Preview, which the spec's Solution says none of this work makes. That much is true.
+What it missed is that the Preview's cost was never its own buffers, which are sized
+by the 2048px destination: it was the full-resolution `CGImage` ImageIO materialised
+in order to be drawn down from, which is the photograph rather than the Preview. That
+is a decompression-bomb surface as well as a memory one, which is how MEM-273 came to
+it from the other direction.
+
+So the Preview does now subsample during decode, via
+`CGImageSourceCreateThumbnailAtIndex`, and the Preview's pixels did change. Sanctioned
+under MEM-273 rather than here.
+
+### PERF-13, and what a "needs measurement" finding is allowed to cost
+
+Only the redundant alpha read was removed. Precomputing the blur weights on the CPU
+cannot be shown to leave the render unchanged: it replaces the GPU's `exp` with the
+CPU's, and nothing says the two agree bit for bit on every GPU family the app ships
+to. Passing the same Golden Images on one Mac is evidence, not proof. The finding is
+marked Needs measurement and the spec's own gate is that every Golden Image is
+bit-identical, so the change waits for the device measurement that would justify the
+risk. The same reasoning rules out hoisting `-0.5 / (sigma * sigma)` out of the loop.
+
+Note also that `SCATTER_BLUR_SIGMA` and `SCATTER_BLUR_RADIUS` are compile-time
+constants, so the Scattering blur's eleven weights are very likely already folded at
+compile time and the finding's larger half may be worth nothing at all. That is one
+more thing the Metal System Trace in the backlog would settle.
+
+### What remains unverified
+
+The entire [verification backlog](#verification-backlog) still stands. Nothing in this
+work was measured on a device: there is no iPhone in this environment and a simulator
+does not reproduce the memory pressure any of it exists for. The derived figures
+above — Tile counts, overdraw, resident bytes — are arithmetic reproduced from the
+code's own constants and are checked in as assertions, which is a different claim from
+a wall-clock improvement. **The on-device 48MP Export measurement remains the single
+most important outstanding item, and this issue should not close without it.**
+
+---
+
 ## Method and limits
 
 **This is a static source-reading audit.** It was performed on a Linux machine with

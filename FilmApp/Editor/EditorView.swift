@@ -21,10 +21,13 @@ struct EditorView: View {
             .preferredColorScheme(.dark)
             .sheet(isPresented: $showsSettings) { SettingsView(model: model) }
             .sheet(isPresented: $showsPresets) { PresetSheet(model: model).filmSheet() }
-            .fullScreenCover(isPresented: $showsContactSheet) { ContactSheetView(selectedStock: model.selectedStock) }
+            .fullScreenCover(isPresented: $showsContactSheet) {
+                ContactSheetView(selectedStock: model.selectedStock) { try await model.catalogueForContactSheet() }
+            }
             .sheet(isPresented: $isExporting) { ExportSheet(model: model).filmSheet() }
             .task { await model.loadCatalogue() }
             .task { await model.watchThermalState() }
+            .task { await model.watchMemoryPressure() }
             .task(id: photo) {
                 guard let photo else { return }
                 await model.open(photo)
@@ -125,8 +128,8 @@ private struct EditorScreen: View {
         CanvasView(content: canvas, isComparing: isComparing,
                    isLoupeEnabled: isLoupeEnabled,
                    parameter: (selection.isFilmstripOpen || selection.isOutputBrowserOpen) ? nil : selection.activeParameter(in: model.dialParameters),
-                   onCompare: { holdingBefore = $0 }, previewReadout: previewReadout, isAdjusting: adjusting)
-            .id(model.selectedStock)
+                   onCompare: { holdingBefore = $0 }, previewReadout: previewReadout, isAdjusting: adjusting,
+                   selectedStock: model.selectedStock)
             .accessibilityElement(children: canvas.hasPhoto ? .ignore : .combine)
             .accessibilityLabel(canvas.accessibilityLabel)
             .accessibilityValue(isComparing ? "Original" : "")

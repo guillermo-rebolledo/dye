@@ -10,6 +10,12 @@ import FilmEngine
 struct ContactSheetView: View {
     /// The Stock the editor has loaded, so the mark knows which frame to circle.
     let selectedStock: String
+    /// The Catalogue and a Renderer, from whoever already has them. The sheet still
+    /// knows nothing about the editor beyond the Stock; it just stops paying for a
+    /// third Metal library and a second reading of eighteen Profile headers on every
+    /// open. Without one it falls back to standing up its own, which is what the
+    /// preview below does.
+    var source: (@Sendable () async throws -> (profiles: [Profile], renderer: Renderer))?
     @Environment(\.dismiss) private var dismiss
     @State private var profiles: [Profile] = []
     @State private var images: [String: RenderedPixels] = [:]
@@ -62,8 +68,15 @@ struct ContactSheetView: View {
     /// editor is holding.
     @Sendable private func load() async {
         do {
-            profiles = try await Task.detached { [.identity] + (try ProfileCatalogue.bundled().profiles) }.value
-            let renderer = try await Renderer.make()
+            let resolved: (profiles: [Profile], renderer: Renderer)
+            if let source {
+                resolved = try await source()
+            } else {
+                let bundled = try await Task.detached { try ProfileCatalogue.bundled().profiles }.value
+                resolved = ([.identity] + bundled, try await Renderer.make())
+            }
+            profiles = resolved.profiles
+            let renderer = resolved.renderer
             let input = try await Task.detached { try ContactSheetReference.image() }.value
             for profile in profiles {
                 try Task.checkCancellation()

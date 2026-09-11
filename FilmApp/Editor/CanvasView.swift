@@ -30,6 +30,10 @@ struct CanvasView: View {
     var onCompare: (Bool) -> Void = { _ in }
     var previewReadout: Bool = false
     var isAdjusting = false
+    /// The Stock on the canvas. Changing it clears the loupe and any drag in
+    /// progress, the way giving the subtree a new identity used to — without also
+    /// destroying the `MTKView`, its `CAMetalLayer` and its drawable pool to do it.
+    var selectedStock: String = ""
     @State private var drag: FineDrag?
     @State private var transientLoupe: FilmCanvas.Loupe?
     @State private var savedLoupe = FilmCanvas.Loupe()
@@ -94,6 +98,7 @@ struct CanvasView: View {
             }
         }
         .onChange(of: isLoupeEnabled) { savedLoupe = FilmCanvas.Loupe(); transientLoupe = nil }
+        .onChange(of: selectedStock) { savedLoupe = FilmCanvas.Loupe(); transientLoupe = nil; drag = nil }
         .onChange(of: parameter?.id) { drag = nil }
         .onDisappear { onCompare(false); drag = nil; transientLoupe = nil }
     }

@@ -6,8 +6,11 @@ Export is many Tiles of one frame. Everything else — the Passes, their order, 
 Profile, the user's settings — is the same call.
 
 That matters more than it sounds. A 48MP frame at the pipeline's RGBA float16 is
-roughly 380MB *per intermediate texture*, and the graph holds around fourteen of them
-at Tile size at once. Untiled, a 48MP Export asks for something over five gigabytes
+roughly 380MB *per intermediate texture*, and the graph holds around nine of them
+at Tile size at once — Bloom and Halation share one Scattering Pyramid, so the count
+is lower than the layout alone suggests, and
+`theTileTextureBudgetCountsWhatTheRendererActuallyHolds` asserts the constant against
+what the Renderer really allocates rather than against this sentence. Untiled, a 48MP Export asks for something over five gigabytes
 and the OS kills the app. Tiled, the peak is the frame itself, the assembled output,
 and one Tile's worth of intermediates.
 
@@ -76,10 +79,20 @@ Catalogue's stress case — a point light ten stops over white through Cinestill
 at 200% halation — the tiled and untiled renders differ by four hundredths of an
 eight-bit code value. Below about a half, the truncated tail starts to be a seam.
 
-The memory budget caps the Apron independently. A Tile is core plus Apron whatever the
-core is, so letting a very wide Apron shrink the core to compensate spends *more*
-memory, on more Tiles, and quietly overruns the figure it was given. Where the widest
-blur reaches further than the budget allows, `TilePlan.isApronCapped` says so.
+The memory budget caps the Apron independently, and it caps it twice. A Tile is core
+plus Apron whatever the core is, so letting a very wide Apron shrink the core to
+compensate spends *more* memory, on more Tiles, and quietly overruns the figure it was
+given — that is the first bound, everything the core floor does not claim. On its own
+it is degenerate: when it binds, what is left for the core *is* the floor by
+construction, so the frame that asks for the widest Apron gets the least efficient
+Tile the plan can produce. The second bound is a third of the budget edge, which
+leaves a core proportionate to the Tile. Where the widest blur reaches further than
+either allows, `TilePlan.isApronCapped` says so.
+
+The budget itself is `ExportOptions.textureBudgetBytes`, and it is optional: nil reads
+what the process may still allocate when the Export starts, a quarter of it, with the
+320MB every device used to be given as the floor and a gigabyte as the ceiling. One
+figure for every phone asks the same of four gigabytes and of sixteen.
 
 ## Grain in image-global coordinates
 
@@ -162,11 +175,17 @@ linear frame with a blown highlight:
 | 48MP | 673, capped from 956 | 32 × 24 | 304MB | 13.0 s |
 
 Against MEM-239's targets of under 2 s and under 15 s, with a 320MB budget for the Tile
-textures. Both are met, the 48MP one narrowly and only because the Apron is capped:
-without that cap the same frame takes 54 s and asks for 1.6GB. A phone will read
-differently, and the number that actually matters there is that the Export finishes at
-all. **On-device validation is still outstanding** — a simulator does not reproduce the
-memory pressure any of this exists for.
+textures. Both were met, the 48MP one narrowly and only because the Apron was capped:
+without that cap the same frame took 54 s and asked for 1.6GB.
+
+**Those timings predate MEM-272 and the plans beside them are no longer the plans the
+same frames produce.** At the 320MB floor a 12MP frame now plans 4 × 3 Tiles and a
+48MP frame 13 × 10 rather than 32 × 24, which is 11.3× overdraw against 44.4×; the
+checked-in table in `Tests/FilmEngineTests/TilePlanTableTests.swift` is the current
+plan for a range of frame sizes and is the thing to read rather than this one. **No
+wall-clock has been taken since, on a Mac or anywhere else**, and on-device validation
+was outstanding before and still is — a simulator does not reproduce the memory
+pressure any of this exists for. `docs/audits/performance.md` carries the backlog.
 
 ## What the tests assert
 
@@ -188,3 +207,26 @@ memory pressure any of this exists for.
   direction the narrower gamut implies.
 - An Exported LUT matches the in-app render with grain and halation at zero.
 - The Grain Model policy degrades to `procedural` at `.serious` and above.
+
+`Tests/FilmEngineTests/TilePlanTableTests.swift`, on the planner directly, which is a
+pure value type and needs nothing stood up:
+
+- The plan for a range of frame sizes spanning the level the Scattering Pyramid gains
+  at a long edge of about 4 495 px is a checked-in table, so the cliff cannot come
+  back as a slow Export instead of a diff.
+- Overdraw is bounded, and rises smoothly rather than stepping across that level.
+- A capped Apron keeps at least half of what the Passes asked for.
+- A plan never spends more Tile-texture bytes than its options allow, and
+  `TilePlan.tileTextureCount` matches what the Renderer actually holds.
+- The render Plan is built once for an Export rather than once per Tile.
+- A larger budget is never more Tiles, and at the ceiling a 48MP frame is uncapped.
+
+`Tests/FilmEngineTests/ExportByteIdentityTests.swift` records what the writer and the
+Exported LUT produce, so both can be made faster with proof that no byte moved. These
+are not Golden Images: a Golden Image records what the render produces and moving one
+is a reviewed decision, where quantisation and number formatting have one right
+answer and a change to either is a defect.
+
+`Tests/FilmEngineTests/DecodeBandingTests.swift` asserts that decoding a frame a band
+of rows at a time is bit-identical to decoding it whole, at all eight EXIF
+orientations, with and without alpha, and through the Preview's resampling path.
