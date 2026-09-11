@@ -13,13 +13,12 @@ struct ParameterRail: View {
         GeometryReader { geometry in
             ScrollView(.horizontal) {
                 LazyHStack(spacing: 0) {
-                    ForEach(parameters) { parameter in
+                    ForEach(Array(parameters.enumerated()), id: \.element.id) { index, parameter in
                         puck(parameter)
-                            .frame(width: Tokens.Rail.pitch, height: Tokens.Rail.band)
+                            .frame(width: slotWidth(at: index), height: Tokens.Rail.band)
                             .id(parameter.id)
                             .overlay(alignment: .leading) {
-                                if let index = parameters.firstIndex(where: { $0.id == parameter.id }),
-                                   index > 0, parameters[index - 1].stage != parameter.stage {
+                                if startsGroup(index) {
                                     separator(parameter.stage).offset(x: -13)
                                 }
                             }
@@ -27,7 +26,8 @@ struct ParameterRail: View {
                 }
                 .scrollTargetLayout()
             }
-            .contentMargins(.horizontal, max(0, (geometry.size.width - Tokens.Rail.pitch) / 2), for: .scrollContent)
+            .contentMargins(.leading, margin(for: geometry.size.width, slot: slotWidth(at: 0)), for: .scrollContent)
+            .contentMargins(.trailing, margin(for: geometry.size.width, slot: slotWidth(at: parameters.count - 1)), for: .scrollContent)
             .scrollIndicators(.hidden)
             .scrollTargetBehavior(.viewAligned)
             .scrollPosition(id: $centered, anchor: .center)
@@ -54,6 +54,33 @@ struct ParameterRail: View {
                 }
             }
         }
+    }
+
+    /// A puck sits at the centre of its own slot, so the rail can only widen a
+    /// gap by widening the slots on either side of it. A slot that borders
+    /// another stage takes the gutter, and half of it falls on each of its
+    /// sides: the boundary reads a full gutter wider, which is the room the
+    /// stage's caption needs, and the pucks stay on their own centres so the
+    /// snapping and the programmatic centring are unchanged.
+    private func slotWidth(at index: Int) -> CGFloat {
+        guard parameters.indices.contains(index) else { return Tokens.Rail.pitch }
+        return Tokens.Rail.pitch
+            + (startsGroup(index) ? Tokens.Rail.gutter : 0)
+            + (endsGroup(index) ? Tokens.Rail.gutter : 0)
+    }
+
+    private func startsGroup(_ index: Int) -> Bool {
+        index > 0 && parameters[index - 1].stage != parameters[index].stage
+    }
+
+    private func endsGroup(_ index: Int) -> Bool {
+        index < parameters.count - 1 && parameters[index + 1].stage != parameters[index].stage
+    }
+
+    /// The end margins centre the first and the last puck, so each one measures
+    /// against its own slot rather than against the ordinary pitch.
+    private func margin(for width: CGFloat, slot: CGFloat) -> CGFloat {
+        max(0, (width - slot) / 2)
     }
 
     private func separator(_ stage: EditorStage) -> some View {
@@ -167,6 +194,9 @@ extension Tokens {
         static let selectedCenter = Color(red: 42 / 255, green: 42 / 255, blue: 47 / 255)
         static let selectedEdge = Color(red: 27 / 255, green: 27 / 255, blue: 31 / 255)
         static let pitch: CGFloat = 76
+        /// The extra clear space a stage boundary claims on top of the pitch, so
+        /// the rule and its caption stand off the pucks on either side.
+        static let gutter: CGFloat = 20
         static let band: CGFloat = 72
     }
 }
