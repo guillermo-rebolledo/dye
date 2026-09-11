@@ -16,7 +16,7 @@ enum PresetStore {
         /// The store on disk opened, and Presets saved before this launch are there.
         case onDisk
         /// The store on disk could not be opened. Presets work for this session only.
-        case inMemory(reason: String)
+        case inMemory
     }
 
     /// The schema as it shipped in 1.0. A `VersionedSchema` exists from the first
@@ -47,7 +47,7 @@ enum PresetStore {
         } catch {
             do {
                 let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-                return (try ModelContainer(for: schema, configurations: configuration), .inMemory(reason: error.localizedDescription))
+                return (try ModelContainer(for: schema, configurations: configuration), .inMemory)
             } catch {
                 // An in-memory container needs no disk, no permission and no migration.
                 // If this fails, SwiftData itself is unusable and there is no app to run.

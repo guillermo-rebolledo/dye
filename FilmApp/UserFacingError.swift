@@ -38,7 +38,8 @@ struct UserFacingError: Equatable {
     /// Only the app knows what the user was doing when the engine gave up, and that
     /// is the whole difference between a useful sentence and "Cannot encode filmResponse".
     enum Activity {
-        case openingPhoto, loadingCatalogue, loadingStock, rendering, exporting, savingToPhotos, exportingLUT, savingPreset
+        case openingPhoto, loadingCatalogue, loadingStock, rendering, exporting, exportingLUT
+        case savingPreset, applyingPreset, deletingPreset
 
         var failureSentence: String {
             switch self {
@@ -47,9 +48,10 @@ struct UserFacingError: Equatable {
             case .loadingStock: "This film stock could not be loaded. Choose another one."
             case .rendering: "This photo could not be rendered."
             case .exporting: "The export could not be completed."
-            case .savingToPhotos: "The photo could not be added to your library."
-            case .exportingLUT: "The LUT could not be created."
+            case .exportingLUT: "The exported LUT could not be created."
             case .savingPreset: "This preset could not be saved."
+            case .applyingPreset: "This preset could not be applied."
+            case .deletingPreset: "This preset could not be deleted."
             }
         }
     }

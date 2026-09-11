@@ -11,18 +11,12 @@ public struct ProfileCatalogue: Sendable {
         // synthetic studies through the middle of the browser, so a third of what a
         // first-time user scrolled past was calibration fixtures. Studies now sit
         // together at the end, where a browser can explain them once.
-        profiles = loaded.sorted {
-            let (left, right) = ($0.metadata.accuracyClaim == .synthetic, $1.metadata.accuracyClaim == .synthetic)
-            return left == right ? $0.metadata.displayName < $1.metadata.displayName : !left
+        profiles = loaded.sorted { first, second in
+            let isStudy = { (profile: Profile) in profile.metadata.accuracyClaim == .synthetic }
+            guard isStudy(first) == isStudy(second) else { return !isStudy(first) }
+            return first.metadata.displayName < second.metadata.displayName // bare-display-name: a sort key, never rendered
         }
     }
-
-    /// The Stocks the Catalogue is a claim about. The studies exist for Golden Images
-    /// and Contact Sheet review, both of which load the Catalogue whole.
-    public var stocks: [Profile] { profiles.filter { $0.metadata.accuracyClaim != .synthetic } }
-
-    /// The synthetic studies, which model no Stock and claim no accuracy.
-    public var studies: [Profile] { profiles.filter { $0.metadata.accuracyClaim == .synthetic } }
     public static func bundled() throws -> ProfileCatalogue {
         guard let directory = Bundle.module.resourceURL?.appendingPathComponent("Catalogue") else {
             throw FilmError.invalid("Bundled Catalogue is missing")

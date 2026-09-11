@@ -28,8 +28,13 @@ CATEGORY = "public.app-category.photography"
 
 
 def is_identifier(line):
-    """A Profile id or a path built from one, which is never shown to a user."""
-    return bool(re.fullmatch(r"[/\w.\-]*", line.strip()))
+    """A Profile id, or a path or filename built from one.
+
+    Profile ids are lower-case kebab (`vision3-500t`), so requiring lower case is
+    what separates them from a user-facing literal. `Kodachrome` on its own line is
+    a string the interface could show, and must not be exempted here.
+    """
+    return bool(re.fullmatch(r"[/a-z0-9._\-]*", line.strip()))
 
 
 def fail(message):

@@ -144,12 +144,12 @@ struct PresetSheet: View {
         do {
             try model.applyPreset(stockID: row.preset.stockID, settings: settings)
             dismiss()
-        } catch { self.error = UserFacingError(error, doing: .savingPreset).message }
+        } catch { self.error = UserFacingError(error, doing: .applyingPreset).message }
     }
 
     private func delete(_ preset: Preset) {
         context.delete(preset)
-        do { try context.save() } catch let failure { context.rollback(); error = UserFacingError(failure, doing: .savingPreset).message }
+        do { try context.save() } catch let failure { context.rollback(); error = UserFacingError(failure, doing: .deletingPreset).message }
     }
 }
 

@@ -7,16 +7,23 @@ import Foundation
 enum Legal {
     /// Where a support page and a privacy policy live. Both are mandatory App Store
     /// Connect fields, so the app links the same URLs the listing declares.
+    ///
+    /// **Neither page is published yet, so both links are dead.** They are here as
+    /// the single place to change when they are, and publishing them is a submission
+    /// blocker in `docs/release.md` — shipping a dead Privacy Policy row is worse
+    /// than shipping none.
     static let supportURL = URL(string: "https://memoji.app/dye/support")!
     static let privacyPolicyURL = URL(string: "https://memoji.app/dye/privacy")!
 
     /// What the qualifier in front of a Display Name means. Shown in the Film Stock
     /// browser, where every name in the Catalogue is on screen at once.
     static let qualifierExplanation = """
-        Every stock here is a model built from published data, not a photograph of \
-        film, so each one is marked Modelled. A stock marked Approx. goes further: \
-        the manufacturer publishes no usable measurement of at least one of its \
-        parameters, and a value borrowed from a related stock stands in for it.
+        Every stock that models a real film is marked Modelled: it is built from \
+        published data, and has never been compared with a photograph of the film. \
+        Approx. means more than Modelled, not less — the manufacturer publishes no \
+        usable measurement of at least one parameter, so a value borrowed from a \
+        related stock stands in for it. The synthetic studies and No Film Stock model \
+        no film at all, so they are not marked.
         """
 
     /// The non-affiliation statement. The Catalogue ships under names of its own, so

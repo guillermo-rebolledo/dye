@@ -25,8 +25,10 @@ The application does not:
 | `fomapan-100` | Ash 100 | `vision3-500t` | Tungsten 500 |
 
 Profile **ids** are unchanged. They key saved Presets, Golden Image fixtures and the
-CI Step Wedge patterns, and they are never shown — `Scripts/check-archive.py` fails
-the build if a manufacturer mark reaches any surface a user can read. See `NOTICE.md`.
+CI Step Wedge patterns, and they are never shown. `Scripts/check-archive.py` fails
+the build if a mark appears in a Display Name in the shipped Catalogue, or as a
+string literal in the app binary that is not a lower-case identifier. That is a
+guard against the obvious regression, not a proof. See `NOTICE.md`.
 
 **Every Stock says what it is.** A name in the app carries a qualifier in front of
 it. `Modelled` means built from published measurements and judgement, with no

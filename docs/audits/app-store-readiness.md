@@ -62,7 +62,7 @@ checklist depends on them.
 | --- | --- |
 | **Q1** Trademark | **Option A / D — rename the Catalogue.** All twelve Display Names are Dye's own. The store description may name the films that inspired the looks, in prose, with the disclaimer after it. |
 | **Q3** iPad | **iPhone only.** `TARGETED_DEVICE_FAMILY = 1`. The app still runs in compatibility mode and needs no iPad screenshots. Reversible. |
-| **Q5** Launch Catalogue | **All seventeen Profiles ship.** The five studies are no longer scattered through the middle of the browser; the Catalogue sorts them together at the end. |
+| **Q5** Launch Catalogue | **Not an owner answer — a default.** All seventeen Profiles still ship; the five studies are no longer scattered through the middle of the browser but sorted together at the end. Q5 was not among the four questions put to the owner, so this unblocks the ordering work and nothing more. Whether the studies ship at all is still open. |
 | **Q6** Accuracy | **A distinct qualifier, not a wider Approximation.** `FilmProfile.accuracy` is a new field with three cases, and the Approximation label outranks it. |
 
 **Two findings in this audit were wrong, and the correction matters.**
@@ -106,8 +106,15 @@ asserts that. Renaming them is a separate, larger change and is not needed for v
 
 - **REL-22, REL-37, REL-38, REL-40, and the App Store Connect half of REL-08, REL-09
   and REL-39.** Owner and App Store Connect decisions. `FilmApp/Legal.swift` already
-  links `memoji.app/dye/privacy` and `memoji.app/dye/support`; **both are dead until
-  the pages are published**, and that is a blocker.
+  links `memoji.app/dye/privacy` and `memoji.app/dye/support` and Settings shows both
+  rows. **Neither page exists, so both links are dead, and a dead Privacy Policy row
+  is worse than none.** Publishing them is a submission blocker. The URLs are
+  hardcoded in one place so that changing them is one edit.
+- **The non-affiliation disclaimer reaches the app only.** The store description and
+  the support page need the same paragraph, and both are owner scope.
+- **The studies are ordered, not explained.** REL-23 offered "hide them" or "give
+  them a home with a one-line explanation"; this pass did the ordering half. They
+  still ship, unexplained, at the end of the browser.
 - **REL-29, REL-30, REL-41.** Export peak memory, the temporary-directory leak and
   the Catalogue's 210 MB. Specified with the performance and security work, per this
   audit's own *Out of scope*.
@@ -2779,7 +2786,7 @@ runtime fixes; then the listing. Each item names the finding it closes.
 - [ ] Answer **Q2** and record the business model · REL-22
 - [x] Answer **Q3** and record the iPad decision · REL-05
 - [ ] Answer **Q4** and record the launch scope · REL-20, REL-29
-- [x] Answer **Q5** and record which Stocks ship and in what order · REL-23, REL-41
+- [ ] Answer **Q5** and record which Stocks ship · REL-23, REL-41 — *provisionally all seventeen, studies last; this was a default taken to unblock the ordering work, not an owner decision*
 - [x] Answer **Q6** and record the accuracy positioning · REL-19
 - [ ] Answer **Q7** and record the spelling variant · REL-27
 - [ ] Answer **Q8** and record the appearance decision · REL-24
@@ -2794,7 +2801,8 @@ runtime fixes; then the listing. Each item names the finding it closes.
 - [x] Remove `"Kodak's"` from `FilmApp/Editor/Parameter.swift:578` · REL-12
 - [x] Change the `"kodachrome-64"` fixture id at `FilmApp/PresetSheet.swift:285` · REL-12
 - [x] Change the Export filename at `FilmApp/EditorModel.swift:330` if ids are now user-visible under the new naming · REL-12
-- [x] Write the non-affiliation disclaimer and place it in the app, the store description and the support page · REL-14
+- [x] Write the non-affiliation disclaimer and place it **in the app** (`FilmApp/Legal.swift`, Settings → About) · REL-14
+- [ ] Put the same disclaimer in the store description and on the support page · REL-14
 - [x] Add a rights paragraph to the thirteen `Curves/*/SOURCES.md` files that lack one · REL-15
 - [x] Replace or state the rights position for the CineStill storefront-image source · REL-15
 - [x] Add a root `LICENSE` · REL-16
@@ -2825,7 +2833,7 @@ runtime fixes; then the listing. Each item names the finding it closes.
 
 - [x] Replace the force unwrap at `Sources/FilmEngine/Profiles/Profile.swift:62-63` with a thrown error · REL-06
 - [x] Replace the force unwrap at `Sources/FilmEngine/Renderer.swift:44` with a thrown error · REL-06
-- [x] Build a Release archive and confirm the three SPM resource paths exist inside the `.app` · REL-06
+- [x] Build a Release archive and confirm the SPM resource paths exist inside the `.app` — now two, not three: `Profiles/Calibration` is gone and the identity Profile is compiled in · REL-06
 - [x] Create the SwiftData `ModelContainer` with `try` and an in-memory fallback · REL-32
 - [x] Add `VersionedSchema` and a `SchemaMigrationPlan` stub for `Preset` · REL-32
 - [ ] Verify a v1 → v2 schema change preserves saved Presets · REL-32
@@ -2854,7 +2862,8 @@ runtime fixes; then the listing. Each item names the finding it closes.
 - [x] Extract the qualifier into one place and add a test that asserts every naming site uses it · REL-18
 - [x] Decide whether `spectral.contrastFilters` alone should qualify a whole Profile, and update `CONTEXT.md` if not · REL-18
 - [ ] Surface per-parameter Provenance in the Film Stock browser · REL-19
-- [x] Hide or explain the five synthetic studies, and add an explicit Catalogue sort order · REL-23
+- [x] Add an explicit Catalogue sort order that groups the five synthetic studies at the end · REL-23
+- [ ] Give the studies a labelled section and a one-line explanation in the browser · REL-23
 - [x] Fix `"Stock"` → `"Film Stock"` at `Parameter.swift:303`, `:305`, `:734` · REL-27
 - [ ] Apply the Q7 spelling decision to the user-facing strings · REL-27
 - [x] Fix `Cinestill` → `CineStill` if the brand names survive Q1 · REL-27
