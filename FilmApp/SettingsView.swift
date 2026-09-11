@@ -27,10 +27,18 @@ struct SettingsView: View {
                     } label: {
                         Label("Acknowledgements", systemImage: "text.book.closed")
                     }
-                    Link(destination: Legal.privacyPolicyURL) {
+                    // On device rather than linked out. The same words are published
+                    // at `Legal.privacyPolicyURL` because App Store Connect demands a
+                    // URL, but a policy a user cannot read on a plane is not one.
+                    NavigationLink {
+                        LegalTextView(title: "Privacy Policy", text: Legal.privacyPolicy)
+                    } label: {
                         Label("Privacy Policy", systemImage: "hand.raised")
                     }
-                    Link(destination: Legal.supportURL) {
+                    NavigationLink {
+                        LegalTextView(title: "Support", text: Legal.support,
+                                      action: ("Open the issue tracker", Legal.issueTrackerURL))
+                    } label: {
                         Label("Support", systemImage: "lifepreserver")
                     }
                 } footer: {
@@ -67,15 +75,25 @@ struct SettingsView: View {
 struct LegalTextView: View {
     let title: String
     let text: String
+    /// The one thing a reader of this text may need to do rather than read — the
+    /// issue tracker, under Support. Prose cannot be tapped; this can.
+    var action: (label: String, url: URL)?
 
     var body: some View {
         ScrollView {
-            Text(text)
-                .font(.callout)
-                .textSelection(.enabled)
-                .foregroundStyle(Tokens.Palette.textSecondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(20)
+            VStack(alignment: .leading, spacing: 20) {
+                Text(text)
+                    .font(.callout)
+                    .textSelection(.enabled)
+                    .foregroundStyle(Tokens.Palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let action {
+                    Link(action.label, destination: action.url)
+                        .font(.callout.weight(.medium))
+                        .tint(Tokens.Palette.accent)
+                }
+            }
+            .padding(20)
         }
         .background(Tokens.Palette.deck)
         .navigationTitle(title)

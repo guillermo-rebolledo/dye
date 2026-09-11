@@ -51,7 +51,7 @@ finding below, re-check the code rather than assuming one of the three is right.
 
 ## Implementation status — 2026-09-10, MEM-274
 
-The **engineering subset** of this audit has been implemented. Fifty-five checklist
+The **engineering subset** of this audit has been implemented. Fifty-seven checklist
 items below are ticked. What follows is what changed, what the audit got wrong, and
 what is deliberately still open.
 
@@ -104,12 +104,15 @@ asserts that. Renaming them is a separate, larger change and is not needed for v
 
 **What this pass did not touch**, and why:
 
-- **REL-22, REL-37, REL-38, REL-40, and the App Store Connect half of REL-08, REL-09
-  and REL-39.** Owner and App Store Connect decisions. `FilmApp/Legal.swift` already
-  links `memoji.app/dye/privacy` and `memoji.app/dye/support` and Settings shows both
-  rows. **Neither page exists, so both links are dead, and a dead Privacy Policy row
-  is worse than none.** Publishing them is a submission blocker. The URLs are
-  hardcoded in one place so that changing them is one edit.
+- **REL-22, REL-37, REL-38, REL-40, and the App Store Connect half of REL-08 and
+  REL-40.** Owner and App Store Connect decisions.
+- **REL-09 and REL-39 are closed in code.** The privacy policy and the support page
+  are text in `FilmApp/Legal.swift`, shown on device — no network, no dead row — and
+  published as two static pages by `Scripts/build-site.py` into `docs/`, which GitHub
+  Pages serves from `main`. `Scripts/test_ci_site.py` fails the build if the
+  published pages and the app ever disagree, because a policy that has drifted from
+  the app is a false statement rather than a stale file. What is left is entering the
+  two URLs in App Store Connect, and confirming they load once this merges.
 - **The non-affiliation disclaimer reaches the app only.** The store description and
   the support page need the same paragraph, and both are owner scope.
 - **REL-29 and REL-41.** Export peak memory and the Catalogue's 210 MB. Specified
@@ -2906,8 +2909,8 @@ runtime fixes; then the listing. Each item names the finding it closes.
 
 **Store listing (do this last — Q1 and Q6 determine most of it)**
 
-- [ ] Publish the privacy policy at a stable URL · REL-09
-- [ ] Publish the support page at a stable URL · REL-39
+- [x] Publish the privacy policy at a stable URL · REL-09
+- [x] Publish the support page at a stable URL · REL-39
 - [ ] Reserve the app name in App Store Connect and confirm availability · REL-13, REL-40
 - [ ] Create the App Store Connect record for `app.memoji.dye` · REL-37
 - [ ] Accept the required Apple agreements · REL-37

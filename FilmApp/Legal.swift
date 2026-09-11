@@ -5,15 +5,99 @@ import Foundation
 /// It lives in one place because the same words go into the store description and the
 /// support page, and three copies of a legal paragraph drift.
 enum Legal {
-    /// Where a support page and a privacy policy live. Both are mandatory App Store
-    /// Connect fields, so the app links the same URLs the listing declares.
+    /// Where the privacy policy and the support page are published. Both are mandatory
+    /// App Store Connect fields and Apple needs a reachable page at each, which is the
+    /// only reason these exist: the app itself shows the same words from
+    /// `privacyPolicy` and `support` below, on device, without a network.
     ///
-    /// **Neither page is published yet, so both links are dead.** They are here as
-    /// the single place to change when they are, and publishing them is a submission
-    /// blocker in `docs/release.md` — shipping a dead Privacy Policy row is worse
-    /// than shipping none.
-    static let supportURL = URL(string: "https://memoji.app/dye/support")!
-    static let privacyPolicyURL = URL(string: "https://memoji.app/dye/privacy")!
+    /// `Scripts/build-site.py` renders both pages from those two properties and
+    /// `Scripts/test_ci_site.py` fails the build if the published pages and the app
+    /// ever disagree. Change the words here, never in the HTML.
+    static let supportURL = URL(string: "https://guillermo-rebolledo.github.io/dye/support/")!
+    static let privacyPolicyURL = URL(string: "https://guillermo-rebolledo.github.io/dye/privacy/")!
+
+    /// Where a problem with Dye goes. A public tracker rather than a mailbox: it is
+    /// already where the code lives, and it does not publish anybody's address.
+    static let issueTrackerURL = URL(string: "https://github.com/guillermo-rebolledo/dye/issues")!
+
+    /// The privacy policy, shown on device and published at `privacyPolicyURL`.
+    ///
+    /// Every sentence here is a claim about what the code does, and the code is the
+    /// authority: no networking, no analytics, no third-party SDK, an add-only Photos
+    /// authorisation, and Presets in a local store. If any of those stops being true,
+    /// this paragraph is wrong before the App Privacy answers are.
+    static let privacyPolicy = """
+        Dye collects nothing.
+
+        Dye has no analytics, no advertising, no crash reporting and no third-party \
+        software development kits. It makes no network connection of its own, so \
+        there is nowhere for anything to go, and there is no account to create.
+
+        Your photographs
+
+        You choose a photograph with the system picker. iOS hands Dye a copy of the \
+        one you chose and nothing else, so Dye never has access to your photo library.
+
+        Everything Dye then does to that photograph happens on your device. When you \
+        save an export, Dye asks permission to add to your photo library. That \
+        permission is add-only: it can put a new picture in, and it cannot read what \
+        is already there. Refusing it does not stop the export, which you can still \
+        share from inside the app.
+
+        An export has to become a file before it can be saved or shared. Dye keeps at \
+        most one, replaces it the next time you export, and deletes it when the app \
+        next starts.
+
+        What stays on your device
+
+        Presets you save are stored on your device only, and go wherever your own \
+        iPhone backups go. There is no account, and no copy anywhere else.
+
+        Leaving the app
+
+        Opening a link from Settings hands off to your browser. What happens after \
+        that is between you and the site you land on.
+
+        Children
+
+        Dye is not directed at children, and collects nothing from anyone.
+
+        Changes
+
+        If this policy changes, the new version appears here and in the app. A change \
+        would mean Dye had started doing something it does not do today.
+
+        Last updated 11 September 2026.
+        """
+
+    /// The support page, shown on device and published at `supportURL`.
+    static let support = """
+        Dye renders your photograph through a physical model of a film stock. It runs \
+        on your device, with no account and no network.
+
+        Requirements
+
+        An iPhone running iOS 17 or later.
+
+        Reporting a problem
+
+        Problems and questions go to Dye's public issue tracker on GitHub.
+
+        Please say which iPhone you are using, which version of iOS it runs, and the \
+        version of Dye printed at the bottom of Settings. If one particular \
+        photograph fails, say what kind of file it is and where it came from.
+
+        What Dye does not claim
+
+        Dye's film stocks carry names of Dye's own. They are physical models built \
+        from published measurements, and none of them has been compared against a \
+        photograph taken on the film it models — which is what the word Modelled \
+        beneath a stock's name is there to say. Approx. marks a stock where a \
+        published measurement was missing altogether and a value from a related stock \
+        stands in for it.
+
+        Dye is an iPhone app. There is no iPad layout and no Mac version.
+        """
 
     /// What the qualifier in front of a Display Name means. Shown in the Film Stock
     /// browser, where every name in the Catalogue is on screen at once.

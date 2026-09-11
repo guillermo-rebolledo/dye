@@ -84,4 +84,7 @@ Profile id.
 ### Legal
 
 - `LICENSE` and `NOTICE.md`, discharging the CC BY-SA 4.0 obligation on the CIE data.
-- About, Acknowledgements, Privacy Policy and Support in Settings.
+- About, Acknowledgements, Privacy Policy and Support in Settings. The policy and the
+  support page are read on device, with no network — and the same words are published
+  as two web pages for the App Store Connect fields that demand a URL. One source, and
+  a test that fails when the two disagree.
