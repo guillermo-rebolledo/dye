@@ -78,6 +78,15 @@ are what caught them.
   structural changes were taken — the branch on depth hoisted out of the loop, typed
   row writes instead of `storeBytes` per component — and the arithmetic stayed
   `Double`.
+
+  The fixture itself had to be narrowed to make the claim true. "Byte-identity for the
+  written image" cannot mean the written *file*: a TIFF embeds an ICC profile that
+  differs between OS versions, and HEIF and JPEG are a system encoder's arithmetic
+  rather than the writer's. What is recorded is the pixels a lossless container decodes
+  back to, which is exactly what the writer quantised. The 8-bit path has no lossless
+  container at all — both containers that use it are lossy — so it cannot have a
+  fixture, and is gated instead by agreeing with the 16-bit path, which catches a
+  rounding rule that moved in one and not the other.
 - **PERF-16.** `%f` rounds an exact tie to even; `(value * 1e6).rounded()` rounds away
   from zero. Thirty-two of the `Float16` values below one land on a tie, so the naive
   integer formatter changed the file. `.toNearestOrEven` is the same decision on the
