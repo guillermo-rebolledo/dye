@@ -46,7 +46,8 @@ rates the Stock faster: push +1 is −1 EV of exposure with the +1 curve shape.
 Halation scatters above-threshold light back into the linear signal **before** the
 Film Response, through a six-level float16 Scattering Pyramid whose per-channel
 radii come from the Profile in Film-Plane Microns; its intensity control scales the
-Stock's own strength on a 0–200% scale. See [the Halation Pass](docs/halation.md).
+Stock's own strength on a 0–200% scale. Profiles without built-in halation use
+an artistic fallback above 100%. See [the Halation Pass](docs/halation.md).
 Bloom shares that pyramid and runs immediately before it, the order the light meets
 them: it is the taking lens spreading a fraction of *all* the light across the
 frame, neutral and unthresholded, and redistributing it rather than adding to it.
@@ -86,7 +87,7 @@ Paths apply the same limits, and the Preview subsamples during decode rather tha
 materialising the source raster and scaling it down. An oversized frame is an error
 naming the size, not a process the system kills.
 
-Identity is bit-exact at the Working Space boundary for all finite float16 values,
+At default settings, Identity is bit-exact at the Working Space boundary for all finite float16 values,
 including negative and HDR values; decoding and changing colour spaces inherently
 rounds to float16. Untagged inputs are rejected instead of assuming sRGB. Tests also distinguish tetrahedral from trilinear interpolation
 in all six tetrahedra and check tagged sRGB versus Display P3 input.
@@ -194,7 +195,9 @@ Portra 400, Portra 160, Cinestill 800T and the four Vision3 Stocks render in the
 exposure, white balance, development, bloom, halation and grain controls, the
 scan-or-print choice, and the vignette, gate weave and frame border of the
 Geometry Pass. Bloom is the taking lens rather than the film, so every Stock
-carries the same modelled one and both its parameters are artistic.
+carries the same modelled one and both its parameters are artistic. Bloom and
+Halation controls are available with every Stock and with No Film Stock (Identity);
+profiles without built-in effects add them above 100%.
 
 The editor saves Stock/settings **Presets** in SwiftData, offers hold-to-compare
 and live photo thumbnails, and enables EDR on capable displays. Open **Contact

@@ -99,7 +99,7 @@ import FilmEngine
         profile.metadata.reciprocity.gain(seconds: settings.exposureSeconds).map { -log2($0) }
     }
 
-    /// Whether the Stock scatters at all; a Profile with no Halation has no control.
+    /// Whether the Stock has built-in halation, for describing the control’s baseline.
     var hasHalation: Bool { profile.metadata.halation.strength > 0 }
 
     /// How far the Stock scatters in its widest channel, in Film-Plane Microns.

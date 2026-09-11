@@ -890,13 +890,16 @@ public actor Renderer {
     /// to it. Nil when the modelled lens or the user has nothing to diffuse.
     private func bloom(profile: Profile, settings: RenderSettings, frame: Frame,
                        tileWidth: Int, tileHeight: Int) -> Scatter? {
-        let metadata = profile.metadata.bloom
+        // Zero-strength profiles retain their neutral default, but have a useful
+        // scattering radius when the user enters the creative range above 100%.
+        let metadata = profile.metadata.bloom.strength > 0 ? profile.metadata.bloom
+            : FilmProfile.Bloom(strength: 0, radiusMicrons: 900)
         // Keep 0...100% faithful to the lens. Above the detent, open up a
         // useful diffusion range even for stocks whose baseline is only 2%.
         let boost = max(0, settings.bloomIntensity - 1)
         let strength = min(1, metadata.strength * settings.bloomIntensity
                            + max(0, 0.3 - 2 * metadata.strength) * boost * boost)
-        guard metadata.strength > 0, strength > 0, metadata.radiusMicrons > 0 else { return nil }
+        guard strength > 0, metadata.radiusMicrons > 0 else { return nil }
         // A zero threshold with the narrowest knee takes every positive value: light a
         // lens cannot have received is not light it can diffuse.
         return scatter(profile: profile, radiusMicrons: [Double](repeating: metadata.radiusMicrons, count: 3),
@@ -908,11 +911,13 @@ public actor Renderer {
     /// the Stock or the user has no Halation to add.
     private func halation(profile: Profile, settings: RenderSettings, frame: Frame,
                           tileWidth: Int, tileHeight: Int) -> Scatter? {
-        let metadata = profile.metadata.halation
+        let metadata = profile.metadata.halation.strength > 0 ? profile.metadata.halation
+            : FilmProfile.Halation(strength: 0, threshold: 1.1,
+                                   radiusMicrons: [420, 150, 70], tint: [1, 0.18, 0.08])
         let boost = max(0, settings.halationIntensity - 1)
         let strength = metadata.strength * settings.halationIntensity
             + max(0, 0.3 - 2 * metadata.strength) * boost * boost
-        guard metadata.strength > 0, strength > 0, metadata.radiusMicrons.contains(where: { $0 > 0 }) else { return nil }
+        guard strength > 0, metadata.radiusMicrons.contains(where: { $0 > 0 }) else { return nil }
         // SDR photos top out near 1 in linear light. The stock threshold
         // (often 1.6) otherwise leaves almost nothing to scatter even at 200%.
         // The creative range reaches those highlights without lifting exposure.
