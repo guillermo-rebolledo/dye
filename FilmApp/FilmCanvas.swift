@@ -47,6 +47,10 @@ struct FilmCanvas: UIViewRepresentable {
         var loupe: Loupe?
         // All canvases use the system default device and the same pixel format.
         private static var sharedPipeline: (any MTLRenderPipelineState)?
+        /// All canvases use the system default device, so one queue serves every one
+        /// of them. With the filmstrip open there are eighteen cells, the main canvas
+        /// and two Output Stage cards on screen; a queue each is twenty-one.
+        private static var sharedQueue: (any MTLCommandQueue)?
         private var texture: (any MTLTexture)?
         private var uploadedImageID: UUID?
         private var pipeline: (any MTLRenderPipelineState)?
@@ -83,7 +87,10 @@ struct FilmCanvas: UIViewRepresentable {
                     pipeline = try device.makeRenderPipelineState(descriptor: state)
                     Self.sharedPipeline = pipeline
                 }
-                if queue == nil { queue = device.makeCommandQueue() }
+                if queue == nil {
+                    if Self.sharedQueue == nil { Self.sharedQueue = device.makeCommandQueue() }
+                    queue = Self.sharedQueue
+                }
                 if uploadedImageID != image.id {
                     let textureDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float,
                         width: image.width, height: image.height, mipmapped: false)

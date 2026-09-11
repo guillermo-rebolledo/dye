@@ -33,6 +33,10 @@ struct EditorPickers: View {
             }
             .padding(.vertical, 24)
             .padding(.horizontal, 16)
+            // The Catalogue sweep renders eighteen Profiles and reads about 54MB of
+            // Colour Cube. It runs while this sheet is up and not otherwise.
+            .onAppear { model.isCatalogueVisible = true }
+            .onDisappear { model.isCatalogueVisible = false }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
             .presentationBackground(Tokens.Palette.deck)

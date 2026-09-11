@@ -152,8 +152,13 @@ and White Balance is where a photographer fixes it. All four are Remjet-backed, 
 their modelled Halation is suppressed against a still colour negative's: 0.008 and
 180/80/40 µm against Portra 400's 0.03 and 220/90/45. Cinestill 800T is
 [derived from 500T](Curves/cinestill-800t/SOURCES.md) rather than modelled
-separately — the same Emulsion without that backing, shipping byte-identical Colour
-Cubes and differing in Halation, Box Speed and Process, at strength 0.55.
+separately — the same Emulsion without that backing, differing in Halation, Box
+Speed and Process, at strength 0.55. Its Curve Set is 500T's; its Colour Cubes are
+not byte-identical to 500T's, because it is baked at a 129³ lattice where every
+other Stock is 65³. That is eight times the file, the read, the decode and the
+texture upload, and it is 38% of the shipped Catalogue on its own. Nothing in
+`Curves/cinestill-800t/` says why, and settling it is an accuracy question rather
+than a performance one — see PERF-19 in `docs/audits/performance.md`.
 Kodak's current 250D sheet draws its charts as raster plates rather than vector
 paths, and [says so](Curves/vision3-250d/SOURCES.md) about the two it could not
 separate.
