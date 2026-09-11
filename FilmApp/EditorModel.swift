@@ -18,6 +18,24 @@ import FilmEngine
     private(set) var thumbnails: [String: RenderedPixels] = [:]
     private var thumbnailInput: LinearImage?
     private var thumbnailTask: Task<Void, Never>?
+    /// Whether a surface showing the Catalogue is on screen. The filmstrip lives in a
+    /// sheet, so for the overwhelming majority of a grading session it is not — and a
+    /// sweep of eighteen Profiles after every settings change is eighteen renders and
+    /// about 54MB of Colour Cube nobody is looking at.
+    var isCatalogueVisible = false {
+        didSet {
+            guard isCatalogueVisible, thumbnailsAreStale else { return }
+            // What is on file was rendered at settings the photograph is no longer at,
+            // and a cell showing it would be quietly wrong rather than visibly behind.
+            // Clearing first is what puts every cell in its developing state until its
+            // own render lands.
+            thumbnails = [:]
+            scheduleThumbnails()
+        }
+    }
+    /// Set when a settings change happened with the Catalogue off screen, so opening
+    /// it renders the settings the photograph is actually at.
+    private var thumbnailsAreStale = false
     private var imageGeneration = UUID()
     private(set) var thumbnailGeneration = UUID()
     private var openGeneration = UUID()
@@ -35,6 +53,12 @@ import FilmEngine
     static let previewMaximumDimension = 2048
 
     private var renderer: Renderer?
+    /// The Export path renders Tiles of about 1664px where the Preview renders 2048,
+    /// and both keep their Scattering Pyramid and MTF textures keyed by size — so
+    /// sharing one Renderer means each reallocates roughly 300MB of texture every time
+    /// the Export yields between Tiles and the Preview loop gets in. They already have
+    /// separate command queues for the same reason; this gives them separate scratch.
+    private var exportRendererTask: Task<Renderer, Error>?
     private var preview: LinearImage?
     /// The photo as it arrived. The Preview is a screen-sized decode of it, but an
     /// Export has to start from the full-resolution original, so the bytes are kept.
@@ -81,7 +105,7 @@ import FilmEngine
         profile.metadata.reciprocity.gain(seconds: settings.exposureSeconds).map { -log2($0) }
     }
 
-    /// Whether the Stock scatters at all; a Profile with no Halation has no control.
+    /// Whether the Stock has built-in halation, for describing the control’s baseline.
     var hasHalation: Bool { profile.metadata.halation.strength > 0 }
 
     /// How far the Stock scatters in its widest channel, in Film-Plane Microns.
@@ -156,7 +180,15 @@ import FilmEngine
         do {
             error = nil
             refusedPhoto = nil
-            guard let data = try await item.loadTransferable(type: Data.self) else {
+            // Both are slow and neither needs the other: the build is a Metal library
+            // compile and the transfer can be an iCloud download. Their failures stay
+            // distinguishable because each is awaited on its own line.
+            let existing = self.renderer
+            async let built = existing != nil ? existing! : try await Renderer.make()
+            async let transferred = item.loadTransferable(type: Data.self)
+            let renderer = try await built
+            self.renderer = renderer
+            guard let data = try await transferred else {
                 throw FilmError.photo(.undecodable)
             }
             try Task.checkCancellation()
@@ -230,8 +262,10 @@ import FilmEngine
         adjusted.developmentOffset = Self.developmentOffset(settings.developmentOffset, for: profile)
         adjusted.contrastFilter = Self.contrastFilter(settings.contrastFilter, for: profile)
         adjusted.outputStage = Self.outputStage(settings.outputStage, for: profile)
-        settings = adjusted
-        scheduleRender()
+        // Assigning `settings` fires its own `didSet`, which schedules the render. A
+        // Stock whose clamping leaves the settings untouched still needs one, so this
+        // schedules only in the case the assignment did not.
+        if adjusted == settings { scheduleRender() } else { settings = adjusted }
     }
 
     // MARK: - Preset thumbnails
@@ -289,13 +323,16 @@ import FilmEngine
     /// render — so the finished sheet can show the file as a record rather than as a
     /// bare share button.
     struct ExportRecord: Sendable, Equatable {
-        let url: URL
+        /// The engine owns the file and removes it when this record is released or
+        /// dismissed, so the app never holds a temporary URL of its own.
+        let file: ExportedFile
+        var url: URL { file.url }
         /// Nil for the LUT, which is a lattice written as text rather than a raster.
         var pixelWidth: Int?
         var pixelHeight: Int?
         /// The delivery encoding the file is tagged with, and nil for the same reason.
         var output: RenderSettings.Output?
-        var byteCount: Int
+        var byteCount: Int { file.byteCount }
         /// One for the LUT, which is rendered whole. An image is rendered a Tile at
         /// a time and reports its own count as it goes.
         var tileCount: Int
@@ -332,6 +369,26 @@ import FilmEngine
     }
     var isThrottled: Bool { thermalState == .serious || thermalState == .critical }
 
+    /// Drops what every Renderer is holding when the system says it is short.
+    ///
+    /// A warm editor retains a few hundred megabytes it would like to have for the
+    /// next render — the Scattering Pyramid, the MTF textures and a Catalogue sweep's
+    /// worth of Colour Cube across three Renderers. None of it is state: a render that
+    /// needs one reads it again, so under pressure all of it is better given back than
+    /// held for a re-render that may not come.
+    func watchMemoryPressure() async {
+        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
+        let (events, continuation) = AsyncStream<Void>.makeStream()
+        source.setEventHandler { continuation.yield() }
+        source.activate()
+        defer { source.cancel(); continuation.finish() }
+        for await _ in events {
+            await renderer?.releaseCaches()
+            await (try? thumbnailRendererTask?.value)??.releaseCaches()
+            await (try? exportRendererTask?.value)??.releaseCaches()
+        }
+    }
+
     func watchThermalState() async {
         let observer = ThermalObserver()
         for await state in observer.states { thermalState = state }
@@ -345,22 +402,17 @@ import FilmEngine
         case failed
     }
 
-    /// The name the exported file carries out of the app. Derived from the Display
-    /// Name rather than the Profile id, because the id is a stable internal handle and
-    /// the user has never seen it.
-    static func exportFilename(for profile: Profile) -> String {
-        let name = profile.metadata.displayName // bare-display-name: a filename, and a qualifier is interface
-            .components(separatedBy: CharacterSet.alphanumerics.union(.whitespaces).inverted).joined(separator: " ")
-            .split(separator: " ").joined(separator: "-")
-        return name.isEmpty ? profile.id : name.lowercased()
+    private func exportRenderer() async throws -> Renderer {
+        if exportRendererTask == nil { exportRendererTask = Task { try await Renderer.make() } }
+        do { return try await exportRendererTask!.value }
+        catch { exportRendererTask = nil; throw error }
     }
 
     /// Renders the photo at full resolution and saves it to Photos and a shareable file. The
     /// renderer reports per Tile, which is also where it can be cancelled.
     func exportImage() {
-        guard let original, let renderer, exportTask == nil else { return }
+        guard let original, exportTask == nil else { return }
         let (profile, settings, format) = (profile, exportSettings, exportFormat)
-        let name = Self.exportFilename(for: profile)
         let assumesSRGB = assumesSRGB
         let creationDate = exportDate.resolve(originalDate: originalDate)
         export = .running(ExportProgress(completedTiles: 0, tileCount: 0))
@@ -385,10 +437,13 @@ import FilmEngine
                 // Render and write first. Photos is *a* destination, not *the* one:
                 // the file exists and can be shared whatever the library says, and
                 // asking before there is anything to save wastes the user's answer.
-                let data = try await renderer.export(image: .encoded(original, assumingSRGB: assumesSRGB), profile: profile, settings: settings,
-                                                     format: format, options: ExportOptions(creationDate: creationDate), progress: report)
+                let renderer = try await self?.exportRenderer()
+                guard let renderer else { throw CancellationError() }
+                let file = try await renderer.exportFile(image: .encoded(original, assumingSRGB: assumesSRGB),
+                                                         profile: profile, settings: settings,
+                                                         format: format, options: ExportOptions(creationDate: creationDate),
+                                                         progress: report)
                 try Task.checkCancellation()
-                let url = try await Self.write(data, named: "\(name).\(format.fileExtension)")
                 self?.export = .saving
                 var refusal: PhotosRefusal?
                 let authorization = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
@@ -397,20 +452,26 @@ import FilmEngine
                     do {
                         // Photos invokes this block on its own queue. Prevent it from
                         // inheriting MainActor and trapping Swift's executor check.
+                        let url = file.url
                         try await PHPhotoLibrary.shared().performChanges { @Sendable in
                             let request = PHAssetCreationRequest.forAsset()
                             request.creationDate = creationDate
                             request.addResource(with: .photo, fileURL: url, options: nil)
                         }
                     } catch {
+                        // Deliberately not discarded. A save that failed is the case
+                        // where the user most needs the file, and the share affordance
+                        // on the finished sheet is what they reach for instead.
                         refusal = .failed
                     }
                 } else {
                     refusal = .denied
                 }
-                let size = Self.pixelSize(of: data)
-                self?.export = .finished(ExportRecord(url: url, pixelWidth: size?.width, pixelHeight: size?.height,
-                                                      output: settings.output, byteCount: data.count,
+                // The file outlives the save on purpose: the share affordance on the
+                // finished sheet needs it, and dismissing the sheet is what ends it.
+                let size = Self.pixelSize(of: file.url)
+                self?.export = .finished(ExportRecord(file: file, pixelWidth: size?.width, pixelHeight: size?.height,
+                                                      output: settings.output,
                                                       tileCount: tileCount.withLock { $0 },
                                                       elapsedSeconds: Self.seconds(since: started),
                                                       savedDate: refusal == nil ? creationDate : nil,
@@ -426,18 +487,18 @@ import FilmEngine
     /// The colour half of the same look as a `.cube` file. It is a lattice render
     /// rather than a frame, so it is quick enough not to need progress or cancelling.
     func exportLUT() {
-        guard let renderer, exportTask == nil else { return }
+        guard exportTask == nil else { return }
         let (profile, settings) = (profile, exportSettings)
         export = .running(ExportProgress(completedTiles: 0, tileCount: 1))
         let started = ContinuousClock.now
         exportTask = Task { [weak self] in
             defer { self?.exportTask = nil }
             do {
-                let text = try await renderer.exportedLUT(profile: profile, settings: settings)
-                let data = Data(text.utf8)
-                let url = try await Self.write(data, named: "\(Self.exportFilename(for: profile)).cube")
+                let renderer = try await self?.exportRenderer()
+                guard let renderer else { throw CancellationError() }
+                let file = try await renderer.exportedLUTFile(profile: profile, settings: settings)
                 // No pixel dimensions and no gamut: a LUT is a mapping, not a frame.
-                self?.export = .finished(ExportRecord(url: url, byteCount: data.count, tileCount: 1,
+                self?.export = .finished(ExportRecord(file: file, tileCount: 1,
                                                       elapsedSeconds: Self.seconds(since: started)))
             } catch is CancellationError {
                 self?.export = nil
@@ -453,8 +514,12 @@ import FilmEngine
         export = nil
     }
 
+    /// Dismissing the sheet is the end of the exported file's life: it existed for
+    /// exactly as long as the user could still share it. Starting another Export and
+    /// tearing the editor down do the same thing by releasing the record.
     func dismissExport() {
         if isExporting { return }
+        if case .finished(let record) = export { record.file.discard() }
         export = nil
     }
 
@@ -469,8 +534,8 @@ import FilmEngine
     /// The written file's own dimensions. The Export renders the decoded original at
     /// full size, which the model never holds, so the count is read back from the
     /// file's header — ImageIO parses that without decoding a pixel.
-    private static func pixelSize(of data: Data) -> (width: Int, height: Int)? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+    private static func pixelSize(of url: URL) -> (width: Int, height: Int)? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? Int,
               let height = properties[kCGImagePropertyPixelHeight] as? Int else { return nil }
@@ -480,20 +545,6 @@ import FilmEngine
     private static func seconds(since started: ContinuousClock.Instant) -> Double {
         let elapsed = (ContinuousClock.now - started).components
         return Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
-    }
-
-    nonisolated private static func write(_ data: Data, named name: String) async throws -> URL {
-        try Task.checkCancellation()
-        let url = try await Task.detached(priority: .utility) {
-            let url = try ExportScratch.prepare(for: name)
-            try data.write(to: url, options: .atomic)
-            return url
-        }.value
-        if Task.isCancelled {
-            await Task.detached(priority: .utility) { ExportScratch.clear() }.value
-            throw CancellationError()
-        }
-        return url
     }
 
     /// Why a Preset cannot be applied. `applyPreset` throws exactly these words, so a
@@ -539,8 +590,16 @@ import FilmEngine
     private func scheduleThumbnails() {
         thumbnailTask?.cancel()
         guard thumbnailInput != nil else { return }
+        // Nothing is rendered for a surface that is not on screen; opening one is what
+        // starts the sweep that catches it up.
+        guard isCatalogueVisible else { thumbnailsAreStale = true; return }
+        thumbnailsAreStale = false
         let settings = settings
-        thumbnailTask = scheduleThumbnails(catalogueWithIdentity) { profile in
+        let selected = selectedStock
+        // The selected Stock first: it is the cell the user is looking at, and the
+        // seventeen they are not can arrive afterwards.
+        let order = catalogueWithIdentity.sorted { first, _ in first.id == selected }
+        thumbnailTask = scheduleThumbnails(order) { profile in
             (profile.id, profile, settings)
         } store: { [weak self] id, pixels in
             self?.thumbnails[id] = pixels
@@ -568,6 +627,19 @@ import FilmEngine
         let renderer = try await thumbnailRenderer()
         try Task.checkCancellation()
         return try await renderer.render(image: .linear(source), profile: profile, settings: settings)
+    }
+
+    /// The Catalogue and a Renderer for the Contact Sheet, which renders every Profile
+    /// against a fixed reference. It is not given the model — it needs the Stock
+    /// and nothing else about the editor, and that boundary is worth keeping — but it
+    /// should not stand up a third Metal library and re-read eighteen Profile headers
+    /// on every open when the editor is already holding both.
+    func catalogueForContactSheet() async throws -> (profiles: [Profile], renderer: Renderer) {
+        await loadCatalogue()
+        // The Contact Sheet's own presentation wraps this again, so what it needs is
+        // the engine's account of the failure rather than the sentence already shown.
+        if let error, catalogue.isEmpty { throw FilmError.invalid(error.details ?? error.message) }
+        return (catalogueWithIdentity, try await thumbnailRenderer())
     }
 
     private func thumbnailRenderer() async throws -> Renderer {

@@ -196,12 +196,17 @@ kernel void mtfBlur(texture2d<half, access::read> input [[texture(0)]],
     int radius = int(blur.radius);
     float3 sum = 0.0f;
     float total = 0.0f;
+    // The coarse Gaussian runs to 49 taps, so the pass already reads this pixel; alpha
+    // is carried out of that tap rather than paid for with a second full-surface read.
+    half alpha = 0.0h;
     for (int i = -radius; i <= radius; ++i) {
+        half4 texel = input.read(uint2(clamp(int2(p) + axis * i, int2(0), limit)));
+        if (i == 0) alpha = texel.a;
         float weight = exp(-0.5f * float(i * i) / (blur.sigma * blur.sigma));
-        sum += float3(input.read(uint2(clamp(int2(p) + axis * i, int2(0), limit))).rgb) * weight;
+        sum += float3(texel.rgb) * weight;
         total += weight;
     }
-    output.write(half4(half3(sum / total), input.read(p).a), p);
+    output.write(half4(half3(sum / total), alpha), p);
 }
 
 // c0 + c1 + c2 = 1, so a flat field is unchanged and the pass alters micro-contrast

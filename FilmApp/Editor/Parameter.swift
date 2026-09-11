@@ -334,25 +334,20 @@ extension EditorModel {
                           format: Self.developmentLabel,
                           caption: { [weak self] in self?.developmentHint ?? "" }))
         }
-        // 100 % is the Stock's own modelled value on all three, which is why the
-        // detent sits there rather than at zero: above it the user is knowingly
-        // exaggerating, and the detent is what tells them where that line is.
-        if hasBloom {
-            parameters.append(
-                Parameter(id: .bloom, name: "Bloom", stage: .film,
-                          value: binding(\.settings.bloomIntensity),
-                          range: RenderSettings.bloomRange, step: 0.05, detent: 1,
-                          format: Self.percentage,
-                          caption: { [weak self] in self?.bloomHint ?? "" }))
-        }
-        if hasHalation {
-            parameters.append(
-                Parameter(id: .halation, name: "Halation", stage: .film,
-                          value: binding(\.settings.halationIntensity),
-                          range: RenderSettings.halationRange, step: 0.05, detent: 1,
-                          format: Self.percentage,
-                          caption: { [weak self] in self?.halationHint ?? "" }))
-        }
+        // The detent preserves the stock response. Above it, creative scattering
+        // is available even when the profile has no built-in bloom or halation.
+        parameters.append(contentsOf: [
+            Parameter(id: .bloom, name: "Bloom", stage: .film,
+                      value: binding(\.settings.bloomIntensity),
+                      range: RenderSettings.bloomRange, step: 0.05, detent: 1,
+                      format: Self.percentage,
+                      caption: { [weak self] in self?.bloomHint ?? "" }),
+            Parameter(id: .halation, name: "Halation", stage: .film,
+                      value: binding(\.settings.halationIntensity),
+                      range: RenderSettings.halationRange, step: 0.05, detent: 1,
+                      format: Self.percentage,
+                      caption: { [weak self] in self?.halationHint ?? "" })
+        ])
         if hasGrain {
             parameters.append(
                 Parameter(id: .grain, name: "Grain", stage: .film,
@@ -597,6 +592,9 @@ extension EditorModel {
     /// to carry: it sits next to halation and is easily mistaken for it.
     var bloomHint: String {
         let intensity = settings.bloomIntensity
+        if !hasBloom {
+            return "This profile has no built-in bloom. Raise Bloom above 100% to add lens diffusion; 100% or below leaves it off."
+        }
         let base = "The taking lens spreads a little of every part of the scene across the frame, over about "
             + "\(Int(bloomRadiusMicrons)) µm of film. It takes that light from the scene rather than adding it, "
             + "and the film records the result, so it softens a highlight's surroundings instead of brightening them. "
@@ -609,6 +607,9 @@ extension EditorModel {
     /// 100% is the Stock's own scattering, so the control reads as a departure from it.
     var halationHint: String {
         let intensity = settings.halationIntensity
+        if !hasHalation {
+            return "This profile has no built-in halation. Raise Halation above 100% to add a warm highlight glow; 100% or below leaves it off."
+        }
         let reach = halationReachMicrons
         let base = "Light passing through the emulsion reflects off the back of the film and re-exposes it from behind, "
             + "reaching about \(Int(reach)) µm furthest in red. It happens before the density curves, not as an effect added afterwards."

@@ -29,7 +29,9 @@ The user's controls sit at specific points in that order — **Exposure** and
 **White Balance** before the **Film Response**, **Development Offset** selecting
 between Colour Cubes, **Bloom**, **Halation** and **Grain** scaled relative to the
 Profile's own values, and the **Adjustments** over the scan after the **Output
-Stage**. A **Preset** saves a Stock plus those settings.
+Stage**. Bloom and Halation also offer creative effects above 100% when the
+Profile has no built-in effect, including Identity. A **Preset** saves a Stock
+plus those settings.
 
 ## Language
 
@@ -394,6 +396,13 @@ _Avoid_: padding, border, overlap, margin
 **Tile Seam**:
 A visible discontinuity where an effect crosses a Tile boundary. Always a defect.
 _Avoid_: seam (unqualified — collides with Test Seam)
+
+**Exported File**:
+The file an Export writes, and the engine's own handle on it. The engine owns its
+lifetime rather than the app: it lives for exactly as long as the user can still act
+on it — long enough to outlive the save to Photos and to feed the share sheet, no
+longer than the sheet offering that share. Releasing the handle removes the file.
+_Avoid_: temporary file, temp URL, output file
 
 **Exported LUT**:
 A `.cube` file carrying the colour half of a look only, with no Halation and no Grain.

@@ -117,10 +117,12 @@ asserts that. Renaming them is a separate, larger change and is not needed for v
   the support page need the same paragraph, and both are owner scope.
 - **REL-29 and REL-41.** Export peak memory and the Catalogue's 210 MB. Specified
   with the performance and security work, per this audit's own *Out of scope*.
-  **REL-30 was pulled back in**: `security.md` SEC-03 frames it as a full-resolution
-  copy of the user's photograph left on disk forever, which is a privacy defect
-  rather than a storage one, and the fix is one file. `FilmApp/ExportScratch.swift`
-  keeps at most the current Export and empties the directory at launch.
+  **REL-30 is closed**, by the security remediation rather than by this work:
+  `security.md` SEC-03 framed it as a full-resolution copy of the user's photograph
+  left on disk forever, which is a privacy defect rather than a storage one.
+  `ExportedFile` gives the engine the file's lifetime, so it is removed as soon as
+  the user can no longer act on it, and a launch sweep clears what older versions
+  left behind.
 - **REL-37's `.xcconfig`.** `DEVELOPMENT_TEAM` is still written into both build
   configurations. Moving it is a developer-convenience refactor of a value that is
   already right, and the archive path is the one thing in this change that has been

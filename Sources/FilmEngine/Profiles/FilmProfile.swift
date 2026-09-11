@@ -154,6 +154,25 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         return displayName + (isApproximation ? ", approximation" : ", modelled")
     }
 
+    /// What an exported file is named after, before the extension.
+    ///
+    /// The Display Name rather than the id, and that is a trademark decision rather
+    /// than a cosmetic one: ids still carry manufacturer marks — `portra-400`,
+    /// `vision3-500t` — and they are internal handles only because nothing a user
+    /// reads is derived from them. A filename is read. `Scripts/check-archive.py`
+    /// asserts the same rule from the other end.
+    ///
+    /// The qualifier is deliberately absent: it belongs to the interface, where it
+    /// can be explained, and "approx-linen-400.heif" in a share sheet explains
+    /// nothing. `ExportedFile.fileName` sanitises whatever comes back, so an
+    /// unusable name here is safe rather than merely unlikely.
+    public var filenameStem: String {
+        let name = displayName // bare-display-name: a filename, and a qualifier is interface
+            .components(separatedBy: CharacterSet.alphanumerics.union(.whitespaces).inverted).joined(separator: " ")
+            .split(separator: " ").joined(separator: "-")
+        return name.isEmpty ? id : name.lowercased()
+    }
+
     public struct Colour: Codable, Equatable, Sendable {
         public var lutVariants: [Variant]
         /// One Colour Cube per Development Offset for the Print Output Stage, when
@@ -357,6 +376,16 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
         return names
     }
 
+    /// The longest a Profile id may be, which is also how far the Export truncates a
+    /// filename built from one.
+    static let maximumIDLength = 64
+
+    /// What a Profile id may contain. The Export's filename sanitiser reads the same
+    /// rule, so the validator and the sanitiser cannot drift apart.
+    static func isSlugCharacter(_ character: Character) -> Bool {
+        character.isASCII && (character.isLetter || character.isNumber || character == "-" || character == "_")
+    }
+
     public func validate() throws {
         func require(_ condition: Bool, _ message: String) throws {
             if !condition { throw FilmError.invalid("Profile \(id): \(message)") }
@@ -365,6 +394,12 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
             values.count == count && values.allSatisfy { $0.isFinite && $0 >= 0 }
         }
         try require(!id.isEmpty && !displayName.isEmpty, "missing identity or Display Name")
+        // The id becomes a filename component on Export, and `appendingPathComponent`
+        // accepts `../` without complaint. Constraining it here rather than at the
+        // exporter is what keeps filename safety from resting on the Catalogue's
+        // contents staying well-behaved.
+        try require(id.count <= Self.maximumIDLength && id.allSatisfy(Self.isSlugCharacter),
+                    "Profile id must be a short ASCII slug")
         try require([nominalISO, trueISO, balance].allSatisfy { $0.isFinite && $0 > 0 }, "invalid Stock speed or Stock Balance")
         try require((2...129).contains(colour.lutSize), "Colour Cube size must be 2...129")
         try require(process.isMonochrome == (monochrome != nil), "Monochrome section must occur only for B&W")

@@ -17,8 +17,9 @@ public enum PhotoProblem: String, Sendable {
     /// No ICC tag and no EXIF colour space, so nothing establishes what the numbers
     /// mean. The decoder stays strict; the app decides whether to assume sRGB.
     case untagged
-    /// Larger on an edge than the renderer's textures go.
-    case tooLarge
+    // A photograph too large to decode is `ImageLimits`' to refuse, not this enum's:
+    // it is caught from the header before anything is allocated, and its message names
+    // the size and the limit, which a fixed string here could not.
 
     /// What to tell the user. Written for a photographer, not for whoever wrote the
     /// decoder, and carrying no engine vocabulary at all.
@@ -28,7 +29,6 @@ public enum PhotoProblem: String, Sendable {
         case .undecodable: "This photo could not be read. The file may be damaged or incomplete."
         case .unsupportedRaw: "This camera's raw files are not supported on this device."
         case .untagged: "This photo does not say which colours its numbers mean, so Dye cannot render it accurately."
-        case .tooLarge: "This photo is too large for Dye to open."
         }
     }
 
@@ -61,8 +61,10 @@ public struct LinearImage: Sendable {
     public let rgba: [Float16]
 
     public init(width: Int, height: Int, rgba: [Float16]) throws {
-        guard width > 0, height > 0, width <= 16_384, height <= 16_384,
-              rgba.count == width * height * 4, rgba.allSatisfy({ $0.isFinite }) else {
+        // One size policy for the whole engine, so a frame that cannot be rendered
+        // cannot be constructed either.
+        try ImageLimits.check(width: width, height: height)
+        guard rgba.count == width * height * 4, rgba.allSatisfy({ $0.isFinite }) else {
             throw FilmError.invalid("Invalid image dimensions or non-finite pixels")
         }
         self.width = width
@@ -122,11 +124,13 @@ public struct RenderSettings: Codable, Sendable, Equatable, Hashable {
     public var contrastFilter: ContrastFilter
     /// Halation scaled relative to the Profile's own strength: 1 is the Profile
     /// value, 0 disables the Pass. Above 1, strength increases and the highlight
-    /// threshold falls; 2 is the maximum creative boost.
+    /// threshold falls; 2 is the maximum creative boost. Zero-strength profiles
+    /// use an artistic fallback above 1, including Identity.
     public var halationIntensity: Double
     /// Bloom scaled relative to the Profile's own lens diffusion: 1 is the Profile
     /// value, 0 disables the Pass. Above 1, diffusion increases to a stronger
-    /// creative effect; 2 is the maximum boost.
+    /// creative effect; 2 is the maximum boost. Zero-strength profiles use a
+    /// 900 µm diffusion radius above 1, including Identity.
     public var bloomIntensity: Double
     /// Grain scaled relative to the Profile's own granularity: 1 is the Profile
     /// value, 0 disables the Pass, 2 is the top of the user's 0–200% control.

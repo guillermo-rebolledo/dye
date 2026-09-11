@@ -19,7 +19,7 @@ jobs:
       engine: ${{ steps.scope.outputs.engine }}
       app: ${{ steps.scope.outputs.app }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Test CI change detection
         run: python3 -B -m unittest discover -s Scripts -p 'test_ci_*.py'
       - name: Independent accuracy benchmark tests
@@ -40,7 +40,7 @@ jobs:
     if: needs.changes.outputs.engine == 'true'
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Swift 6 typecheck and CLI build
         run: swift build
       # Spectral integration is CPU-bound. Keep renderer tests in Debug, but
@@ -72,7 +72,7 @@ jobs:
                 "$baker" validate-model "$stock" "Sources/FilmEngine/Catalogue/$id.filmprofile" ".build/step-wedges/$id-model.json" ;;
             esac
           done
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: step-wedges
@@ -88,7 +88,7 @@ jobs:
       # Liquid Glass requires the iOS 26 SDK even with runtime availability guards.
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Verify app toolchain
         run: |
           xcodebuild -version

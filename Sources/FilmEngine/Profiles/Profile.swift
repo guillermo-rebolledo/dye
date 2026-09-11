@@ -6,6 +6,16 @@ public struct Profile: Sendable, Identifiable {
     let source: Source
     /// Cache identity belongs to the loaded content, independent of its renameable Display Name.
     let cacheID = UUID()
+    private let reads = PayloadReadCounter()
+
+    /// Payload bytes this Profile has been asked to read since it was loaded.
+    ///
+    /// A Colour Cube cache that has stopped caching renders exactly the same pixels
+    /// and costs only time, which is why it cannot be caught from the outside without
+    /// a count. The count belongs to the loaded Profile rather than to a copy of one:
+    /// `Profile` is a value type and the Catalogue hands the same one to every surface
+    /// that renders it, so a second sweep reading nothing is the claim under test.
+    public var payloadReads: Int { reads.count }
     enum Source: Sendable {
         case memory([String: Data])
         case file(URL, Int, [ProfileContainer.Entry])
@@ -38,6 +48,7 @@ public struct Profile: Sendable, Identifiable {
     public static let identity = Profile(colourCube: .identity)
 
     func readPayload(_ name: String) throws -> Data {
+        reads.record()
         switch source {
         case .memory(let payloads):
             guard let bytes = payloads[name] else { throw FilmError.invalid("Missing payload \(name)") }
@@ -63,6 +74,15 @@ public struct Profile: Sendable, Identifiable {
     /// bundle lookup here could only ever fail for packaging reasons, and it would fail
     /// on launch, which is the one place there is no way to report it. `identityProfileDecodesFromItsCompiledSource`
     /// is what keeps this literal and the schema honest.
+    /// Shared by every copy of one loaded Profile, because that is the thing whose
+    /// payloads are being read once or repeatedly.
+    private final class PayloadReadCounter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var reads = 0
+        var count: Int { lock.lock(); defer { lock.unlock() }; return reads }
+        func record() { lock.lock(); reads += 1; lock.unlock() }
+    }
+
     private static let identityMetadata: FilmProfile = {
         do { return try JSONDecoder().decode(FilmProfile.self, from: Data(identitySource.utf8)) }
         catch { fatalError("The compiled-in identity Profile does not decode: \(error)") }

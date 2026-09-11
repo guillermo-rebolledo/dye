@@ -71,8 +71,8 @@ Profile id.
 - Saved Presets open in an explicit container with a versioned schema and a
   migration plan. A store that cannot be opened no longer crashes the app on launch.
 - An Export no longer leaves a full-resolution copy of the photograph in the
-  temporary directory. One scratch directory holds the current Export and nothing
-  else, and it is emptied at launch.
+  temporary directory. The engine owns the file's lifetime and removes it when the
+  user can no longer act on it.
 
 ### Accessibility
 

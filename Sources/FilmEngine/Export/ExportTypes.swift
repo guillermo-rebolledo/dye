@@ -1,5 +1,8 @@
 import Foundation
 import UniformTypeIdentifiers
+#if canImport(os)
+import os
+#endif
 
 /// The two Render Paths. They run identical shaders and differ in how much of the
 /// frame is in flight at once, which is the only thing a Pass may key off.
@@ -47,7 +50,12 @@ public struct ExportProgress: Sendable, Equatable {
 public struct ExportOptions: Sendable, Equatable {
     /// Bytes the padded Tile's textures may occupy. Smaller means more, smaller
     /// Tiles: the same result, more Apron overhead, less peak memory.
-    public var textureBudgetBytes: Int
+    ///
+    /// Nil reads what the process may still allocate when the Export starts. One
+    /// figure for every phone asks the same of a device with four gigabytes and one
+    /// with sixteen, which is both more than the first can afford and less than the
+    /// second could have finished sooner with.
+    public var textureBudgetBytes: Int?
     /// A Tile smaller than this is more Apron than image.
     public var minimumTileEdge: Int
     /// Nil reads the device's state when the Export starts. Fixing it is what makes
@@ -69,7 +77,7 @@ public struct ExportOptions: Sendable, Equatable {
     /// One buys exactness; below about a half, the truncation starts to be a seam.
     public var apronFraction: Double
 
-    public init(textureBudgetBytes: Int = 320 << 20, minimumTileEdge: Int = 256,
+    public init(textureBudgetBytes: Int? = nil, minimumTileEdge: Int = 256,
                 thermalState: ProcessInfo.ThermalState? = nil, quality: Double = 0.9,
                 apronFraction: Double = 0.6, creationDate: Date? = nil) {
         self.textureBudgetBytes = textureBudgetBytes
@@ -81,6 +89,33 @@ public struct ExportOptions: Sendable, Equatable {
     }
 
     var resolvedThermalState: ProcessInfo.ThermalState { thermalState ?? ProcessInfo.processInfo.thermalState }
+
+    /// What the plan is actually given: the caller's figure, or the device's.
+    public var resolvedTextureBudgetBytes: Int { textureBudgetBytes ?? Self.deviceTextureBudgetBytes }
+
+    /// The floor, and what every device was given before the budget was allowed to
+    /// vary. A device that can afford no more than this still gets this.
+    public static let minimumTextureBudgetBytes = 320 << 20
+
+    /// Past this the plan is one or two Tiles either way, and the marginal Tile saved
+    /// costs more resident texture than it is worth on any device.
+    public static let maximumTextureBudgetBytes = 1024 << 20
+
+    /// What this device can afford to spend on Tile textures right now.
+    ///
+    /// A quarter of what the process may still allocate: the Export also holds the
+    /// decoded source, the assembled output frame and whatever the editor is still
+    /// showing, and a budget that claimed the lot would be a jetsam rather than a
+    /// faster Export.
+    public static var deviceTextureBudgetBytes: Int {
+        #if canImport(Darwin) && !os(macOS)
+        let available = Int(os_proc_available_memory())
+        #else
+        let available = Int(min(ProcessInfo.processInfo.physicalMemory, UInt64(Int.max)))
+        #endif
+        guard available > 0 else { return minimumTextureBudgetBytes }
+        return min(max(available / 4, minimumTextureBudgetBytes), maximumTextureBudgetBytes)
+    }
 }
 
 extension ProcessInfo.ThermalState {

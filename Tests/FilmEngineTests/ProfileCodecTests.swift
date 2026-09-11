@@ -49,6 +49,25 @@ func profileCodecRoundTripsEveryProcess(_ process: FilmProcess) throws {
     #expect(throws: (any Error).self) { try Profile(metadata: metadata, payloads: [:]) }
 }
 
+@Test func aProfileIdentifierMustBeAShortASCIISlug() throws {
+    // The id becomes a filename component on Export. Nothing can import a Profile
+    // today, so this is not exploitable — but the moment one can, an id is
+    // attacker-chosen, and the constraint belongs to the Profile rather than to the
+    // exporter.
+    let profile = try #require(ProfileCatalogue.bundled().profiles.first { $0.metadata.process == .c41 })
+    for hostile in ["../../Library/Preferences/com.apple.something", "portra/400", "..",
+                    "portra\u{0}400", "réponse", String(repeating: "x", count: 65)] {
+        var metadata = profile.metadata
+        metadata.id = hostile
+        #expect(throws: (any Error).self, "\(hostile) must be refused") {
+            try Profile(metadata: metadata, payloads: [:])
+        }
+    }
+    // Every shipped Profile still loads, and the Catalogue still returns all of them.
+    let catalogue = try ProfileCatalogue.bundled().profiles
+    #expect(catalogue.count == 17)
+}
+
 @Test func metadataLoadsWithoutReadingInvalidPayloadButRenderingRejectsIt() async throws {
     let profile = try #require(ProfileCatalogue.bundled().profiles.first { $0.metadata.process == .c41 })
     var bytes = try ProfileContainer.encode(profile)
