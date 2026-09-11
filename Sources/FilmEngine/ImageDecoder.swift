@@ -53,7 +53,14 @@ struct ImageDecoder {
     }
 
     /// `maximumDimension` downsamples in the linear Working Space for the Preview Render Path.
-    func decode(_ data: Data, maximumDimension: Int? = nil) async throws -> any MTLTexture {
+    ///
+    /// Runs on whatever actor asked for it rather than hopping off one. The decode is
+    /// async because the RAW branch awaits the GPU rather than blocking on it, and an
+    /// `MTLTexture` is not `Sendable` — so without inheriting the caller's isolation
+    /// the texture this returns would be crossing an isolation boundary to get home.
+    /// The Renderer is the only caller and the decoder is its own.
+    func decode(_ data: Data, maximumDimension: Int? = nil,
+                isolation: isolated (any Actor)? = #isolation) async throws -> any MTLTexture {
         if let maximumDimension, maximumDimension < 1 { throw FilmError.invalid("Preview dimension must be positive") }
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
             throw FilmError.invalid("Unsupported photo file")
