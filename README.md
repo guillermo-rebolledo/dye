@@ -79,6 +79,13 @@ The app decodes one screen-sized Preview through `Renderer.decode` and re-render
 it through a coalescing loop on every control change. Its controls are laid out
 as three numbered stages so exposure and white balance visibly precede the film.
 
+Photo bytes are the one input an attacker can influence, so decode bounds the source
+from the file's header — which ImageIO parses without decoding a pixel — before
+anything is allocated, on total pixel count as well as on each edge. Both Render
+Paths apply the same limits, and the Preview subsamples during decode rather than
+materialising the source raster and scaling it down. An oversized frame is an error
+naming the size, not a process the system kills.
+
 Identity is bit-exact at the Working Space boundary for all finite float16 values,
 including negative and HDR values; decoding and changing colour spaces inherently
 rounds to float16. Untagged inputs are rejected instead of assuming sRGB. Tests also distinguish tetrahedral from trilinear interpolation
@@ -96,6 +103,13 @@ thermally throttling. The colour half of the same look exports as a `.cube`
 **Exported LUT**, rendered through the same shaders with the spatial Passes off and
 labelled — in the file and in the UI — as carrying no grain, halation, bloom,
 micro-contrast or vignette. See [the Export Render Path](docs/export.md).
+
+The engine owns an **Exported File** rather than handing the app a temporary URL. An
+exported frame is a full-resolution copy of the user's photograph, so it lives for
+exactly as long as the user can still act on it: past the save to Photos, because the
+share sheet needs it, and no further than the sheet offering that share. Releasing
+the handle removes the file, and a launch sweep clears leftovers written by earlier
+versions. The file carries the strongest file protection the platform offers.
 
 RAW support uses the system decoder; synthetic DNG fixtures verify scene-linear
 exposure ratios. Real camera fixtures and on-device memory and performance validation

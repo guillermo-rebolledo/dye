@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		253000000000000000000043 /* EditorPickers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 253000000000000000000042 /* EditorPickers.swift */; };
 		253000000000000000000041 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 253000000000000000000040 /* SettingsView.swift */; };
+		253000000000000000000051 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 253000000000000000000050 /* PrivacyInfo.xcprivacy */; };
 		1658F61DFA296CDD54A13800 /* FilmApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2554E3D1F229ED00B2F5308 /* FilmApp.swift */; };
 		253000000000000000000002 /* PresetSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 253000000000000000000001 /* PresetSheet.swift */; };
 		253000000000000000000012 /* ContactSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 253000000000000000000011 /* ContactSheetView.swift */; };
@@ -59,6 +60,7 @@
 		4C1E9A2B7D3F4E5A8B6C0D11 /* EditorModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorModel.swift; sourceTree = "<group>"; };
 		4C1E9A2B7D3F4E5A8B6C0D13 /* ExportSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportSheet.swift; sourceTree = "<group>"; };
 		635AD633AF697FB11F61C621 /* FilmCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmCanvas.swift; sourceTree = "<group>"; };
+		253000000000000000000050 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		F2554E3D1F229ED00B2F5308 /* FilmApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmApp.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -117,6 +119,7 @@
 				635AD633AF697FB11F61C621 /* FilmCanvas.swift */,
 				4C1E9A2B7D3F4E5A8B6C0D11 /* EditorModel.swift */,
 				4C1E9A2B7D3F4E5A8B6C0D13 /* ExportSheet.swift */,
+				253000000000000000000050 /* PrivacyInfo.xcprivacy */,
 			);
 			path = FilmApp;
 			sourceTree = "<group>";
@@ -194,6 +197,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				253000000000000000000051 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -16,7 +16,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'profile-candidates')
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build the native Baker
         run: |
           swift build -c release --product ProfileBaker
@@ -43,7 +43,7 @@ jobs:
           done
       - name: Test candidate profiles
         run: swift test --skip previewRenderAndStockSwitchStayWithinInteractiveBudgets
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: film-profile-candidates

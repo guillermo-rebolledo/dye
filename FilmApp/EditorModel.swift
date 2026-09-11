@@ -249,13 +249,16 @@ import FilmEngine
     /// render — so the finished sheet can show the file as a record rather than as a
     /// bare share button.
     struct ExportRecord: Sendable, Equatable {
-        let url: URL
+        /// The engine owns the file and removes it when this record is released or
+        /// dismissed, so the app never holds a temporary URL of its own.
+        let file: ExportedFile
+        var url: URL { file.url }
         /// Nil for the LUT, which is a lattice written as text rather than a raster.
         var pixelWidth: Int?
         var pixelHeight: Int?
         /// The delivery encoding the file is tagged with, and nil for the same reason.
         var output: RenderSettings.Output?
-        var byteCount: Int
+        var byteCount: Int { file.byteCount }
         /// One for the LUT, which is rendered whole. An image is rendered a Tile at
         /// a time and reports its own count as it goes.
         var tileCount: Int
@@ -324,26 +327,29 @@ import FilmEngine
                 guard authorization == .authorized || authorization == .limited else {
                     throw FilmError.invalid("Photo not saved. Allow adding photos in Settings to save exports to Photos.")
                 }
-                let data = try await renderer.export(image: .encoded(original), profile: profile, settings: settings,
-                                                     format: format, options: ExportOptions(creationDate: creationDate), progress: report)
+                let file = try await renderer.exportFile(image: .encoded(original), profile: profile, settings: settings,
+                                                         format: format, options: ExportOptions(creationDate: creationDate),
+                                                         progress: report)
                 try Task.checkCancellation()
-                let url = try await Self.write(data, named: "\(profile.id).\(format.fileExtension)")
                 self?.export = .saving
                 do {
                     // Photos invokes this block on its own queue. Prevent it from
                     // inheriting MainActor and trapping Swift's executor check.
+                    let url = file.url
                     try await PHPhotoLibrary.shared().performChanges { @Sendable in
                         let request = PHAssetCreationRequest.forAsset()
                         request.creationDate = creationDate
                         request.addResource(with: .photo, fileURL: url, options: nil)
                     }
                 } catch {
-                    try? FileManager.default.removeItem(at: url)
+                    file.discard()
                     throw FilmError.invalid("Photo could not be saved to Photos: \(error.localizedDescription)")
                 }
-                let size = Self.pixelSize(of: data)
-                self?.export = .finished(ExportRecord(url: url, pixelWidth: size?.width, pixelHeight: size?.height,
-                                                      output: settings.output, byteCount: data.count,
+                // The file outlives the save on purpose: the share affordance on the
+                // finished sheet needs it, and dismissing the sheet is what ends it.
+                let size = Self.pixelSize(of: file.url)
+                self?.export = .finished(ExportRecord(file: file, pixelWidth: size?.width, pixelHeight: size?.height,
+                                                      output: settings.output,
                                                       tileCount: tileCount.withLock { $0 },
                                                       elapsedSeconds: Self.seconds(since: started), savedDate: creationDate))
             } catch is CancellationError {
@@ -364,11 +370,9 @@ import FilmEngine
         exportTask = Task { [weak self] in
             defer { self?.exportTask = nil }
             do {
-                let text = try await renderer.exportedLUT(profile: profile, settings: settings)
-                let data = Data(text.utf8)
-                let url = try await Self.write(data, named: "\(profile.id).cube")
+                let file = try await renderer.exportedLUTFile(profile: profile, settings: settings)
                 // No pixel dimensions and no gamut: a LUT is a mapping, not a frame.
-                self?.export = .finished(ExportRecord(url: url, byteCount: data.count, tileCount: 1,
+                self?.export = .finished(ExportRecord(file: file, tileCount: 1,
                                                       elapsedSeconds: Self.seconds(since: started)))
             } catch is CancellationError {
                 self?.export = nil
@@ -384,8 +388,12 @@ import FilmEngine
         export = nil
     }
 
+    /// Dismissing the sheet is the end of the exported file's life: it existed for
+    /// exactly as long as the user could still share it. Starting another Export and
+    /// tearing the editor down do the same thing by releasing the record.
     func dismissExport() {
         if isExporting { return }
+        if case .finished(let record) = export { record.file.discard() }
         export = nil
     }
 
@@ -400,8 +408,8 @@ import FilmEngine
     /// The written file's own dimensions. The Export renders the decoded original at
     /// full size, which the model never holds, so the count is read back from the
     /// file's header — ImageIO parses that without decoding a pixel.
-    private static func pixelSize(of data: Data) -> (width: Int, height: Int)? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+    private static func pixelSize(of url: URL) -> (width: Int, height: Int)? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? Int,
               let height = properties[kCGImagePropertyPixelHeight] as? Int else { return nil }
@@ -411,24 +419,6 @@ import FilmEngine
     private static func seconds(since started: ContinuousClock.Instant) -> Double {
         let elapsed = (ContinuousClock.now - started).components
         return Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
-    }
-
-    nonisolated private static func write(_ data: Data, named name: String) async throws -> URL {
-        try Task.checkCancellation()
-        let url = try await Task.detached(priority: .utility) {
-            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let url = directory.appendingPathComponent(name)
-            try data.write(to: url, options: .atomic)
-            return url
-        }.value
-        if Task.isCancelled {
-            try? await Task.detached(priority: .utility) {
-                try FileManager.default.removeItem(at: url.deletingLastPathComponent())
-            }.value
-            throw CancellationError()
-        }
-        return url
     }
 
     /// Why a Preset cannot be applied. `applyPreset` throws exactly these words, so a
