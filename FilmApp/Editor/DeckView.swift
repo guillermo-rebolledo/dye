@@ -1,12 +1,11 @@
 import SwiftUI
-import PhotosUI
 import FilmEngine
 
 struct DeckView: View {
     let model: EditorModel
     let selection: EditorSelection
     let hasPhoto: Bool
-    @Binding var photo: PhotosPickerItem?
+    @Binding var photo: PickedPhoto?
     @Binding var isLoupeEnabled: Bool
     let showPresets: () -> Void
     let showContactSheet: () -> Void
@@ -65,6 +64,7 @@ struct DeckView: View {
                 .frame(minWidth: 44, minHeight: 44)
                 .contentShape(Rectangle())
         }
+        .menuOrder(.fixed)
         .accessibilityLabel("Jump to stage")
         .accessibilityValue(selection.stage.displayName)
         .disabled(!hasPhoto)
@@ -94,7 +94,7 @@ struct DeckView: View {
 struct DeckPreview: View {
     @State private var model = EditorModel()
     @State private var selection = EditorSelection()
-    @State private var photo: PhotosPickerItem?
+    @State private var photo: PickedPhoto?
     @State private var loupe = false
     @State private var hasPhoto = true
     @State private var measuredHeight: CGFloat = 0

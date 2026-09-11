@@ -1,10 +1,9 @@
 import SwiftUI
-import PhotosUI
 
 /// Editing commands share one glass surface. They present transient tools, so
 /// they don't retain a tab-style selection after a tool is dismissed.
 struct ActionRow: View {
-    @Binding var photo: PhotosPickerItem?
+    @Binding var photo: PickedPhoto?
     let hasPhoto: Bool
     let canExport: Bool
     let showPresets: () -> Void
@@ -43,7 +42,7 @@ struct ActionRow: View {
     }
 
     private var photoPicker: some View {
-        PhotosPicker(selection: $photo, matching: .images, preferredItemEncoding: .current) {
+        SinglePhotoPicker(selection: $photo) {
             DeckActionLabel(name: "Photo", symbol: "photo")
         }
         .accessibilityHint("Choose a photo from your library")

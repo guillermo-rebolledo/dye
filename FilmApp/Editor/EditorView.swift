@@ -1,10 +1,9 @@
 import SwiftUI
-import PhotosUI
 import FilmEngine
 
 struct EditorView: View {
     @State private var model = EditorModel()
-    @State private var photo: PhotosPickerItem?
+    @State private var photo: PickedPhoto?
     @State private var isExporting = false
     @State private var showsSettings = false
     @State private var showsPresets = false
@@ -55,7 +54,7 @@ private struct EditorScreen: View {
     var error: UserFacingError?
     /// Offered only when the app can still open the photograph the decoder refused.
     var openAsSRGB: (() -> Void)?
-    @Binding var photo: PhotosPickerItem?
+    @Binding var photo: PickedPhoto?
     let showPresets: () -> Void
     let showContactSheet: () -> Void
     let showExport: () -> Void
@@ -160,7 +159,7 @@ private struct EditorScreen: View {
 
 /// The first photo starts here; the editing deck appears once an image is ready.
 private struct PhotoWelcomeScreen: View {
-    @Binding var photo: PhotosPickerItem?
+    @Binding var photo: PickedPhoto?
     let isLoading: Bool
     let error: UserFacingError?
     var openAsSRGB: (() -> Void)?
@@ -187,7 +186,7 @@ private struct PhotoWelcomeScreen: View {
                         ProgressView("Loading photo…")
                             .tint(Tokens.Palette.accent)
                     } else {
-                        PhotosPicker(selection: $photo, matching: .images, preferredItemEncoding: .current) {
+                        SinglePhotoPicker(selection: $photo) {
                             Label("Select a photo", systemImage: "plus")
                                 .font(.headline)
                                 .frame(maxWidth: .infinity)

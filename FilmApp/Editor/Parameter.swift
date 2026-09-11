@@ -1,15 +1,14 @@
 import SwiftUI
 import FilmEngine
 
-/// One of the deck's four stages, in the order light travels: what happened to
-/// the light before the film, the Film Response itself, what happens to the
-/// negative afterwards, and what is done to the scan on the computer after that.
+/// The deck puts everyday adjustments first, followed by Light, Film, and Lab.
+/// This presentation order does not change the engine's rendering pipeline.
 ///
 /// This is the stage *selector's* stage and has nothing to do with the Output
 /// Stage, which is one of the parameters the Lab stage offers. `CONTEXT.md` warns
 /// that bare "stage" collides, so the type is qualified rather than the term.
 enum EditorStage: String, CaseIterable, Identifiable, Hashable {
-    case light, film, lab, adjust
+    case adjust, light, film, lab
 
     var id: String { rawValue }
 
