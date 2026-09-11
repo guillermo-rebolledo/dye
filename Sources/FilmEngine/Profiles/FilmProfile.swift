@@ -314,6 +314,12 @@ public struct FilmProfile: Codable, Equatable, Sendable, Identifiable {
             values.count == count && values.allSatisfy { $0.isFinite && $0 >= 0 }
         }
         try require(!id.isEmpty && !displayName.isEmpty, "missing identity or Display Name")
+        // The id becomes a filename component on Export, and `appendingPathComponent`
+        // accepts `../` without complaint. Constraining it here rather than at the
+        // exporter is what keeps filename safety from resting on the Catalogue's
+        // contents staying well-behaved.
+        try require(id.count <= 64 && id.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") },
+                    "Profile id must be a short ASCII slug")
         try require([nominalISO, trueISO, balance].allSatisfy { $0.isFinite && $0 > 0 }, "invalid Stock speed or Stock Balance")
         try require((2...129).contains(colour.lutSize), "Colour Cube size must be 2...129")
         try require(process.isMonochrome == (monochrome != nil), "Monochrome section must occur only for B&W")

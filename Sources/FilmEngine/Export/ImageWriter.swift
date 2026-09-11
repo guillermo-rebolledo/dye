@@ -51,10 +51,10 @@ final class ImageWriter {
                 for column in 0..<tileWidth {
                     // Straight alpha in, premultiplied out, because Core Graphics has
                     // no straight-alpha 16-bit format. Alpha itself is not multiplied.
-                    let alpha = min(max(Double(rgba[source + column * 4 + 3]), 0), 1)
+                    let alpha = Self.clamped(Double(rgba[source + column * 4 + 3]))
                     for channel in 0..<4 {
                         let value = Double(rgba[source + column * 4 + channel]) * (channel == 3 ? 1 : alpha)
-                        let quantised = (min(max(value, 0), 1) * maximum).rounded()
+                        let quantised = (Self.clamped(value) * maximum).rounded()
                         let index = destination + column * 4 + channel
                         if eightBit {
                             raw.storeBytes(of: UInt8(quantised), toByteOffset: index, as: UInt8.self)
@@ -65,6 +65,15 @@ final class ImageWriter {
                 }
             }
         }
+    }
+
+    /// Swift's `min`/`max` are not NaN-clamping — `max(.nan, 0)` is `.nan` — and
+    /// `UInt8(Double.nan)` is a hard trap rather than a throwable error, so it could
+    /// not be caught by the Export's own `catch`. Decode establishes that pixels are
+    /// finite; this is the last line of defence behind that, and it costs one branch.
+    private static func clamped(_ value: Double) -> Double {
+        guard value.isFinite else { return value > 0 ? 1 : 0 }
+        return min(max(value, 0), 1)
     }
 
     func encode(quality: Double, creationDate: Date? = nil) throws -> Data {

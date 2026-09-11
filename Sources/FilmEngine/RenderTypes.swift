@@ -15,8 +15,10 @@ public struct LinearImage: Sendable {
     public let rgba: [Float16]
 
     public init(width: Int, height: Int, rgba: [Float16]) throws {
-        guard width > 0, height > 0, width <= 16_384, height <= 16_384,
-              rgba.count == width * height * 4, rgba.allSatisfy({ $0.isFinite }) else {
+        // One size policy for the whole engine, so a frame that cannot be rendered
+        // cannot be constructed either.
+        try ImageLimits.check(width: width, height: height)
+        guard rgba.count == width * height * 4, rgba.allSatisfy({ $0.isFinite }) else {
             throw FilmError.invalid("Invalid image dimensions or non-finite pixels")
         }
         self.width = width

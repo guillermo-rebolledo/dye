@@ -22,6 +22,42 @@ extension Renderer {
         return try writer.encode(quality: options.quality, creationDate: options.creationDate)
     }
 
+    /// The Export as a file the engine owns, which is how the app gets one.
+    ///
+    /// `export` returns bytes and is the diagnostic form; this is the shipping one,
+    /// because the bytes have to land on disk for Photos and for the share sheet, and
+    /// a full-resolution copy of a photograph is not something to leave lying around
+    /// once the user has finished with it. `ExportedFile` carries that lifetime.
+    public func exportFile(image: RenderImage, profile: Profile, settings: RenderSettings = .init(),
+                           format: ExportFormat = .heif, options: ExportOptions = .init(),
+                           progress: (@Sendable (ExportProgress) -> Void)? = nil,
+                           in directory: URL = ExportedFile.temporaryRoot) async throws -> ExportedFile {
+        let data = try await export(image: image, profile: profile, settings: settings,
+                                    format: format, options: options, progress: progress)
+        return try Self.store(data, stem: profile.id, extension: format.fileExtension, in: directory)
+    }
+
+    /// The Exported LUT, owned the same way. It is a lattice written as text rather
+    /// than a raster, but it is still a file the app would otherwise never delete.
+    public func exportedLUTFile(profile: Profile, settings: RenderSettings = .init(), size: Int = 33,
+                                in directory: URL = ExportedFile.temporaryRoot) throws -> ExportedFile {
+        let text = try exportedLUT(profile: profile, settings: settings, size: size)
+        return try Self.store(Data(text.utf8), stem: profile.id, extension: "cube", in: directory)
+    }
+
+    /// Cancellation that lands after the bytes are on disk still has to clean up, so
+    /// the handle is only ever returned to a caller that can still use it.
+    private static func store(_ data: Data, stem: String, extension fileExtension: String,
+                              in directory: URL) throws -> ExportedFile {
+        try Task.checkCancellation()
+        let file = try ExportStore.write(data, named: ExportStore.fileName(stem, extension: fileExtension), in: directory)
+        if Task.isCancelled {
+            file.discard()
+            throw CancellationError()
+        }
+        return file
+    }
+
     /// The same tiled render, delivered as pixels rather than as a file. This is how a
     /// Tile Seam or a Grain repeat is asserted: it holds the whole frame in memory, so
     /// it is for tests and diagnostics rather than for a 48MP Export.
