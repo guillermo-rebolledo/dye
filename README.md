@@ -155,8 +155,8 @@ their modelled Halation is suppressed against a still colour negative's: 0.008 a
 separately — the same Emulsion without that backing, differing in Halation, Box
 Speed and Process, at strength 0.55. Its Curve Set is 500T's; its Colour Cubes are
 not byte-identical to 500T's, because it is baked at a 129³ lattice where every
-other Stock is 65³. That is eight times the file, the read, the decode and the
-texture upload, and it is 38% of the shipped Catalogue on its own. Nothing in
+other Stock is 65³. That is eight times the read, the decode and the texture upload
+on every Stock switch and every Development Offset step. Nothing in
 `Curves/cinestill-800t/` says why, and settling it is an accuracy question rather
 than a performance one — see PERF-19 in `docs/audits/performance.md`.
 Kodak's current 250D sheet draws its charts as raster plates rather than vector

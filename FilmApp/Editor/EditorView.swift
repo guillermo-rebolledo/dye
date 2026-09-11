@@ -22,7 +22,7 @@ struct EditorView: View {
             .sheet(isPresented: $showsSettings) { SettingsView(model: model) }
             .sheet(isPresented: $showsPresets) { PresetSheet(model: model).filmSheet() }
             .fullScreenCover(isPresented: $showsContactSheet) {
-                ContactSheetView(selectedStock: model.selectedStock) { try await model.catalogueForReferenceSheet() }
+                ContactSheetView(selectedStock: model.selectedStock) { try await model.catalogueForContactSheet() }
             }
             .sheet(isPresented: $isExporting) { ExportSheet(model: model).filmSheet() }
             .task { await model.loadCatalogue() }
@@ -129,7 +129,7 @@ private struct EditorScreen: View {
                    isLoupeEnabled: isLoupeEnabled,
                    parameter: (selection.isFilmstripOpen || selection.isOutputBrowserOpen) ? nil : selection.activeParameter(in: model.dialParameters),
                    onCompare: { holdingBefore = $0 }, previewReadout: previewReadout, isAdjusting: adjusting,
-                   subject: model.selectedStock)
+                   selectedStock: model.selectedStock)
             .accessibilityElement(children: canvas.hasPhoto ? .ignore : .combine)
             .accessibilityLabel(canvas.accessibilityLabel)
             .accessibilityValue(isComparing ? "Original" : "")

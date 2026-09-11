@@ -22,7 +22,17 @@ import FilmEngine
     /// sheet, so for the overwhelming majority of a grading session it is not — and a
     /// sweep of eighteen Profiles after every settings change is eighteen renders and
     /// about 54MB of Colour Cube nobody is looking at.
-    var isCatalogueVisible = false { didSet { if isCatalogueVisible, thumbnailsAreStale { scheduleThumbnails() } } }
+    var isCatalogueVisible = false {
+        didSet {
+            guard isCatalogueVisible, thumbnailsAreStale else { return }
+            // What is on file was rendered at settings the photograph is no longer at,
+            // and a cell showing it would be quietly wrong rather than visibly behind.
+            // Clearing first is what puts every cell in its developing state until its
+            // own render lands.
+            thumbnails = [:]
+            scheduleThumbnails()
+        }
+    }
     /// Set when a settings change happened with the Catalogue off screen, so opening
     /// it renders the settings the photograph is actually at.
     private var thumbnailsAreStale = false
@@ -346,7 +356,7 @@ import FilmEngine
     /// Renders the photo at full resolution and saves it to Photos and a shareable file. The
     /// renderer reports per Tile, which is also where it can be cancelled.
     func exportImage() {
-        guard let original, renderer != nil, exportTask == nil else { return }
+        guard let original, exportTask == nil else { return }
         let (profile, settings, format) = (profile, exportSettings, exportFormat)
         let creationDate = exportDate.resolve(originalDate: originalDate)
         export = .running(ExportProgress(completedTiles: 0, tileCount: 0))
@@ -408,7 +418,7 @@ import FilmEngine
     /// The colour half of the same look as a `.cube` file. It is a lattice render
     /// rather than a frame, so it is quick enough not to need progress or cancelling.
     func exportLUT() {
-        guard renderer != nil, exportTask == nil else { return }
+        guard exportTask == nil else { return }
         let (profile, settings) = (profile, exportSettings)
         export = .running(ExportProgress(completedTiles: 0, tileCount: 1))
         let started = ContinuousClock.now
@@ -527,10 +537,8 @@ import FilmEngine
     private func scheduleThumbnails() {
         thumbnailTask?.cancel()
         guard thumbnailInput != nil else { return }
-        // Nothing is rendered for a surface that is not on screen. What was rendered
-        // for the settings before this one stays in `thumbnails` — a cell showing the
-        // last settings is what the filmstrip already shows while a sweep is running,
-        // and the sweep that catches it up starts when the strip opens.
+        // Nothing is rendered for a surface that is not on screen; opening one is what
+        // starts the sweep that catches it up.
         guard isCatalogueVisible else { thumbnailsAreStale = true; return }
         thumbnailsAreStale = false
         let settings = settings
@@ -568,12 +576,12 @@ import FilmEngine
         return try await renderer.render(image: .linear(source), profile: profile, settings: settings)
     }
 
-    /// The Catalogue and a Renderer for a surface that renders every Profile against
-    /// a fixed reference. The Contact Sheet is not given the model — it needs the Stock
+    /// The Catalogue and a Renderer for the Contact Sheet, which renders every Profile
+    /// against a fixed reference. It is not given the model — it needs the Stock
     /// and nothing else about the editor, and that boundary is worth keeping — but it
     /// should not stand up a third Metal library and re-read eighteen Profile headers
     /// on every open when the editor is already holding both.
-    func catalogueForReferenceSheet() async throws -> (profiles: [Profile], renderer: Renderer) {
+    func catalogueForContactSheet() async throws -> (profiles: [Profile], renderer: Renderer) {
         await loadCatalogue()
         if let error, catalogue.isEmpty { throw FilmError.invalid(error) }
         return (catalogueWithIdentity, try await thumbnailRenderer())

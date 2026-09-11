@@ -53,7 +53,14 @@ public actor Renderer {
     /// - Parameter decodeBandBytes: how much staging buffer a colour-managed decode
     ///   may hold at once. A full-resolution decode writes the destination texture a
     ///   band of rows at a time rather than materialising the whole frame twice over.
-    public init(responseCacheBudgetBytes: Int = 96 << 20, decodeBandBytes: Int = 32 << 20) throws {
+    ///
+    ///   The figure is a trade rather than a target. Each band is a separate
+    ///   `CGContext.draw`, so a smaller budget is less resident memory and more draws;
+    ///   64MB puts a 48MP frame at a dozen bands and its peak — the band, its
+    ///   conversion and the destination texture — at about 470MB against the 1.45GB a
+    ///   whole-frame decode held. What a draw per band actually costs is one of the
+    ///   things the audit's device backlog would settle.
+    public init(responseCacheBudgetBytes: Int = 96 << 20, decodeBandBytes: Int = 64 << 20) throws {
         guard responseCacheBudgetBytes >= 16 << 20 else {
             throw FilmError.invalid("The Colour Cube budget must be at least 16MB")
         }
@@ -454,8 +461,6 @@ public actor Renderer {
         /// carry this many levels resolves to this same Plan, and the Export can build
         /// one Plan for the frame instead of one per Tile.
         var scatterDepth: Int { max(bloom?.levelCount ?? 0, halation?.levelCount ?? 0) }
-
-
     }
 
     /// The two Passes that blur before the Film Response, in the order the light
@@ -691,20 +696,6 @@ public actor Renderer {
     /// What a Tile of this frame has to carry, and where it may start. Measured against
     /// a Tile the size of the whole frame, so the Scattering Pyramids are as deep as
     /// they will ever be and both answers bound what any smaller Tile asks for.
-    func tiling(profile: Profile, settings: RenderSettings, source: any MTLTexture,
-                scatterFraction: Double) throws -> (apron: Int, alignment: Int) {
-        try tiling(profile: profile, settings: settings, frameWidth: source.width,
-                   frameHeight: source.height, scatterFraction: scatterFraction)
-    }
-
-    func tiling(profile: Profile, settings: RenderSettings, frameWidth: Int, frameHeight: Int,
-                scatterFraction: Double) throws -> (apron: Int, alignment: Int) {
-        let resolved = try tiling(profile: profile, settings: settings, frameWidth: frameWidth,
-                                  frameHeight: frameHeight, scatterFraction: scatterFraction,
-                                  grainModel: .procedural)
-        return (resolved.apron, resolved.alignment)
-    }
-
     func tiling(profile: Profile, settings: RenderSettings, frameWidth: Int, frameHeight: Int,
                 scatterFraction: Double,
                 grainModel: GrainModel) throws -> (apron: Int, alignment: Int, plan: Plan) {
@@ -970,11 +961,14 @@ public actor Renderer {
     /// The pyramid for these dimensions, at least this deep. Deeper is kept rather
     /// than trimmed: Bloom asks for more levels than Halation on the same frame, and
     /// reallocating between the two would undo the point of sharing the allocation.
-    private func pyramid(width: Int, height: Int, count: Int) throws -> Pyramid {
-        if let pyramid = scatterPyramid, pyramid.count >= count,
-           pyramid.levels[0].width == width, pyramid.levels[0].height == height { return pyramid }
-        let count = max(count, scatterPyramid?.levels[0].width == width
-                        && scatterPyramid?.levels[0].height == height ? scatterPyramid?.count ?? 0 : 0)
+    private func pyramid(width: Int, height: Int, requiring depth: Int) throws -> Pyramid {
+        let existing = scatterPyramid.flatMap {
+            $0.levels[0].width == width && $0.levels[0].height == height ? $0 : nil
+        }
+        if let existing, existing.count >= depth { return existing }
+        // Bloom asks for more levels than Halation on the same frame, so a pyramid at
+        // the right size but the wrong depth grows rather than being replaced.
+        let count = max(depth, existing?.count ?? 0)
         counters.tileTextureAllocations += 1
         var levels: [any MTLTexture] = []
         var scratch: [any MTLTexture] = []
@@ -998,7 +992,7 @@ public actor Renderer {
     private func encodeScatter(_ scatter: Scatter, _ scattering: Scattering, encoder: any MTLComputeCommandEncoder,
                                source: any MTLTexture, destination: any MTLTexture) throws {
         let count = scatter.levelWeights.count - 1
-        let pyramid = try pyramid(width: source.width, height: source.height, count: count)
+        let pyramid = try pyramid(width: source.width, height: source.height, requiring: count)
         var parameters = scatter.parameters
         var tint = scatter.tint
         func dispatch(_ name: String, label: String, textures: [any MTLTexture], weight: SIMD4<Float>? = nil,

@@ -70,8 +70,8 @@ extension Renderer {
     public func tilePlan(frameWidth: Int, frameHeight: Int, profile: Profile,
                          settings: RenderSettings = .init(),
                          options: ExportOptions = .init()) throws -> TilePlan {
-        try planned(frameWidth: frameWidth, frameHeight: frameHeight, profile: profile,
-                    settings: settings, options: options, grainModel: .procedural).tiles
+        try resolvePlans(frameWidth: frameWidth, frameHeight: frameHeight, profile: profile,
+                         settings: settings, options: options, grainModel: .procedural).tiles
     }
 
     /// The Tile plan and the render Plan every Tile of it shares, resolved together.
@@ -82,9 +82,9 @@ extension Renderer {
     /// A Plan is consulted about the Tile for exactly one thing, how deep a Scattering
     /// Pyramid fits in it, so a padded Tile that can carry the depth the frame
     /// resolved to renders against the frame's own Plan unchanged.
-    private func planned(frameWidth: Int, frameHeight: Int, profile: Profile, settings: RenderSettings,
-                         options: ExportOptions,
-                         grainModel: GrainModel) throws -> (tiles: TilePlan, render: Plan) {
+    private func resolvePlans(frameWidth: Int, frameHeight: Int, profile: Profile, settings: RenderSettings,
+                              options: ExportOptions,
+                              grainModel: GrainModel) throws -> (tiles: TilePlan, render: Plan) {
         try settings.validate()
         guard frameWidth > 0, frameHeight > 0 else { throw FilmError.invalid("Frame must have a positive size") }
         let tiling = try tiling(profile: profile, settings: settings, frameWidth: frameWidth,
@@ -111,9 +111,9 @@ extension Renderer {
                              sink: (TilePlan.Tile, UnsafeBufferPointer<Float16>) throws -> Void) async throws {
         let thermalState = options.resolvedThermalState
         let grainModel = Self.grainModel(profile, path: .export, thermalState: thermalState)
-        let planned = try planned(frameWidth: source.width, frameHeight: source.height, profile: profile,
-                                  settings: settings, options: options, grainModel: grainModel)
-        let plan = planned.tiles
+        let plans = try resolvePlans(frameWidth: source.width, frameHeight: source.height, profile: profile,
+                                     settings: settings, options: options, grainModel: grainModel)
+        let plan = plans.tiles
         let input = try decoder.makeTexture(width: plan.paddedWidth, height: plan.paddedHeight)
         let scratch = try decoder.makeTexture(width: plan.paddedWidth, height: plan.paddedHeight)
         var core = [Float16](repeating: 0, count: plan.coreWidth * plan.coreHeight * 4)
@@ -124,7 +124,7 @@ extension Renderer {
             try await copy(source, into: input, from: tile, plan: plan)
             let frame = Frame(width: plan.frameWidth, height: plan.frameHeight,
                               originX: tile.originX, originY: tile.originY)
-            let result = try await renderTile(input, into: scratch, plan: planned.render, frame: frame,
+            let result = try await renderTile(input, into: scratch, plan: plans.render, frame: frame,
                                               profile: profile, settings: settings, queue: exportQueue)
             core.withUnsafeMutableBytes {
                 result.getBytes($0.baseAddress!, bytesPerRow: tile.width * 8,

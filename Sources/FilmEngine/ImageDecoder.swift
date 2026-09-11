@@ -13,7 +13,7 @@ struct ImageDecoder {
     /// How much staging buffer the colour-managed draw may hold at once.
     let bandBytes: Int
 
-    init(device: any MTLDevice, bandBytes: Int = 32 << 20) throws {
+    init(device: any MTLDevice, bandBytes: Int = 64 << 20) throws {
         self.device = device
         self.bandBytes = max(bandBytes, 1 << 20)
         guard let queue = device.makeCommandQueue() else { throw FilmError.invalid("Metal is unavailable") }

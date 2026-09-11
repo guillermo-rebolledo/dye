@@ -18,13 +18,14 @@ of this document written after the audit; everything below it is the audit as ta
 | ID | Status |
 | --- | --- |
 | PERF-01 | **Partly.** Options 1 and 2 taken: the Apron is bounded by a share of the budget edge, and the budget follows the device. A 48MP frame plans 130 Tiles at 11.3× overdraw rather than 768 at 44.4×. **Option 3 — the per-frame coarse pyramid — was not taken**; see below. |
-| PERF-02 | **Done.** Banded decode, bit-identical at all eight orientations. |
+| PERF-02 | **Partly.** Banded decode, bit-identical at all eight orientations. The Preview path still decodes whole and scales down; see below. |
 | PERF-03 | **Done.** The sweep runs only while a surface showing the Catalogue is on screen, selected Stock first. |
 | PERF-04 | **Done.** Byte budget, entries pinned to the Plan building them, a payload-read counter, and release on memory pressure. |
-| PERF-05 | **Done.** `waitUntilCompleted` is a suspension, with a render turn guarding the shared textures. |
+| PERF-05 | **Done.** `waitUntilCompleted` is a suspension, with a render turn guarding the shared textures. Within one Renderer that turn still serialises whole renders — what stops a Preview waiting out a Tile is PERF-06, not this. |
 | PERF-06 | **Done.** The Export has its own Renderer. |
 | PERF-07 | **Done.** One shared Scattering Pyramid; `tileTextureCount` is 9 and asserted against the Renderer's own allocation. MTF textures are not pooled into it. |
 | PERF-08 | **Done.** One compute encoder per command buffer, debug groups per Pass. |
+| — | The one edit to `Pipeline.metal` is PERF-13's redundant alpha read. No arithmetic changed, and every Golden Image is bit-identical. |
 | PERF-09 | **Done.** Pyramid and MTF textures are `.private` and no longer render targets. Unmeasured on device, as the finding says. |
 | PERF-10 | **Partly.** The library and its 21 pipeline states are built once per device rather than per Renderer. Still `makeLibrary(source:)` once per process; a build-time `.metallib` was not attempted. |
 | PERF-11 | **Done.** One Plan per Export, asserted by a counter. |
@@ -77,6 +78,20 @@ are what caught them.
   integer formatter changed the file. `.toNearestOrEven` is the same decision on the
   same number, and scaling a `Float16` by a million is exact, so the digits are
   provably the same digits.
+
+### The Preview's subsampled decode, declined
+
+The spec asks that "the Preview path subsamples during decode rather than decoding
+whole and scaling down". It was not taken. ImageIO can subsample — `kCGImageSourceSubsampleFactor`,
+or a thumbnail decode — but only at powers of two, so the frame still has to be
+resampled the rest of the way, and resampling an already-subsampled source is not the
+same image as resampling the original. **That changes what a photographer sees in the
+Preview**, which is the one thing the spec's Solution says none of this work does.
+
+The memory argument for it is also weak where it matters: the Preview's own buffers
+are sized by its 2048px destination, not by the file, so the saving would be inside
+ImageIO rather than in anything this branch can bound or assert. The Critical decode
+finding is the full-resolution Export path, and that one is fixed.
 
 ### PERF-13, and what a "needs measurement" finding is allowed to cost
 

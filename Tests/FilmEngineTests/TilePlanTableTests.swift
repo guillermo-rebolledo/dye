@@ -231,5 +231,21 @@ private let table: [Row] = [
     _ = try await renderer.export(image: .linear(image), profile: profile, settings: settings,
                                   format: .jpeg, options: options)
     let built = await renderer.renderCounters.plansBuilt
-    #expect(built <= 2, "\(plan.count) Tiles built \(built) Plans")
+    #expect(built == 1, "\(plan.count) Tiles built \(built) Plans")
+
+    // One at a second budget too, because the figure that must not move with the Tile
+    // count is the one under test. A Tile is consulted about exactly one thing — how
+    // deep a Scattering Pyramid fits in it — so a Tile too small to carry the depth the
+    // frame resolved to would cost a second Plan; that is still once for the Export
+    // rather than once per Tile, and it is not a case a photograph reaches, since the
+    // padded Tile of a 48MP frame is over two thousand pixels against nine levels.
+    let larger = ExportOptions(textureBudgetBytes: 192 * 192 * 8 * TilePlan.tileTextureCount,
+                               minimumTileEdge: 16, thermalState: .nominal)
+    let largerPlan = try await renderer.tilePlan(image: .linear(image), profile: profile,
+                                                 settings: settings, options: larger)
+    #expect(largerPlan.count > 1 && largerPlan.count < plan.count)
+    await renderer.resetRenderCounters()
+    _ = try await renderer.export(image: .linear(image), profile: profile, settings: settings,
+                                  format: .jpeg, options: larger)
+    #expect(await renderer.renderCounters.plansBuilt == 1)
 }
