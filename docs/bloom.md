@@ -44,7 +44,8 @@ Wedges do.
 
 Above 100%, a quadratic creative boost raises diffusion to at least 30% at
 200% (capped at 100% to conserve light). The 0–100% range still scales the
-profile linearly. A profile with zero diffusion stays disabled.
+profile linearly. Profiles with zero diffusion, including Identity, stay unchanged
+at 0–100%. Above 100% they use a 900 µm radius with the same creative boost.
 
 ## The pass
 

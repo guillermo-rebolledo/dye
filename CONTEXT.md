@@ -29,7 +29,9 @@ The user's controls sit at specific points in that order — **Exposure** and
 **White Balance** before the **Film Response**, **Development Offset** selecting
 between Colour Cubes, **Bloom**, **Halation** and **Grain** scaled relative to the
 Profile's own values, and the **Adjustments** over the scan after the **Output
-Stage**. A **Preset** saves a Stock plus those settings.
+Stage**. Bloom and Halation also offer creative effects above 100% when the
+Profile has no built-in effect, including Identity. A **Preset** saves a Stock
+plus those settings.
 
 ## Language
 
