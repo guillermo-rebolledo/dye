@@ -4,10 +4,12 @@
 Run from any directory: python3 Scripts/check-dial-mapping.py
 SwiftUI's Parameter type and the production TrackMap are compiled unchanged.
 Only view/haptic dependencies are omitted; numeric tokens come from Tokens.swift.
+Also runs check-preset-undo.py as part of the existing app CI entry point.
 """
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,6 +47,8 @@ def main():
                         *map(str, (build / "FilmEngine.build").glob("*.o")),
                         "-o", str(binary)], check=True)
         subprocess.run([str(binary)], check=True)
+    # Keep the app's model checks in the same validation entry point used by CI.
+    subprocess.run([sys.executable, str(ROOT / "Scripts/check-preset-undo.py")], check=True)
 
 
 CHECKS = r"""

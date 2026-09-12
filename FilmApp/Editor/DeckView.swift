@@ -22,12 +22,24 @@ struct DeckView: View {
                 .padding(.horizontal, 16).frame(height: 34)
             ParameterRail(model: model, selection: selection, parameters: parameters)
                 .disabled(!hasPhoto)
-            HStack(spacing: 8) {
-                groupMenu
-                parameterName(active)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    groupMenu
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        parameterName(active)
+                        resetButton(active)
+                    }
+                }
+                .padding(.horizontal, 16)
+            } else {
+                HStack(spacing: 8) {
+                    groupMenu
+                    parameterName(active)
+                    resetButton(active)
+                }
+                .padding(.horizontal, 16)
+                .frame(height: 44)
             }
-            .padding(.horizontal, 16)
-            .frame(height: dynamicTypeSize.isAccessibilitySize ? 58 : 44)
             ActiveControl(parameter: active, model: model, isEnabled: hasPhoto,
                           showsTrack: true, onDragging: onDragging)
                 .frame(height: 44)
@@ -74,10 +86,22 @@ struct DeckView: View {
         Text(parameter?.name ?? "Choose a photo")
             .font(.subheadline.weight(.medium))
             .foregroundStyle(Tokens.Palette.textPrimary)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity).contentShape(Rectangle())
             .gesture(LongPressGesture().onEnded { _ in reset(parameter) }
                 .exclusively(before: TapGesture(count: 2).onEnded { reset(parameter) }))
             .accessibilityAction(named: "Reset to default") { reset(parameter) }
+    }
+
+    private func resetButton(_ parameter: Parameter?) -> some View {
+        Button("Reset") { reset(parameter) }
+            .font(.footnote.weight(.medium))
+            .fixedSize()
+            .frame(minWidth: 44, minHeight: 44)
+            .disabled(!hasPhoto || !canReset(parameter))
+            .opacity(canReset(parameter) ? 1 : 0)
+            .accessibilityHidden(!canReset(parameter))
+            .accessibilityLabel("Reset \(parameter?.name ?? "control")")
     }
 
     private func reset(_ parameter: Parameter?) {
@@ -86,6 +110,11 @@ struct DeckView: View {
         withAnimation(reduceMotion ? nil : .snappy(duration: 0.16)) {
             parameter.value.wrappedValue = parameter.defaultValue
         }
+    }
+
+    private func canReset(_ parameter: Parameter?) -> Bool {
+        guard let parameter else { return false }
+        return parameter.isModified || model.isBypassed(parameter.id)
     }
 }
 

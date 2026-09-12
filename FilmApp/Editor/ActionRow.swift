@@ -21,15 +21,15 @@ struct ActionRow: View {
                     Menu {
                         Button("Presets", systemImage: "slider.horizontal.3", action: showPresets)
                             .disabled(!hasPhoto)
-                        Button("Contact Sheet", systemImage: "square.grid.3x3", action: showContactSheet)
-                        Toggle("Loupe", systemImage: "magnifyingglass", isOn: $isLoupeEnabled)
+                        Button("Stock reference", systemImage: "square.grid.3x3", action: showContactSheet)
+                        Toggle("Preview zoom", systemImage: "magnifyingglass", isOn: $isLoupeEnabled)
                             .disabled(!hasPhoto)
                         Button("Export", systemImage: "square.and.arrow.up", action: showExport)
                             .disabled(!hasPhoto || !canExport)
                     } label: {
                         DeckActionLabel(name: "More", symbol: "ellipsis")
                     }
-                    .accessibilityHint("Presets, Contact Sheet, Loupe, and Export")
+                    .accessibilityHint("Presets, Stock reference, Preview zoom, and Export")
                 }
                 .buttonStyle(DeckActionPress())
             } else {
@@ -58,11 +58,12 @@ struct ActionRow: View {
             .disabled(!hasPhoto)
 
             Button(action: showContactSheet) {
-                DeckActionLabel(name: "Contact Sheet", symbol: "square.grid.3x3")
+                DeckActionLabel(name: "Stock reference", symbol: "square.grid.3x3")
             }
+            .accessibilityHint("Compares stocks on a sample image. Touch and hold for Preview zoom.")
             .contextMenu {
-                Button("Contact Sheet", action: showContactSheet)
-                Toggle("Loupe", isOn: $isLoupeEnabled).disabled(!hasPhoto)
+                Button("Stock reference", action: showContactSheet)
+                Toggle("Preview zoom", isOn: $isLoupeEnabled).disabled(!hasPhoto)
             }
 
             Button(action: showExport) {

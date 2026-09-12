@@ -103,14 +103,22 @@ struct PresetSheet: View {
 
     @ViewBuilder private func list(_ rows: [PresetRow]) -> some View {
         if rows.isEmpty {
-            Text("No presets yet")
-                .typeStyle(.caption)
-                .foregroundStyle(Tokens.Palette.textTertiary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
+            ScrollView {
+                VStack(spacing: Tokens.Metrics.space20) {
+                    applicationHint
+                    Text("No presets yet")
+                        .typeStyle(.caption)
+                        .foregroundStyle(Tokens.Palette.textTertiary)
+                        .frame(maxWidth: .infinity)
+                }
                 .padding(.vertical, Tokens.Metrics.space20)
+            }
+            .scrollBounceBehavior(.basedOnSize)
         } else {
             List {
+                applicationHint
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 ForEach(rows) { row in
                     Button { apply(row) } label: { PresetRowView(row: row, pixels: model.presetThumbnails[row.id],
                                                                  delete: { delete(row.preset) }) }
@@ -134,6 +142,13 @@ struct PresetSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: Tokens.Presets.listRadius, style: .continuous))
             .recessedSurface(cornerRadius: Tokens.Presets.listRadius)
         }
+    }
+
+    private var applicationHint: some View {
+        Text("Presets replace the stock and adjustments. Undo preset is available in the editor until your next edit.")
+            .font(.footnote)
+            .foregroundStyle(Tokens.Palette.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private func apply(_ row: PresetRow) {

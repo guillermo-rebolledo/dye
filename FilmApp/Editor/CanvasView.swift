@@ -86,8 +86,19 @@ struct CanvasView: View {
             .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .background(Tokens.Palette.canvas)
+        .overlay(alignment: .bottomLeading) {
+            if content.hasPhoto && loupe != nil {
+                Text("Preview zoom · Export for full detail")
+                    .font(.caption)
+                    .foregroundStyle(Tokens.Palette.textPrimary)
+                    .padding(10)
+                    .modifier(EditorGlass())
+                    .padding(12)
+                    .allowsHitTesting(false)
+            }
+        }
         .overlay(alignment: .bottomTrailing) {
-            if case let .photo(_, _, milliseconds) = content, let milliseconds {
+            if loupe == nil, case let .photo(_, _, milliseconds) = content, let milliseconds {
                 Text("\(milliseconds, specifier: "%.0f") ms").typeStyle(.renderTime)
                     .foregroundStyle(Tokens.Palette.textPrimary)
                     .padding(.horizontal, 10).padding(.vertical, 6)

@@ -24,21 +24,32 @@ struct EditorPickers: View {
         .frame(maxWidth: 560, alignment: .leading)
         .frame(maxWidth: .infinity)
         .sheet(isPresented: Binding(get: { selection.isFilmstripOpen }, set: { selection.isFilmstripOpen = $0 })) {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Film Stock").font(.title2.bold())
-                Text(model.profile.metadata.qualifiedDisplayName).font(.headline)
-                // The qualifiers only mean anything if the sheet says what they are,
-                // and this is the one screen where every name is on show at once.
-                Text(Legal.qualifierExplanation)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Film Stock").font(.title2.bold())
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(model.profile.metadata.qualifiedDisplayName).font(.headline)
+                        Text(StockCharacter.description(for: model.profile))
+                            .font(.subheadline)
+                            .foregroundStyle(Tokens.Palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Filmstrip(catalogue: model.catalogue, thumbnails: model.thumbnails,
+                              selectedStock: Binding(get: { model.selectedStock }, set: { model.selectedStock = $0 }),
+                              close: { selection.isFilmstripOpen = false })
+                    DisclosureGroup("About Modelled and Approx.") {
+                        Text(Legal.qualifierExplanation)
+                            .foregroundStyle(Tokens.Palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 8)
+                    }
                     .font(.footnote)
-                    .foregroundStyle(Tokens.Palette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Filmstrip(catalogue: model.catalogue, thumbnails: model.thumbnails,
-                          selectedStock: Binding(get: { model.selectedStock }, set: { model.selectedStock = $0 }),
-                          close: { selection.isFilmstripOpen = false })
+                    .frame(minHeight: Tokens.Metrics.minimumHitTarget)
+                }
+                .padding(.vertical, 24)
+                .padding(.horizontal, 16)
             }
-            .padding(.vertical, 24)
-            .padding(.horizontal, 16)
+            .scrollBounceBehavior(.basedOnSize)
             // The Catalogue sweep renders eighteen Profiles and reads about 54MB of
             // Colour Cube. It runs while this sheet is up and not otherwise.
             .onAppear { model.isCatalogueVisible = true }
