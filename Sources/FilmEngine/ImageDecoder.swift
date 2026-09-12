@@ -162,15 +162,26 @@ struct ImageDecoder {
         // put them. `aBandedDecodeMatchesAWholeFrameDecodeAtEveryOrientation` is the
         // assertion that this is a memory change and not a pixel one.
         let bandRows = max(1, min(height, bandBytes / (width * 16)))
-        var staging = [Float](repeating: 0, count: width * bandRows * 4)
+        // A band is drawn one row wider than it keeps at each edge it has a neighbour
+        // at, and the margin is thrown away. Core Graphics places a *flipped* draw one
+        // pixel across at the rows its own context edges sit on: an untiled decode pays
+        // that once, at the frame's edge, and a banded one would pay it once per band,
+        // at rows in the middle of the photograph. Keeping only the interior of each
+        // band leaves the frame's own edges as the only ones in the result — which is
+        // what the untiled decode has.
+        var staging = [Float](repeating: 0, count: width * (bandRows + 2) * 4)
         var half = [Float16](repeating: 0, count: width * bandRows * 4)
         var row = 0
         while row < height {
             let rows = min(bandRows, height - row)
+            // What is drawn above and below the band's own rows, and so discarded.
+            let lead = row > 0 ? 1 : 0
+            let drawn = lead + rows + (row + rows < height ? 1 : 0)
+            let start = lead * width * 4
             let count = width * rows * 4
-            for index in 0..<count { staging[index] = 0 }
+            for index in 0..<(width * drawn * 4) { staging[index] = 0 }
             try staging.withUnsafeMutableBytes { bytes in
-                guard let context = CGContext(data: bytes.baseAddress, width: width, height: rows,
+                guard let context = CGContext(data: bytes.baseAddress, width: width, height: drawn,
                     bitsPerComponent: 32, bytesPerRow: width * 16, space: workingSpace,
                     bitmapInfo: CGBitmapInfo.floatComponents.rawValue | CGBitmapInfo.byteOrder32Little.rawValue |
                         CGImageAlphaInfo.premultipliedLast.rawValue) else {
@@ -178,9 +189,12 @@ struct ImageDecoder {
                 }
                 // Core Graphics counts rows from the bottom and the texture upload from
                 // the top, and the whole-frame form relied on that: buffer row 0 is
-                // texture row 0. Shifting the drawing down by the band's start keeps
-                // every band on the same footing.
-                context.translateBy(x: 0, y: -CGFloat(row))
+                // texture row 0. A band's own buffer row 0 is the top of the rows it
+                // draws, so what the drawing has to come down by is everything *below*
+                // the band rather than everything above it. Shifting by `row` instead
+                // cycled the frame: a two-band 12MP Export came out of Photos with its
+                // lower band on top, which is what this arithmetic is.
+                context.translateBy(x: 0, y: -CGFloat(height - drawn - row + lead))
                 // ImageIO exposes EXIF orientation separately from the decoded raster.
                 switch orientation {
                 case 2: context.translateBy(x: CGFloat(width), y: 0); context.scaleBy(x: -1, y: 1)
@@ -203,11 +217,12 @@ struct ImageDecoder {
             // assumed, and the divide immediately above is what can break it, since the
             // alpha it divides by can be arbitrarily small.
             for pixel in stride(from: 0, to: count, by: 4) {
-                let alpha = staging[pixel + 3]
+                let source = start + pixel
+                let alpha = staging[source + 3]
                 if alpha > 0 {
-                    for channel in 0..<3 { half[pixel + channel] = Self.clampedHalf(staging[pixel + channel] / alpha) }
+                    for channel in 0..<3 { half[pixel + channel] = Self.clampedHalf(staging[source + channel] / alpha) }
                 } else {
-                    for channel in 0..<3 { half[pixel + channel] = Self.clampedHalf(staging[pixel + channel]) }
+                    for channel in 0..<3 { half[pixel + channel] = Self.clampedHalf(staging[source + channel]) }
                 }
                 half[pixel + 3] = Self.clampedHalf(alpha)
             }

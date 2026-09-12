@@ -38,17 +38,30 @@ private func png(width: Int, height: Int, orientation: Int, alpha: Bool) throws 
     return output as Data
 }
 
+/// The smallest band budget a `Renderer` will accept, since `init` floors it. A frame
+/// only bands when its rows cost more than this, which a 200 x 137 fixture never did:
+/// the test that thought it was banding was decoding whole frames at both budgets and
+/// asserting they matched, and a banded decode shipped with its bands cycled.
+private let minimumBandBytes = 1 << 20
+
+/// How many bands a decode of this size actually takes, which is the assertion that a
+/// "banded" case is one.
+private func bands(width: Int, height: Int) -> Int {
+    let rows = max(1, min(height, minimumBandBytes / (width * 16)))
+    return (height + rows - 1) / rows
+}
+
 @Test func aBandedDecodeMatchesAWholeFrameDecodeAtEveryOrientation() async throws {
     // One band budget large enough to hold the frame whole, and one small enough that
-    // the frame takes dozens of bands. Fourteen rows of 200 pixels is 11 200 bytes, so
-    // the floor of one megabyte still leaves the small case banding this image.
+    // the frame takes several bands.
     let whole = try Renderer(decodeBandBytes: 256 << 20)
-    let banded = try Renderer(decodeBandBytes: 1 << 20)
+    let banded = try Renderer(decodeBandBytes: minimumBandBytes)
+    // Not square and not a multiple of the band height, so the last band is a partial
+    // one and the axes cannot be confused for each other.
+    #expect(bands(width: 400, height: 301) > 1)
     for orientation in 1...8 {
         for alpha in [false, true] {
-            // Not square and not a multiple of the band height, so the last band is a
-            // partial one and the axes cannot be confused for each other.
-            let data = try png(width: 200, height: 137, orientation: orientation, alpha: alpha)
+            let data = try png(width: 400, height: 301, orientation: orientation, alpha: alpha)
             let expected = try await whole.decode(data)
             let actual = try await banded.decode(data)
             #expect(actual.width == expected.width && actual.height == expected.height,
@@ -62,10 +75,13 @@ private func png(width: Int, height: Int, orientation: Int, alpha: Bool) throws 
     // The Preview path scales as it draws, so its bands are drawn through a resampler
     // rather than copied. The band a pixel lands in must not change what it resamples.
     let whole = try Renderer(decodeBandBytes: 256 << 20)
-    let banded = try Renderer(decodeBandBytes: 1 << 20)
-    let data = try png(width: 512, height: 341, orientation: 6, alpha: false)
-    let expected = try await whole.decode(data, maximumDimension: 128)
-    let actual = try await banded.decode(data, maximumDimension: 128)
+    let banded = try Renderer(decodeBandBytes: minimumBandBytes)
+    // The decode is bounded by what the Preview asks for, so it is the *scaled* size
+    // that has to band — a source large enough to band is not enough on its own.
+    #expect(bands(width: 341, height: 512) > 1)
+    let data = try png(width: 1024, height: 683, orientation: 6, alpha: false)
+    let expected = try await whole.decode(data, maximumDimension: 512)
+    let actual = try await banded.decode(data, maximumDimension: 512)
     #expect(actual.width == expected.width && actual.height == expected.height)
     #expect(actual.rgba == expected.rgba)
 }
