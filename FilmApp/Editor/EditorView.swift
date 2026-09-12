@@ -1,7 +1,9 @@
 import SwiftUI
+import UIKit
 import FilmEngine
 
 struct EditorView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var model = EditorModel()
     @State private var photo: PickedPhoto?
     @State private var isExporting = false
@@ -19,6 +21,7 @@ struct EditorView: View {
         }
             .tint(Tokens.Palette.textPrimary)
             .preferredColorScheme(.dark)
+            .overlay(alignment: .top) { ConfirmationToast(message: model.confirmation) }
             .sheet(isPresented: $showsSettings) { SettingsView(model: model) }
             .sheet(isPresented: $showsPresets) { PresetSheet(model: model).filmSheet() }
             .fullScreenCover(isPresented: $showsContactSheet) {
@@ -26,6 +29,13 @@ struct EditorView: View {
             }
             .sheet(isPresented: $isExporting) { ExportSheet(model: model).filmSheet() }
             .task { await model.loadCatalogue() }
+            .task { await model.refreshPhotoAccess() }
+            // Granting access means leaving for Settings, so coming back is the only
+            // signal the app gets that the answer may have changed.
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active else { return }
+                Task { await model.refreshPhotoAccess() }
+            }
             .task { await model.watchThermalState() }
             .task { await model.watchMemoryPressure() }
             .task(id: photo) {
@@ -65,6 +75,10 @@ private struct EditorScreen: View {
     @State private var adjusting = false
     @State var accessibleBefore = false
     @AppStorage("hasDismissedEditingTips") private var hasDismissedEditingTips = false
+    /// Not persisted: the answer can change in Settings between launches, and a
+    /// notice the user waved away once should not be the reason they never see it
+    /// again after coming back to the app still unable to save.
+    @State private var hasDismissedAccessNotice = false
     var previewReadout = false
 
     private var isComparing: Bool { canvas.hasPhoto && (holdingBefore || accessibleBefore) }
@@ -90,6 +104,11 @@ private struct EditorScreen: View {
             .padding(.vertical, 6)
             if canvas.hasPhoto || model.beforePixels != nil {
                 editor
+            } else if model.photoAccess == .denied && !hasDismissedAccessNotice {
+                // Before the first photo rather than over the editor: a refusal is
+                // about where an Export lands, and taking the app away from someone
+                // mid-edit over it would cost them more than the save is worth.
+                PhotoAccessScreen { hasDismissedAccessNotice = true }
             } else {
                 PhotoWelcomeScreen(photo: $photo, isLoading: isLoading, error: error, openAsSRGB: openAsSRGB)
             }
@@ -228,6 +247,88 @@ private struct PhotoWelcomeScreen: View {
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: geometry.size.height)
             }
+        }
+    }
+}
+
+/// Add-only access refused, which the app cannot ask for twice: iOS answers the second
+/// request with the first answer, so Settings is the only way back and saying so is the
+/// whole job of this screen.
+private struct PhotoAccessScreen: View {
+    let dismiss: () -> Void
+
+    var body: some View {
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: Tokens.Metrics.space20) {
+                    Image(systemName: "lock.square")
+                        .font(.largeTitle)
+                        .foregroundStyle(Tokens.Palette.accent)
+                        .accessibilityHidden(true)
+
+                    VStack(spacing: Tokens.Metrics.space10) {
+                        Text("Dye cannot save to Photos")
+                            .font(.title2.weight(.semibold))
+                            .accessibilityAddTraits(.isHeader)
+                        Text("Turn on Add Photos Only for Dye in Settings to save your edits to your photo library. You can keep editing and sharing without it.")
+                            .font(.body)
+                            .foregroundStyle(Tokens.Palette.inkOnCanvas(0.7))
+                    }
+
+                    if let settings = URL(string: UIApplication.openSettingsURLString) {
+                        Link(destination: settings) {
+                            Text("Open Settings")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .frame(minHeight: Tokens.Metrics.minimumHitTarget)
+                                .padding(.horizontal, Tokens.Metrics.space16)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Tokens.Palette.accent)
+                        .foregroundStyle(Tokens.Palette.canvas)
+                    }
+                    Button("Continue without saving", action: dismiss)
+                        .font(.subheadline)
+                        .frame(minHeight: Tokens.Metrics.minimumHitTarget)
+                }
+                .multilineTextAlignment(.center)
+                .foregroundStyle(Tokens.Palette.inkOnCanvas)
+                .frame(maxWidth: Tokens.Welcome.contentWidth)
+                .padding(Tokens.Metrics.space20)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: geometry.size.height)
+            }
+        }
+    }
+}
+
+/// One line over the canvas, for the things that happen where the user is not looking.
+/// A save to Photos leaves nothing on screen to see, so this is the seeing.
+private struct ConfirmationToast: View {
+    let message: String?
+
+    var body: some View {
+        Group {
+            if let message {
+                Label(message, systemImage: "checkmark.circle.fill")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Tokens.Palette.textPrimary)
+                    .padding(.horizontal, Tokens.Metrics.space16)
+                    .frame(minHeight: Tokens.Metrics.chipHeight)
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Tokens.Palette.edgeHairline, lineWidth: Tokens.Elevation.hairlineWidth))
+                    .padding(.top, Tokens.Metrics.space10)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.snappy, value: message)
+        .allowsHitTesting(false)
+        // Nothing moves focus to a toast, so VoiceOver has to be told rather than
+        // shown. This is the only announcement of the save that reaches it.
+        .accessibilityHidden(true)
+        .onChange(of: message) { _, new in
+            guard let new else { return }
+            AccessibilityNotification.Announcement(new).post()
         }
     }
 }
