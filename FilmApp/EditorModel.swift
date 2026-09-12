@@ -414,6 +414,52 @@ import FilmEngine
         case failed
     }
 
+    // MARK: - Photo library access
+
+    /// Whether the app may add to the photo library. Asked for at launch rather than
+    /// at the first save: the picker needs no permission, so a user who never exports
+    /// was never asked at all, and the one who does was asked at the moment their
+    /// photograph was finished — which is the worst moment to be handed a dialogue and
+    /// the worst moment to find out the answer is no.
+    enum PhotoAccess: Equatable {
+        /// Not asked yet, or asked and still waiting.
+        case unknown
+        case granted
+        /// Declined, or not the user's to give. Recoverable only in Settings.
+        case denied
+    }
+
+    private(set) var photoAccess: PhotoAccess = .unknown
+
+    /// Asks once and records the answer; re-reads it on every later call, which is
+    /// what makes returning from Settings enough to clear the refusal screen.
+    @discardableResult
+    func refreshPhotoAccess() async -> PHAuthorizationStatus {
+        let status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+        let resolved = status == .notDetermined ? await PHPhotoLibrary.requestAuthorization(for: .addOnly) : status
+        photoAccess = resolved == .authorized || resolved == .limited ? .granted : .denied
+        return resolved
+    }
+
+    // MARK: - Confirmations
+
+    /// A short line the editor shows over the canvas and VoiceOver announces. The
+    /// finished Export sheet already records the save, but it is a sheet the user can
+    /// dismiss the moment the render ends, and "did that actually go anywhere" is not
+    /// a question a photo editor should leave open.
+    private(set) var confirmation: String?
+    private var confirmationTask: Task<Void, Never>?
+
+    func confirm(_ message: String) {
+        confirmationTask?.cancel()
+        confirmation = message
+        confirmationTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            self?.confirmation = nil
+        }
+    }
+
     private func exportRenderer() async throws -> Renderer {
         if exportRendererTask == nil { exportRendererTask = Task { try await Renderer.make() } }
         do { return try await exportRendererTask!.value }
@@ -458,7 +504,10 @@ import FilmEngine
                 try Task.checkCancellation()
                 self?.export = .saving
                 var refusal: PhotosRefusal?
-                let authorization = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+                // Already answered at launch in the ordinary case, so this is a read
+                // rather than a prompt — and it is the same read, so a refusal recorded
+                // here also puts the editor's own notice up.
+                let authorization = await self?.refreshPhotoAccess() ?? .denied
                 try Task.checkCancellation()
                 if authorization == .authorized || authorization == .limited {
                     do {
@@ -482,6 +531,7 @@ import FilmEngine
                 // The file outlives the save on purpose: the share affordance on the
                 // finished sheet needs it, and dismissing the sheet is what ends it.
                 let size = Self.pixelSize(of: file.url)
+                if refusal == nil { self?.confirm("Saved to Photos") }
                 self?.export = .finished(ExportRecord(file: file, pixelWidth: size?.width, pixelHeight: size?.height,
                                                       output: settings.output,
                                                       tileCount: tileCount.withLock { $0 },

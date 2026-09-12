@@ -17,8 +17,11 @@ def main():
     build = Path(subprocess.check_output(
         ["swift", "build", "--show-bin-path"], cwd=ROOT, text=True).strip())
     parameter = (ROOT / "FilmApp/Editor/Parameter.swift").read_text().split("// MARK: - Preview")[0]
+    # `PickedPhoto` only, never the picker view: the split is on the file's own
+    # section marker rather than on a sentence, so rewording a doc comment cannot
+    # quietly feed the whole file in and leave these checks compiling something else.
     picker = (ROOT / "FilmApp/Editor/SinglePhotoPicker.swift").read_text().split(
-        "/// A fresh, single-selection picker")[0]
+        "// MARK: - Picker")[0]
     tokens = (ROOT / "FilmApp/Design/Tokens.swift").read_text()
     def token(name):
         return re.search(r"static let " + name + r": (?:CGFloat|Double) = ([0-9.]+)", tokens)[1]
@@ -109,15 +112,10 @@ CHECKS = r'''
 
         // Exercise the actual import path: failure retains undo, success clears it.
         try model.applyPreset(stockID: "identity", settings: RenderSettings())
-        await model.open(PickedPhoto(provider: NSItemProvider()))
+        await model.open(PickedPhoto { nil })
         precondition(model.canUndoPresetApplication && model.error != nil)
         let bytes = photo()
-        let provider = NSItemProvider()
-        provider.registerDataRepresentation(forTypeIdentifier: UTType.png.identifier, visibility: .all) { completion in
-            completion(bytes, nil)
-            return nil
-        }
-        await model.open(PickedPhoto(provider: provider))
+        await model.open(PickedPhoto { bytes })
         precondition(model.beforePixels != nil && model.error == nil)
         precondition(!model.canUndoPresetApplication)
         print("PASS import failure keeps undo; opening a new photo clears it")

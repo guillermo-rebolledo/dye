@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
     let model: EditorModel
@@ -12,6 +13,29 @@ struct SettingsView: View {
                         GlossaryView(model: model)
                     } label: {
                         Label("Glossary", systemImage: "book.closed")
+                    }
+                }
+                // A permission the user can only change in Settings is one the app has
+                // to be able to point at from somewhere other than the moment it fails.
+                // The row states the answer either way, so "can this save?" is a
+                // question with an answer rather than one that waits for an export.
+                if model.photoAccess != .unknown {
+                    Section {
+                        LabeledContent {
+                            Text(model.photoAccess == .granted ? "Allowed" : "Not allowed")
+                                .foregroundStyle(Tokens.Palette.textSecondary)
+                        } label: {
+                            Label("Adding to Photos", systemImage: "photo.badge.plus")
+                        }
+                        if model.photoAccess == .denied, let settings = URL(string: UIApplication.openSettingsURLString) {
+                            Link(destination: settings) {
+                                Label("Open Settings", systemImage: "arrow.up.forward.app")
+                            }
+                        }
+                    } footer: {
+                        Text(model.photoAccess == .granted
+                             ? "Dye can add exports to your photo library. It cannot read what is already there."
+                             : "Exports still render and can be shared. Turn on Add Photos Only for Dye in Settings to save them to your photo library.")
                     }
                 }
                 // Reachable in two taps from the editor, which is what a
