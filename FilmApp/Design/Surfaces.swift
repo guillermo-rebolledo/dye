@@ -112,6 +112,17 @@ struct Indicator<S: InsettableShape>: ViewModifier {
 // MARK: - Use
 
 extension View {
+    /// The app's primary, affirmative action. Keeping this as the system's
+    /// prominent style preserves the platform's pressed, disabled and future
+    /// appearance while the semantic tint keeps every instance film-base orange.
+    func prominentAccentButton() -> some View {
+        self
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.roundedRectangle(radius: Tokens.Metrics.buttonRadius))
+            .tint(Tokens.Palette.accent)
+            .foregroundStyle(Tokens.Palette.canvas)
+    }
+
     /// A pressable face. Pressing darkens it and translates the whole button
     /// down a point.
     func raisedSurface<S: InsettableShape>(_ shape: S, pressed: Bool = false, face: Surfaces.Face = .standard) -> some View {

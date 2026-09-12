@@ -230,9 +230,7 @@ private struct PhotoWelcomeScreen: View {
                                 .frame(minHeight: Tokens.Metrics.minimumHitTarget)
                                 .padding(.horizontal, Tokens.Metrics.space16)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Tokens.Palette.accent)
-                        .foregroundStyle(Tokens.Palette.canvas)
+                        .prominentAccentButton()
                         .accessibilityHint("Opens your photo library")
                     }
 
@@ -283,9 +281,7 @@ private struct PhotoAccessScreen: View {
                                 .frame(minHeight: Tokens.Metrics.minimumHitTarget)
                                 .padding(.horizontal, Tokens.Metrics.space16)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Tokens.Palette.accent)
-                        .foregroundStyle(Tokens.Palette.canvas)
+                        .prominentAccentButton()
                     }
                     Button("Continue without saving", action: dismiss)
                         .font(.subheadline)
