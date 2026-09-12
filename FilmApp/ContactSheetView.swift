@@ -25,6 +25,11 @@ struct ContactSheetView: View {
         VStack(alignment: .leading, spacing: Tokens.Metrics.space14) {
             header
             ScrollView {
+                Text("Compare stocks on a sample image. These previews don’t use your photo or change your edit. Choose a look from Film Stock in the editor.")
+                    .font(.subheadline)
+                    .foregroundStyle(Tokens.Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, Tokens.Metrics.space14)
                 ContactSheetPaper(profiles: profiles, images: images, selectedStock: selectedStock)
                 if let error {
                     Text(error).typeStyle(.caption).foregroundStyle(Tokens.Palette.destructive)
@@ -44,7 +49,7 @@ struct ContactSheetView: View {
         HStack {
             // Accurate rather than decorative: `ContactSheetReference.settings`
             // pins the seed at 253.
-            Text("Contact Sheet")
+            Text("Stock reference")
                 .typeStyle(.contactHeader).foregroundStyle(Tokens.Palette.textSecondary)
                 .lineLimit(1).minimumScaleFactor(0.8)
             Spacer(minLength: Tokens.Metrics.space10)

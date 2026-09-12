@@ -43,9 +43,21 @@ Tap **Film Stock** at the top of the editor to choose a stock. The picker then
 shows the selected stock’s name. Choose **No Film Stock** in the browser to remove
 the film response; this neutral profile uses the internal ID `identity`.
 
+The stock picker describes each model’s starting look; the longer explanation of
+Modelled and Approx. is available in its disclosure. **Stock reference** compares
+the catalogue on a fixed sample image, while Film Stock previews your own photo.
+
+Hold the photo to compare with the original, or drag across it for fine adjustment.
+A first-use tip explains these gestures, and **Reset** appears beside a changed
+control. Applying a saved preset replaces the stock and adjustments; **Undo preset**
+restores the previous look, including temporarily disabled adjustments, until the
+next edit or successfully opened photo. **Preview zoom** magnifies the 2048-pixel
+editing preview. Export at full resolution to assess fine grain and sharpness.
+
 ```sh
 swift build
 swift test
+python3 Scripts/check-preset-undo.py
 xcodebuild -project FilmApp.xcodeproj -scheme FilmApp -sdk iphonesimulator \
   -derivedDataPath .build/app CODE_SIGNING_ALLOWED=NO build
 ```

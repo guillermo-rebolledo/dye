@@ -64,6 +64,7 @@ private struct EditorScreen: View {
     @State private var holdingBefore = false
     @State private var adjusting = false
     @State var accessibleBefore = false
+    @AppStorage("hasDismissedEditingTips") private var hasDismissedEditingTips = false
     var previewReadout = false
 
     private var isComparing: Bool { canvas.hasPhoto && (holdingBefore || accessibleBefore) }
@@ -117,7 +118,15 @@ private struct EditorScreen: View {
                 } else {
                     VStack(spacing: 0) {
                         photoCanvas
-                        controls.frame(maxWidth: 560)
+                        ViewThatFits(in: .vertical) {
+                            controls.fixedSize(horizontal: false, vertical: true)
+                            ScrollView {
+                                controls.fixedSize(horizontal: false, vertical: true)
+                            }
+                            .scrollBounceBehavior(.basedOnSize)
+                        }
+                            .frame(maxWidth: 560)
+                            .frame(maxHeight: geometry.size.height * 0.6, alignment: .bottom)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity).background(Tokens.Palette.deck)
                     }
@@ -134,13 +143,22 @@ private struct EditorScreen: View {
                    selectedStock: model.selectedStock)
             .accessibilityElement(children: canvas.hasPhoto ? .ignore : .combine)
             .accessibilityLabel(canvas.accessibilityLabel)
-            .accessibilityValue(isComparing ? "Original" : "")
+            .accessibilityValue(isComparing ? "Original" : (isLoupeEnabled ? "Preview zoom" : ""))
+            .accessibilityHint(isLoupeEnabled
+                              ? "Magnified editing preview. Export at full resolution to judge fine grain and sharpness."
+                              : "Hold to compare. Drag horizontally for fine adjustment. More actions are available.")
             .modifier(CanvasAccessibility(isEnabled: canvas.hasPhoto, showsOriginal: $accessibleBefore,
                                           isLoupeEnabled: $isLoupeEnabled))
     }
 
     private var controls: some View {
         VStack(spacing: 0) {
+            if canvas.hasPhoto && !hasDismissedEditingTips {
+                EditorGestureTip { hasDismissedEditingTips = true }
+            }
+            if canvas.hasPhoto && model.canUndoPresetApplication {
+                PresetUndoBanner(model: model)
+            }
             if let error {
                 ScrollView {
                     ErrorStrip(error: error, openAsSRGB: openAsSRGB)
@@ -224,7 +242,7 @@ private struct CanvasAccessibility: ViewModifier {
             content.accessibilityAction(named: showsOriginal ? "Show edited photo" : "Show original photo") {
                 showsOriginal.toggle()
             }
-            .accessibilityAction(named: isLoupeEnabled ? "Turn loupe off" : "Show 1:1 loupe") {
+            .accessibilityAction(named: isLoupeEnabled ? "Turn preview zoom off" : "Show preview zoom") {
                 isLoupeEnabled.toggle()
             }
             // SwiftUI caches custom action names on the accessibility element.
@@ -279,7 +297,7 @@ private struct EditorPreview: View {
 #Preview("Editor · error") { EditorPreview(state: .error).preferredColorScheme(.dark) }
 #Preview("Editor · empty · light surround") { EditorPreview(state: .empty).preferredColorScheme(.light) }
 
-#Preview("Editor · 1:1 loupe") { EditorPreview(state: .loupe).preferredColorScheme(.dark) }
+#Preview("Editor · preview zoom") { EditorPreview(state: .loupe).preferredColorScheme(.dark) }
 
 #Preview("Editor · fine drag") { EditorPreview(state: .dragging).preferredColorScheme(.dark) }
 

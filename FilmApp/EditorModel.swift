@@ -10,8 +10,18 @@ import FilmEngine
 /// values rather than every intermediate one.
 @MainActor @Observable final class EditorModel {
     var catalogue: [Profile] = []
-    var selectedStock = "identity" { didSet { if selectedStock != oldValue { stockChanged() } } }
-    var settings = RenderSettings() { didSet { if settings != oldValue { scheduleRender() } } }
+    var selectedStock = "identity" {
+        didSet {
+            if selectedStock != oldValue { presetUndo = nil; stockChanged() }
+        }
+    }
+    var settings = RenderSettings() {
+        didSet {
+            if settings != oldValue { presetUndo = nil; scheduleRender() }
+        }
+    }
+    private var presetUndo: EditorLookSnapshot?
+    var canUndoPresetApplication: Bool { presetUndo != nil }
     private(set) var pixels: RenderedPixels?
     private(set) var beforePixels: RenderedPixels?
     private(set) var thumbnails: [String: RenderedPixels] = [:]
@@ -73,7 +83,9 @@ import FilmEngine
     /// want it*. Only the editor knows the difference. Everything downstream — the
     /// render, the Export, a saved Preset — sees the zero in `settings`, because a
     /// bypassed control really is not applied.
-    var stashedAdjustments: [Parameter.Identity: Double] = [:]
+    var stashedAdjustments: [Parameter.Identity: Double] = [:] {
+        didSet { if stashedAdjustments != oldValue { presetUndo = nil } }
+    }
 
     var profile: Profile { catalogue.first { $0.id == selectedStock } ?? .identity }
 
@@ -225,6 +237,7 @@ import FilmEngine
         guard openGeneration == request else { return }
         thumbnailTask?.cancel()
         presetThumbnailTask?.cancel()
+        presetUndo = nil
         imageGeneration = UUID()
         pixels = before
         beforePixels = before
@@ -555,12 +568,26 @@ import FilmEngine
             throw FilmError.invalid(Self.stockUnavailable)
         }
         try settings.validate()
+        let previous = EditorLookSnapshot(stockID: selectedStock, settings: self.settings,
+                                          stashedAdjustments: stashedAdjustments)
         selectedStock = stockID
         self.settings = settings
         // A Preset is a different picture's Adjustments, so nothing held back from
         // this one is still waiting to be switched on.
         stashedAdjustments.removeAll()
         stockChanged()
+        // Publish after all mutations, which normally invalidate the one-step undo.
+        presetUndo = previous
+    }
+
+    /// Available until the next edit or successfully opened photo. Restore the
+    /// bypass stash too, so re-enabling an adjustment recovers its previous value.
+    func undoPresetApplication() {
+        guard let previous = presetUndo else { return }
+        presetUndo = nil
+        selectedStock = previous.stockID
+        settings = previous.settings
+        stashedAdjustments = previous.stashedAdjustments
     }
 
     /// Glass does not carry across a change of Stock. A colour Stock has no
