@@ -31,17 +31,14 @@ struct Filmstrip: View {
                     processLabel("B&W", .bwSilver)
                 }
                 Spacer(minLength: 0)
-                Button { Haptics.buttonPress(); close() } label: {
-                    Text("Done").typeStyle(.filmControls)
-                        .foregroundStyle(Tokens.Palette.textPrimary)
-                        .padding(.horizontal, Tokens.Filmstrip.controlsPadding)
-                        .frame(height: Tokens.Filmstrip.footerHeight)
-                        .raisedSurface(cornerRadius: Tokens.Metrics.trackRadius)
-                        .frame(height: Tokens.Metrics.minimumHitTarget)
-                        .contentShape(Rectangle())
+                Button("Done") {
+                    Haptics.buttonPress()
+                    close()
                 }
-                .buttonStyle(.plain)
-                .accessibilityHint("Closes stock browsing and returns to the selected dial")
+                    .font(.subheadline.weight(.semibold))
+                    .prominentAccentButton()
+                    .frame(minHeight: Tokens.Metrics.minimumHitTarget)
+                    .accessibilityHint("Closes stock browsing and returns to the selected dial")
             }
             .padding(.horizontal, Tokens.Metrics.space16)
             .frame(height: Tokens.Filmstrip.footerHeight)

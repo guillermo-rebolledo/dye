@@ -62,8 +62,13 @@ struct EditorPickers: View {
             VStack(spacing: 24) {
                 Text("Output").font(.title2.bold())
                 OutputStageCards(model: model)
-                Button("Done") { selection.isOutputBrowserOpen = false }
-                    .frame(minHeight: 44)
+                Button("Done") {
+                    Haptics.buttonPress()
+                    selection.isOutputBrowserOpen = false
+                }
+                    .font(.subheadline.weight(.semibold))
+                    .prominentAccentButton()
+                    .frame(minHeight: Tokens.Metrics.minimumHitTarget)
             }
             .padding(24)
             .presentationDetents([.medium, .large])
