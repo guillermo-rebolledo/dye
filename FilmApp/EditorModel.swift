@@ -249,6 +249,13 @@ import FilmEngine
         assumesSRGB = assumingSRGB
         originalDate = ExportDate.originalDate(in: data)
         if exportTask == nil { export = nil }
+        // A new photograph starts where the app starts. The Stock, the Adjustments
+        // and anything held back behind a bypass were chosen for the picture that is
+        // leaving, and carrying them over grades a photo nobody graded.
+        selectedStock = "identity"
+        settings = RenderSettings()
+        stashedAdjustments.removeAll()
+        presetUndo = nil
         scheduleRender()
         isLoading = false
         // Filmstrip decoding is secondary to showing the photo and accepting edits.

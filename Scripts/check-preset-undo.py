@@ -119,6 +119,16 @@ CHECKS = r'''
         precondition(model.beforePixels != nil && model.error == nil)
         precondition(!model.canUndoPresetApplication)
         print("PASS import failure keeps undo; opening a new photo clears it")
+
+        // A new photograph is not the last one's picture: it opens at the initial look.
+        model.selectedStock = "tri-x-400"
+        model.settings.exposureStops = 0.7
+        model.settings.adjustments.shadows = 0.4
+        model.toggleBypass(.shadows)
+        await model.open(PickedPhoto { bytes })
+        precondition(model.error == nil && model.selectedStock == "identity")
+        precondition(model.settings == RenderSettings() && model.stashedAdjustments.isEmpty)
+        print("PASS opening a photo resets stock, settings and bypassed values")
         print("All preset undo checks passed")
     }
 
